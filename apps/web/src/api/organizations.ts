@@ -1,13 +1,14 @@
-import { apiClient, DEMO_TENANT_ID } from './client'
+import { apiClient } from './client'
 import type { Organization, OrganizationCertificate } from './types'
 
 export const organizationsApi = {
-  list: () => apiClient.get<Organization[]>('/organizations', { params: { tenantId: DEMO_TENANT_ID } }).then((r) => r.data),
+  // tenantId 由后端从JWT解析, 不再由客户端传入
+  list: () => apiClient.get<Organization[]>('/organizations').then((r) => r.data),
 
   get: (id: string) => apiClient.get<Organization>(`/organizations/${id}`).then((r) => r.data),
 
   create: (data: { name: string; address?: string; competentAuthority?: string; isComplexOrg?: boolean }) =>
-    apiClient.post<Organization>('/organizations', { ...data, tenantId: DEMO_TENANT_ID }).then((r) => r.data),
+    apiClient.post<Organization>('/organizations', data).then((r) => r.data),
 
   addCertificate: (
     organizationId: string,

@@ -3,13 +3,15 @@ import {
   AuditOutlined,
   BookOutlined,
   CalendarOutlined,
+  LogoutOutlined,
   RocketOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { Layout, Menu } from 'antd'
+import { Button, Layout, Menu, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 
 const { Header, Sider, Content } = Layout
 
@@ -26,6 +28,12 @@ const menuItems: MenuProps['items'] = [
 export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user, logout } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -42,8 +50,24 @@ export function AppLayout() {
         />
       </Sider>
       <Layout>
-        <Header style={{ background: '#fff', padding: '0 24px', fontSize: 16, fontWeight: 500 }}>
-          EASA ATO 合规管理平台 (MVP)
+        <Header
+          style={{
+            background: '#fff',
+            padding: '0 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <Typography.Text strong style={{ fontSize: 16 }}>
+            EASA ATO 合规管理平台 (MVP)
+          </Typography.Text>
+          <Space>
+            <Typography.Text type="secondary">{user?.email}</Typography.Text>
+            <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+              退出登录
+            </Button>
+          </Space>
         </Header>
         <Content style={{ margin: 24 }}>
           <Outlet />

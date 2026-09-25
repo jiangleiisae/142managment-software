@@ -39,11 +39,12 @@ export function BookingsPage() {
   useEffect(load, [selectedFstdId])
 
   const handleCreate = async () => {
-    if (!selectedFstdId) return
+    if (!selectedFstdId || !selectedId) return
     const values = await form.validateFields()
     const [startAt, endAt] = values.range
     try {
       await bookingsApi.create({
+        organizationId: selectedId,
         resourceType: 'FSTD' as BookingResourceType,
         resourceId: selectedFstdId,
         startAt: startAt.toISOString(),
