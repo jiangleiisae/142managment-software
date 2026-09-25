@@ -1,0 +1,652 @@
+// 培训中心管理系统 - 数据模型 (EASA主线, 对应 培训中心管理系统_需求清单.md 第一期MVP范围)
+// 模块编号对应需求清单第3节: 3.1机构 / 3.2管理体系 / 3.3模拟机 / 3.5人员 / 3.6课程 / 3.7学员 / 3.8排班
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 通用: 多租户 + 审计 + 变更管理 (跨模块基础设施)
+// ============================================================
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  organizations Organization[]
+
+  @@map("tenants")
+}
+
+/// 通用审计轨迹, 覆盖所有需要"可追溯/防篡改"的实体变更 (ORA.GEN.220)
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  entityType String // 如 "Organization" / "Fstd" / "OrganizationCertificate"
+  entityId   String
+  action     String // create / update / delete / status_change
+  actorId    String? // 操作人 (Personnel.id), 系统自动操作为 null
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId])
+  @@map("audit_logs")
+}
+
+/// 变更管理通用状态机 (ORA.GEN.130), 供机构变更/课程变更/FSTD变更复用
+enum ChangeApprovalType {
+  PRIOR_APPROVAL // 需事先批准 (提前≥30天, 人员变更≥10天)
+  NOTIFICATION_ONLY // 无需事先批准, 按内部程序执行后通知当局
+}
+
+enum ChangeRequestStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  LOGGED
+  NOTIFIED
+}
+
+model ChangeRequest {
+  id             String              @id @default(cuid())
+  tenantId       String
+  entityType     String // "Organization" / "Fstd" / "Course" ...
+  entityId       String
+  changeType     String // 机构名称/地址/负责人变更/FSTD升级/搬迁 等具体类型
+  approvalType   ChangeApprovalType
+  status         ChangeRequestStatus @default(DRAFT)
+  beforeJson     Json?
+  afterJson      Json?
+  submittedAt    DateTime?
+  effectiveAt    DateTime?
+  authorityReply String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([tenantId, entityType, entityId])
+  @@map("change_requests")
+}
+
+/// 记录保存策略引擎配置表 (需求清单 3.9)
+model RecordRetentionPolicy {
+  id              String   @id @default(cuid())
+  documentType    String   @unique // 如 "student_training_record" / "fstd_mqtg" / "audit_finding"
+  retentionMonths Int? // null = 永久保存 (如 MQTG/初始鉴定记录)
+  basisRegulation String? // 法规依据, 如 "ORA.ATO.120"
+  description     String?
+
+  @@map("record_retention_policies")
+}
+
+// ============================================================
+// 3.1 机构与ATO证书管理
+// ============================================================
+
+enum OrganizationType {
+  EASA_ATO
+  EASA_ATO_DUAL_FAA142 // 预留: 未来若需同时服务FAA Part142客户
+}
+
+model Organization {
+  id                  String           @id @default(cuid())
+  tenantId            String
+  type                OrganizationType @default(EASA_ATO)
+  name                String
+  address             String?
+  competentAuthority  String? // 主管当局名称
+  isComplexOrg        Boolean          @default(false) // AMC1 ORA.GEN.200(b) 复杂/非复杂机构判定
+  complexOrgReason    String? // 触发复杂机构判定的具体原因 (>20FTE / FFS训练 / MP / ZFTT / 多场地 等)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  certificates         OrganizationCertificate[]
+  applicationRecords   ApplicationRecord[]
+  personnelAssignments PersonnelRoleAssignment[]
+  fstds                Fstd[]
+  courses              Course[]
+  students             Student[]
+  hazards              HazardRegisterEntry[]
+  auditSchedules       AuditSchedule[]
+  occurrenceReports    OccurrenceReport[]
+  contracts            ContractRecord[]
+
+  @@map("organizations")
+}
+
+enum CertificateStatus {
+  ACTIVE // 持续有效 (ORA.GEN.135 Continued Validity)
+  SUSPENDED
+  REVOKED
+  TERMINATED
+}
+
+/// 对应 EASA Form 143 模板 (ORA.ATO批准证书)
+model OrganizationCertificate {
+  id               String            @id @default(cuid())
+  organizationId   String
+  certificateNo    String
+  issuedAuthority  String
+  regulationBasis  String            @default("Regulation (EU) No 1178/2011")
+  approvalScope    String // 批准范围声明文本
+  status           CertificateStatus @default(ACTIVE)
+  issuedAt         DateTime
+  suspendedAt      DateTime?
+  revokedAt        DateTime?
+  terminatedAt     DateTime?
+  statusReason     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  organization         Organization                     @relation(fields: [organizationId], references: [id])
+  courseApprovals      TrainingCourseApprovalAttachment[]
+
+  @@map("organization_certificates")
+}
+
+/// 证书附件: 课程批准列表, 比证书本身更新更频繁 (一对多)
+model TrainingCourseApprovalAttachment {
+  id             String   @id @default(cuid())
+  certificateId  String
+  courseId       String
+  approvedFstdCodes String[] // 可用FSTD清单 (字母代码)
+  approvedAt     DateTime @default(now())
+  revokedAt      DateTime?
+
+  certificate OrganizationCertificate @relation(fields: [certificateId], references: [id])
+  course      Course                  @relation(fields: [courseId], references: [id])
+
+  @@map("training_course_approval_attachments")
+}
+
+/// ORA.ATO.105 申请材料
+model ApplicationRecord {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  isChangeApplication   Boolean  @default(false) // 首次申请 vs 变更申请(仅需提交变更相关部分)
+  proposedStartDate     DateTime?
+  headOfTrainingInfo    Json?
+  trainingSitesJson     Json? // 训练场地清单
+  aircraftListJson      Json? // 航空器清单: 机型/注册号/所有人/适航证类别
+  fstdListJson          Json?
+  courseTypesJson       Json?
+  operationsManualRef   String?
+  trainingManualRef     String?
+  submittedAt           DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("application_records")
+}
+
+// ============================================================
+// 3.2 管理体系: SMS + 合规监督(QMS)
+// ============================================================
+
+enum ManagementRoleType {
+  ACCOUNTABLE_MANAGER
+  NOMINATED_PERSON_COMPLIANCE
+  SAFETY_MANAGER
+  COMPLIANCE_MONITORING_MANAGER
+  HEAD_OF_TRAINING
+  CFI // 总飞行教员
+  CTKI // 总理论教员
+}
+
+model PersonnelRoleAssignment {
+  id             String             @id @default(cuid())
+  organizationId String
+  personnelId    String
+  role           ManagementRoleType
+  startDate      DateTime
+  endDate        DateTime?
+  appointmentRef String? // 任命文件编号
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  personnel    Personnel    @relation(fields: [personnelId], references: [id])
+
+  @@map("personnel_role_assignments")
+}
+
+/// 危险源登记 (SMS核心, 二期完整实现, 一期先建表)
+model HazardRegisterEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  source         String // internal_report / audit / occurrence
+  description    String
+  affectedArea   String? // 涉及运行环节: 训练科目/FSTD/场地
+  createdAt      DateTime @default(now())
+
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  riskAssessments RiskAssessment[]
+
+  @@map("hazard_register_entries")
+}
+
+model RiskAssessment {
+  id               String   @id @default(cuid())
+  hazardId         String
+  probabilityLevel Int
+  severityLevel    Int
+  riskScore        Int
+  existingMitigation String?
+  residualRiskLevel  Int?
+  assessedAt       DateTime @default(now())
+
+  hazard    HazardRegisterEntry @relation(fields: [hazardId], references: [id])
+  mitigations MitigationAction[]
+
+  @@map("risk_assessments")
+}
+
+model MitigationAction {
+  id               String    @id @default(cuid())
+  riskAssessmentId String
+  description      String
+  responsiblePersonnelId String?
+  dueDate          DateTime?
+  status           String    @default("open") // open / in_progress / closed
+
+  riskAssessment RiskAssessment @relation(fields: [riskAssessmentId], references: [id])
+
+  @@map("mitigation_actions")
+}
+
+/// 事件报告 (ORA.GEN.160), 72小时强制上报倒计时是核心告警需求
+model OccurrenceReport {
+  id                String    @id @default(cuid())
+  organizationId    String
+  discoveredAt      DateTime // 用于计算72小时时限起点
+  reportedAt        DateTime?
+  occurrenceType    String
+  involvedPersonnel String?
+  involvedAircraft  String?
+  involvedFstdId    String?
+  isMandatory       Boolean   @default(true) // 强制 vs 自愿报告
+  reportedTo        String? // 主管当局 / 设计批准持有人 等
+  followUpStatus    String?   @default("pending")
+  createdAt         DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("occurrence_reports")
+}
+
+/// 合规监督闭环: audit_schedule -> audit_task -> finding -> corrective_action -> closure
+model AuditSchedule {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  scopeTag       String   @default("organization") // "organization" | "fstd" (3.2.6 FSTD专项复用同一闭环)
+  plannedAt      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  tasks        AuditTask[]
+
+  @@map("audit_schedules")
+}
+
+model AuditTask {
+  id              String   @id @default(cuid())
+  auditScheduleId String
+  auditorId       String? // 必须独立于被审核职能
+  scope           String
+  performedAt     DateTime?
+  status          String    @default("planned") // planned / in_progress / completed
+
+  auditSchedule AuditSchedule @relation(fields: [auditScheduleId], references: [id])
+  findings      Finding[]
+
+  @@map("audit_tasks")
+}
+
+model Finding {
+  id           String   @id @default(cuid())
+  auditTaskId  String
+  level        Int // 1 或 2, 对应 ARA.GEN.350
+  description  String
+  rootCause    String?
+  createdAt    DateTime @default(now())
+
+  auditTask         AuditTask          @relation(fields: [auditTaskId], references: [id])
+  correctiveActions CorrectiveAction[]
+
+  @@map("findings")
+}
+
+model CorrectiveAction {
+  id                 String    @id @default(cuid())
+  findingId          String
+  planDescription    String
+  responsiblePersonnelId String?
+  dueDate            DateTime?
+  status             String    @default("open") // open / verifying / closed
+  closedAt           DateTime?
+
+  finding Finding @relation(fields: [findingId], references: [id])
+
+  @@map("corrective_actions")
+}
+
+model ContractRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  contractorName String
+  scope          String
+  agreementRef   String?
+  includedInAudit Boolean @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("contract_records")
+}
+
+// ============================================================
+// 3.3 模拟机资质与技术管理 (一期仅 legacy 等级字典, 不做FCS矩阵)
+// ============================================================
+
+enum FstdQualificationBasisType {
+  EASA_LEGACY_LEVEL
+  EASA_FCS // 二期/三期启用
+}
+
+enum FstdDeviceType {
+  FFS
+  FTD
+  FNPT
+  BITD
+}
+
+model Fstd {
+  id                    String                     @id @default(cuid())
+  organizationId        String
+  deviceCode            String // 设备编号
+  serialNumber          String?
+  representedAircraft   String // 代表机型/机型组
+  deviceType            FstdDeviceType
+  qualificationBasisType FstdQualificationBasisType @default(EASA_LEGACY_LEVEL)
+  qualificationBasisVersion String? // 初始鉴定采用的标准版本, 后续周期性鉴定持续沿用
+  location              String?
+  status                String                     @default("active") // active / deactivated / relocating / decommissioned
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  organization    Organization         @relation(fields: [organizationId], references: [id])
+  legacyLevel     FstdLegacyLevel?
+  qualifiedTasks  FstdQualifiedTask[]
+  recurrentEvals  FstdRecurrentEvaluation[]
+  discrepancies   DiscrepancyLog[]
+  changeRequests  FstdChangeRequest[]
+
+  @@unique([organizationId, deviceCode])
+  @@map("fstds")
+}
+
+enum LegacyLevel {
+  FFS_A
+  FFS_B
+  FFS_C
+  FFS_D
+  FTD_1
+  FTD_2
+  FNPT_I
+  FNPT_II
+  FNPT_II_MCC
+  BITD
+}
+
+model FstdLegacyLevel {
+  id     String      @id @default(cuid())
+  fstdId String      @unique
+  level  LegacyLevel
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_legacy_levels")
+}
+
+/// 已鉴定任务清单 (连接设备与训练), 一期用课程直接挂钩等级的方式, 训练矩阵留待FCS体系(三期)
+model FstdQualifiedTask {
+  id          String  @id @default(cuid())
+  fstdId      String
+  taskCode    String // 训练科目编号
+  taskName    String
+  requiresSpecialAuth Boolean @default(false)
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_qualified_tasks")
+}
+
+model FstdRecurrentEvaluation {
+  id            String    @id @default(cuid())
+  fstdId        String
+  periodStart   DateTime
+  periodEnd     DateTime
+  evaluationType String   @default("standard") // standard / extended
+  result        String?   // pass / fail / partial
+  nextDueDate   DateTime?
+  createdAt     DateTime  @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_recurrent_evaluations")
+}
+
+/// 缺陷/故障处理 (吸收FAA 30天规则 + Kiosk交互模式)
+model DiscrepancyLog {
+  id              String    @id @default(cuid())
+  fstdId          String
+  reportedById    String? // Personnel.id, 也可来自Kiosk匿名报障
+  reportedAt      DateTime  @default(now())
+  description     String
+  isMmi           Boolean   @default(false) // Missing/Malfunctioning/Inoperative
+  correctiveAction String?
+  correctedById   String?
+  correctedAt     DateTime?
+  status          String    @default("open") // open / corrected
+  dueDate         DateTime? // 默认报告时间+30天 (吸收FAA §60.25规则)
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("discrepancy_logs")
+}
+
+model FstdChangeRequest {
+  id          String   @id @default(cuid())
+  fstdId      String
+  changeType  String // update / upgrade / major_modification / relocation / deactivation / transfer
+  description String?
+  notifiedAuthorityAt DateTime?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_change_requests")
+}
+
+// ============================================================
+// 3.5 人员资质管理
+// ============================================================
+
+model Personnel {
+  id        String   @id @default(cuid())
+  tenantId  String
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  roleAssignments   PersonnelRoleAssignment[]
+  instructorProfile InstructorProfile?
+  qualifications    QualificationRecord[]
+
+  @@map("personnel")
+}
+
+enum InstructorType {
+  FI // Flight Instructor
+  TRI // Type Rating Instructor
+  SFI // Synthetic Flight Instructor
+  THEORETICAL
+  EXAMINER
+}
+
+model InstructorProfile {
+  id           String         @id @default(cuid())
+  personnelId  String         @unique
+  instructorType InstructorType
+
+  personnel Personnel @relation(fields: [personnelId], references: [id])
+
+  @@map("instructor_profiles")
+}
+
+/// 通用证照/资质记录 + 到期提醒 (人员/学员/设备均可复用此模式, 此处聚焦人员)
+model QualificationRecord {
+  id              String    @id @default(cuid())
+  personnelId     String
+  qualificationType String // 执照类型/教员证/考试员证等
+  certificateNo   String?
+  issuingAuthority String?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  reminderSentAt  DateTime?
+
+  personnel Personnel @relation(fields: [personnelId], references: [id])
+
+  @@map("qualification_records")
+}
+
+// ============================================================
+// 3.6 课程/培训大纲管理 (一期基础版, 不含ZFTT/MPL等特殊课程)
+// ============================================================
+
+enum CourseType {
+  LAPL
+  PPL
+  CPL
+  MPL
+  ATPL
+  INSTRUMENT_RATING
+  TYPE_RATING
+  OTHER
+}
+
+model Course {
+  id             String     @id @default(cuid())
+  organizationId String
+  name           String
+  courseType     CourseType
+  isApproved     Boolean    @default(false)
+  approvedAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization      Organization                       @relation(fields: [organizationId], references: [id])
+  trainingProgramme  TrainingProgramme?
+  courseApprovals    TrainingCourseApprovalAttachment[]
+  enrollments        Enrollment[]
+
+  @@map("courses")
+}
+
+/// ORA.ATO.125 训练大纲
+model TrainingProgramme {
+  id              String  @id @default(cuid())
+  courseId        String  @unique
+  stagesJson       Json? // 周/阶段分解表 (CPL/MPL/ATPL类需要)
+  standardTasksJson Json? // 标准科目清单
+  summary         String?
+
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@map("training_programmes")
+}
+
+// ============================================================
+// 3.7 学员培训记录管理
+// ============================================================
+
+model Student {
+  id                    String    @id @default(cuid())
+  organizationId        String
+  firstName             String
+  lastName              String
+  licenceNo             String?
+  medicalCertExpiry     DateTime? // ORA.ATO.120(c) 强制记录字段, 训练前置条件校验依赖此字段
+  createdAt             DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  enrollments  Enrollment[]
+
+  @@map("students")
+}
+
+model Enrollment {
+  id           String    @id @default(cuid())
+  studentId    String
+  courseId     String
+  enrolledAt   DateTime  @default(now())
+  completedAt  DateTime?
+  status       String    @default("active") // active / completed / withdrawn
+
+  student Student @relation(fields: [studentId], references: [id])
+  course  Course  @relation(fields: [courseId], references: [id])
+  trainingRecords TrainingRecord[]
+
+  @@map("enrollments")
+}
+
+/// 训练全程 + 结课后3年保存 (ORA.ATO.120)
+model TrainingRecord {
+  id            String   @id @default(cuid())
+  enrollmentId  String
+  sessionDate   DateTime
+  subject       String
+  progressNotes String?
+  testScore     String?
+  assessedById  String? // Personnel.id
+  createdAt     DateTime @default(now())
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@map("training_records")
+}
+
+// ============================================================
+// 3.8 排班与预订 (基础版: 资源日历)
+// ============================================================
+
+enum BookingResourceType {
+  FSTD
+  CLASSROOM
+  INSTRUCTOR
+}
+
+model Booking {
+  id           String              @id @default(cuid())
+  resourceType BookingResourceType
+  resourceId   String // Fstd.id / classroom id / Personnel.id, 视 resourceType 而定
+  courseId     String?
+  studentId    String?
+  startAt      DateTime
+  endAt        DateTime
+  status       String              @default("confirmed") // confirmed / cancelled
+  createdAt    DateTime            @default(now())
+
+  @@index([resourceType, resourceId, startAt])
+  @@map("bookings")
+}
