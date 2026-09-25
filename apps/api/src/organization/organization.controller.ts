@@ -1,12 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { OrganizationService } from './organization.service.js';
 import { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import { UpdateOrganizationDto } from './dto/update-organization.dto.js';
@@ -18,54 +12,70 @@ export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
   @Post()
-  create(@Body() dto: CreateOrganizationDto) {
-    return this.organizationService.create(dto);
+  create(@CurrentUser() user: AuthContext, @Body() dto: CreateOrganizationDto) {
+    return this.organizationService.create(user.tenantId, dto);
   }
 
   @Get()
-  findAll(@Query('tenantId') tenantId: string) {
-    return this.organizationService.findAll(tenantId);
+  findAll(@CurrentUser() user: AuthContext) {
+    return this.organizationService.findAll(user.tenantId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.organizationService.findOne(id);
+  findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.organizationService.findOne(id, user.tenantId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
-    return this.organizationService.update(id, dto);
+  update(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
+    return this.organizationService.update(id, user.tenantId, dto);
   }
 
   // ---- 3.1 证书管理 (EASA Form 143), 状态机: ACTIVE <-> SUSPENDED -> REVOKED / TERMINATED ----
 
   @Post(':id/certificates')
-  addCertificate(@Param('id') id: string, @Body() dto: CreateCertificateDto) {
-    return this.organizationService.addCertificate(id, dto);
+  addCertificate(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: CreateCertificateDto) {
+    return this.organizationService.addCertificate(id, user.tenantId, dto);
   }
 
   @Get(':id/certificates')
-  listCertificates(@Param('id') id: string) {
-    return this.organizationService.listCertificates(id);
+  listCertificates(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.organizationService.listCertificates(id, user.tenantId);
   }
 
   @Post('certificates/:certId/suspend')
-  suspendCertificate(@Param('certId') certId: string, @Body() dto: CertificateStatusActionDto) {
-    return this.organizationService.suspendCertificate(certId, dto.reason);
+  suspendCertificate(
+    @CurrentUser() user: AuthContext,
+    @Param('certId') certId: string,
+    @Body() dto: CertificateStatusActionDto,
+  ) {
+    return this.organizationService.suspendCertificate(certId, user.tenantId, dto.reason);
   }
 
   @Post('certificates/:certId/restore')
-  restoreCertificate(@Param('certId') certId: string, @Body() dto: CertificateStatusActionDto) {
-    return this.organizationService.restoreCertificate(certId, dto.reason);
+  restoreCertificate(
+    @CurrentUser() user: AuthContext,
+    @Param('certId') certId: string,
+    @Body() dto: CertificateStatusActionDto,
+  ) {
+    return this.organizationService.restoreCertificate(certId, user.tenantId, dto.reason);
   }
 
   @Post('certificates/:certId/revoke')
-  revokeCertificate(@Param('certId') certId: string, @Body() dto: CertificateStatusActionDto) {
-    return this.organizationService.revokeCertificate(certId, dto.reason);
+  revokeCertificate(
+    @CurrentUser() user: AuthContext,
+    @Param('certId') certId: string,
+    @Body() dto: CertificateStatusActionDto,
+  ) {
+    return this.organizationService.revokeCertificate(certId, user.tenantId, dto.reason);
   }
 
   @Post('certificates/:certId/terminate')
-  terminateCertificate(@Param('certId') certId: string, @Body() dto: CertificateStatusActionDto) {
-    return this.organizationService.terminateCertificate(certId, dto.reason);
+  terminateCertificate(
+    @CurrentUser() user: AuthContext,
+    @Param('certId') certId: string,
+    @Body() dto: CertificateStatusActionDto,
+  ) {
+    return this.organizationService.terminateCertificate(certId, user.tenantId, dto.reason);
   }
 }

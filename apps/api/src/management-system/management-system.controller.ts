@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ManagementRoleType } from '@prisma/client';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { ManagementSystemService } from './management-system.service.js';
 
 @Controller('management-system')
@@ -22,8 +24,8 @@ export class ManagementSystemController {
   }
 
   @Post('role-assignments/:id/end')
-  endRoleAssignment(@Param('id') id: string) {
-    return this.service.endRoleAssignment(id);
+  endRoleAssignment(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.endRoleAssignment(id, user.tenantId);
   }
 
   // ---- 3.2.2 事件报告 ----
@@ -45,13 +47,13 @@ export class ManagementSystemController {
   }
 
   @Get('occurrence-reports/overdue')
-  findOverdueOccurrenceReports() {
-    return this.service.findOverdueOccurrenceReports();
+  findOverdueOccurrenceReports(@CurrentUser() user: AuthContext) {
+    return this.service.findOverdueOccurrenceReports(user.tenantId);
   }
 
   @Post('occurrence-reports/:id/mark-reported')
-  markOccurrenceReported(@Param('id') id: string, @Body() dto: { reportedTo: string }) {
-    return this.service.markOccurrenceReported(id, dto.reportedTo);
+  markOccurrenceReported(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { reportedTo: string }) {
+    return this.service.markOccurrenceReported(id, user.tenantId, dto.reportedTo);
   }
 
   // ---- 3.2.3 合规监督闭环 ----
@@ -67,30 +69,31 @@ export class ManagementSystemController {
   }
 
   @Post('audit-schedules/:id/tasks')
-  createAuditTask(@Param('id') id: string, @Body() dto: { auditorId?: string; scope: string }) {
-    return this.service.createAuditTask(id, dto);
+  createAuditTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { auditorId?: string; scope: string }) {
+    return this.service.createAuditTask(id, user.tenantId, dto);
   }
 
   @Post('audit-tasks/:id/complete')
-  completeAuditTask(@Param('id') id: string) {
-    return this.service.completeAuditTask(id);
+  completeAuditTask(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.completeAuditTask(id, user.tenantId);
   }
 
   @Post('audit-tasks/:id/findings')
-  addFinding(@Param('id') id: string, @Body() dto: { level: number; description: string; rootCause?: string }) {
-    return this.service.addFinding(id, dto);
+  addFinding(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { level: number; description: string; rootCause?: string }) {
+    return this.service.addFinding(id, user.tenantId, dto);
   }
 
   @Post('findings/:id/corrective-actions')
   addCorrectiveAction(
+    @CurrentUser() user: AuthContext,
     @Param('id') id: string,
     @Body() dto: { planDescription: string; responsiblePersonnelId?: string; dueDate?: string },
   ) {
-    return this.service.addCorrectiveAction(id, dto);
+    return this.service.addCorrectiveAction(id, user.tenantId, dto);
   }
 
   @Post('corrective-actions/:id/close')
-  closeCorrectiveAction(@Param('id') id: string) {
-    return this.service.closeCorrectiveAction(id);
+  closeCorrectiveAction(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.closeCorrectiveAction(id, user.tenantId);
   }
 }

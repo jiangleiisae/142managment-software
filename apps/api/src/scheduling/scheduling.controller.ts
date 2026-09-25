@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { BookingResourceType } from '@prisma/client';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { SchedulingService } from './scheduling.service.js';
 
 @Controller('bookings')
@@ -10,6 +12,7 @@ export class SchedulingController {
   create(
     @Body()
     dto: {
+      organizationId: string;
       resourceType: BookingResourceType;
       resourceId: string;
       startAt: string;
@@ -23,14 +26,15 @@ export class SchedulingController {
 
   @Get()
   findByResource(
+    @CurrentUser() user: AuthContext,
     @Query('resourceType') resourceType: BookingResourceType,
     @Query('resourceId') resourceId: string,
   ) {
-    return this.schedulingService.findByResource(resourceType, resourceId);
+    return this.schedulingService.findByResource(resourceType, resourceId, user.tenantId);
   }
 
   @Post(':id/cancel')
-  cancel(@Param('id') id: string) {
-    return this.schedulingService.cancel(id);
+  cancel(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.schedulingService.cancel(id, user.tenantId);
   }
 }

@@ -27,7 +27,14 @@ export class ManagementSystemService {
     });
   }
 
-  endRoleAssignment(id: string) {
+  async endRoleAssignment(id: string, tenantId: string) {
+    const assignment = await this.prisma.personnelRoleAssignment.findUnique({
+      where: { id },
+      include: { organization: true },
+    });
+    if (!assignment || assignment.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Role assignment ${id} not found`);
+    }
     return this.prisma.personnelRoleAssignment.update({ where: { id }, data: { endDate: new Date() } });
   }
 
@@ -55,15 +62,22 @@ export class ManagementSystemService {
     });
   }
 
-  /// 找出尚未上报且已临近/超过72小时时限的强制性事件 (供二期告警任务调用)
-  async findOverdueOccurrenceReports() {
+  /// 找出尚未上报且已临近/超过72小时时限的强制性事件, 限定在当前租户范围内 (此前漏了租户过滤, 已修复)
+  async findOverdueOccurrenceReports(tenantId: string) {
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
     return this.prisma.occurrenceReport.findMany({
-      where: { isMandatory: true, reportedAt: null, discoveredAt: { lte: cutoff72h } },
+      where: {
+        isMandatory: true,
+        reportedAt: null,
+        discoveredAt: { lte: cutoff72h },
+        organization: { tenantId },
+      },
     });
   }
 
-  markOccurrenceReported(id: string, reportedTo: string) {
+  async markOccurrenceReported(id: string, tenantId: string, reportedTo: string) {
+    const report = await this.prisma.occurrenceReport.findUnique({ where: { id }, include: { organization: true } });
+    if (!report || report.organization.tenantId !== tenantId) throw new NotFoundException(`Occurrence report ${id} not found`);
     return this.prisma.occurrenceReport.update({
       where: { id },
       data: { reportedAt: new Date(), reportedTo },
@@ -90,19 +104,60 @@ export class ManagementSystemService {
     });
   }
 
-  createAuditTask(auditScheduleId: string, data: { auditorId?: string; scope: string }) {
+  private async findAuditScheduleOrThrow(auditScheduleId: string, tenantId: string) {
+    const schedule = await this.prisma.auditSchedule.findUnique({
+      where: { id: auditScheduleId },
+      include: { organization: true },
+    });
+    if (!schedule || schedule.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Audit schedule ${auditScheduleId} not found`);
+    }
+    return schedule;
+  }
+
+  private async findAuditTaskOrThrow(auditTaskId: string, tenantId: string) {
+    const task = await this.prisma.auditTask.findUnique({
+      where: { id: auditTaskId },
+      include: { auditSchedule: { include: { organization: true } } },
+    });
+    if (!task || task.auditSchedule.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Audit task ${auditTaskId} not found`);
+    }
+    return task;
+  }
+
+  private async findFindingOrThrow(findingId: string, tenantId: string) {
+    const finding = await this.prisma.finding.findUnique({
+      where: { id: findingId },
+      include: { auditTask: { include: { auditSchedule: { include: { organization: true } } } } },
+    });
+    if (!finding || finding.auditTask.auditSchedule.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Finding ${findingId} not found`);
+    }
+    return finding;
+  }
+
+  async createAuditTask(auditScheduleId: string, tenantId: string, data: { auditorId?: string; scope: string }) {
+    await this.findAuditScheduleOrThrow(auditScheduleId, tenantId);
     return this.prisma.auditTask.create({ data: { auditScheduleId, ...data } });
   }
 
-  completeAuditTask(id: string) {
+  async completeAuditTask(id: string, tenantId: string) {
+    await this.findAuditTaskOrThrow(id, tenantId);
     return this.prisma.auditTask.update({ where: { id }, data: { status: 'completed', performedAt: new Date() } });
   }
 
-  addFinding(auditTaskId: string, data: { level: number; description: string; rootCause?: string }) {
+  async addFinding(auditTaskId: string, tenantId: string, data: { level: number; description: string; rootCause?: string }) {
+    await this.findAuditTaskOrThrow(auditTaskId, tenantId);
     return this.prisma.finding.create({ data: { auditTaskId, ...data } });
   }
 
-  addCorrectiveAction(findingId: string, data: { planDescription: string; responsiblePersonnelId?: string; dueDate?: string }) {
+  async addCorrectiveAction(
+    findingId: string,
+    tenantId: string,
+    data: { planDescription: string; responsiblePersonnelId?: string; dueDate?: string },
+  ) {
+    await this.findFindingOrThrow(findingId, tenantId);
     return this.prisma.correctiveAction.create({
       data: {
         findingId,
@@ -113,9 +168,14 @@ export class ManagementSystemService {
     });
   }
 
-  async closeCorrectiveAction(id: string) {
-    const action = await this.prisma.correctiveAction.findUnique({ where: { id } });
-    if (!action) throw new NotFoundException(`CorrectiveAction ${id} not found`);
+  async closeCorrectiveAction(id: string, tenantId: string) {
+    const action = await this.prisma.correctiveAction.findUnique({
+      where: { id },
+      include: { finding: { include: { auditTask: { include: { auditSchedule: { include: { organization: true } } } } } } },
+    });
+    if (!action || action.finding.auditTask.auditSchedule.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`CorrectiveAction ${id} not found`);
+    }
     return this.prisma.correctiveAction.update({ where: { id }, data: { status: 'closed', closedAt: new Date() } });
   }
 }

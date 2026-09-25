@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CourseType, Prisma } from '@prisma/client';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { CourseService } from './course.service.js';
 
 @Controller('courses')
@@ -17,20 +19,21 @@ export class CourseController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.courseService.findOne(id);
+  findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.courseService.findOne(id, user.tenantId);
   }
 
   @Post(':id/approve')
-  approve(@Param('id') id: string) {
-    return this.courseService.approve(id);
+  approve(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.courseService.approve(id, user.tenantId);
   }
 
   @Post(':id/training-programme')
   setTrainingProgramme(
+    @CurrentUser() user: AuthContext,
     @Param('id') id: string,
     @Body() dto: { summary?: string; stagesJson?: Prisma.InputJsonValue; standardTasksJson?: Prisma.InputJsonValue },
   ) {
-    return this.courseService.setTrainingProgramme(id, dto);
+    return this.courseService.setTrainingProgramme(id, user.tenantId, dto);
   }
 }

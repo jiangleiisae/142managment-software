@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { StudentService } from './student.service.js';
 
 @Controller('students')
@@ -19,21 +21,22 @@ export class StudentController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.studentService.findOne(id);
+  findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.studentService.findOne(id, user.tenantId);
   }
 
   @Post(':id/enroll')
-  enroll(@Param('id') id: string, @Body() dto: { courseId: string }) {
-    return this.studentService.enroll(id, dto.courseId);
+  enroll(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { courseId: string }) {
+    return this.studentService.enroll(id, user.tenantId, dto.courseId);
   }
 
   @Post('enrollments/:enrollmentId/training-records')
   addTrainingRecord(
+    @CurrentUser() user: AuthContext,
     @Param('enrollmentId') enrollmentId: string,
     @Body()
     dto: { sessionDate: string; subject: string; progressNotes?: string; testScore?: string; assessedById?: string },
   ) {
-    return this.studentService.addTrainingRecord(enrollmentId, dto);
+    return this.studentService.addTrainingRecord(enrollmentId, user.tenantId, dto);
   }
 }

@@ -4,10 +4,6 @@ import { OrganizationType } from '@prisma/client';
 export class CreateOrganizationDto {
   @IsString()
   @MinLength(1)
-  tenantId!: string;
-
-  @IsString()
-  @MinLength(1)
   name!: string;
 
   @IsOptional()

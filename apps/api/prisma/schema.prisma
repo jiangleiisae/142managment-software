@@ -20,8 +20,32 @@ model Tenant {
   createdAt DateTime @default(now())
 
   organizations Organization[]
+  users         User[]
 
   @@map("tenants")
+}
+
+enum UserRole {
+  OWNER // 租户创建者/最高权限
+  ADMIN
+  STAFF
+}
+
+/// 登录账号 (认证主体), 与 Personnel (航空业务人员档案) 是可选的一对一关联而非同一实体——
+/// 不是每个登录账号都对应一名受监管的航空人员(如纯IT管理员), 也不是每个Personnel都需要登录权限
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(STAFF)
+  personnelId  String?  @unique
+  createdAt    DateTime @default(now())
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  personnel Personnel? @relation(fields: [personnelId], references: [id])
+
+  @@map("users")
 }
 
 /// 通用审计轨迹, 覆盖所有需要"可追溯/防篡改"的实体变更 (ORA.GEN.220)
@@ -119,6 +143,7 @@ model Organization {
   auditSchedules       AuditSchedule[]
   occurrenceReports    OccurrenceReport[]
   contracts            ContractRecord[]
+  bookings             Booking[]
 
   @@map("organizations")
 }
@@ -492,6 +517,7 @@ model Personnel {
   roleAssignments   PersonnelRoleAssignment[]
   instructorProfile InstructorProfile?
   qualifications    QualificationRecord[]
+  user              User?
 
   @@map("personnel")
 }
@@ -637,15 +663,18 @@ enum BookingResourceType {
 }
 
 model Booking {
-  id           String              @id @default(cuid())
-  resourceType BookingResourceType
-  resourceId   String // Fstd.id / classroom id / Personnel.id, 视 resourceType 而定
-  courseId     String?
-  studentId    String?
-  startAt      DateTime
-  endAt        DateTime
-  status       String              @default("confirmed") // confirmed / cancelled
-  createdAt    DateTime            @default(now())
+  id             String              @id @default(cuid())
+  organizationId String // 补充: 租户隔离校验需要, 排课资源始终归属某一机构
+  resourceType   BookingResourceType
+  resourceId     String // Fstd.id / classroom id / Personnel.id, 视 resourceType 而定
+  courseId       String?
+  studentId      String?
+  startAt        DateTime
+  endAt          DateTime
+  status         String              @default("confirmed") // confirmed / cancelled
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([resourceType, resourceId, startAt])
   @@map("bookings")

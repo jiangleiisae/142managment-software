@@ -5,8 +5,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class PersonnelService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: { tenantId: string; firstName: string; lastName: string; email?: string; phone?: string }) {
-    return this.prisma.personnel.create({ data });
+  create(tenantId: string, data: { firstName: string; lastName: string; email?: string; phone?: string }) {
+    return this.prisma.personnel.create({ data: { ...data, tenantId } });
   }
 
   findAll(tenantId: string) {
@@ -16,18 +16,19 @@ export class PersonnelService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, tenantId: string) {
     const person = await this.prisma.personnel.findUnique({
       where: { id },
       include: { qualifications: true, roleAssignments: true, instructorProfile: true },
     });
-    if (!person) throw new NotFoundException(`Personnel ${id} not found`);
+    if (!person || person.tenantId !== tenantId) throw new NotFoundException(`Personnel ${id} not found`);
     return person;
   }
 
   // 需求清单 3.5: 证照/资质记录 + 到期提醒 (提醒任务留待二期接入 BullMQ)
-  addQualification(
+  async addQualification(
     personnelId: string,
+    tenantId: string,
     data: {
       qualificationType: string;
       certificateNo?: string;
@@ -36,6 +37,7 @@ export class PersonnelService {
       validUntil?: string;
     },
   ) {
+    await this.findOne(personnelId, tenantId);
     return this.prisma.qualificationRecord.create({
       data: {
         personnelId,
@@ -48,12 +50,12 @@ export class PersonnelService {
     });
   }
 
-  /// 找出即将到期的资质记录 (供二期提醒引擎调用, 一期先提供查询接口)
-  findExpiringSoon(withinDays: number) {
+  /// 找出即将到期的资质记录 (供二期提醒引擎调用, 一期先提供查询接口), 限定在当前租户范围内
+  findExpiringSoon(tenantId: string, withinDays: number) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + withinDays);
     return this.prisma.qualificationRecord.findMany({
-      where: { validUntil: { lte: cutoff, gte: new Date() } },
+      where: { validUntil: { lte: cutoff, gte: new Date() }, personnel: { tenantId } },
       include: { personnel: true },
     });
   }

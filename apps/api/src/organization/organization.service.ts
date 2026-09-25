@@ -37,36 +37,40 @@ export class OrganizationService {
     });
   }
 
-  async create(dto: CreateOrganizationDto) {
-    const org = await this.prisma.organization.create({ data: dto });
-    await this.writeAuditLog(dto.tenantId, 'Organization', org.id, 'create', null, org);
-    return org;
+  create(tenantId: string, dto: CreateOrganizationDto) {
+    return this.prisma.organization
+      .create({ data: { ...dto, tenantId } })
+      .then(async (org) => {
+        await this.writeAuditLog(tenantId, 'Organization', org.id, 'create', null, org);
+        return org;
+      });
   }
 
   findAll(tenantId: string) {
     return this.prisma.organization.findMany({ where: { tenantId } });
   }
 
-  async findOne(id: string) {
+  /// 所有 :id 路由的统一入口: 先确认该机构确实属于调用者的租户, 否则视同不存在 (403/404都不泄露存在性时用404更保守)
+  async findOne(id: string, tenantId: string) {
     const org = await this.prisma.organization.findUnique({
       where: { id },
       include: { certificates: { include: { courseApprovals: true } } },
     });
-    if (!org) throw new NotFoundException(`Organization ${id} not found`);
+    if (!org || org.tenantId !== tenantId) throw new NotFoundException(`Organization ${id} not found`);
     return org;
   }
 
-  async update(id: string, dto: UpdateOrganizationDto) {
-    const before = await this.findOne(id);
+  async update(id: string, tenantId: string, dto: UpdateOrganizationDto) {
+    const before = await this.findOne(id, tenantId);
     const after = await this.prisma.organization.update({ where: { id }, data: dto });
-    await this.writeAuditLog(before.tenantId, 'Organization', id, 'update', before, after);
+    await this.writeAuditLog(tenantId, 'Organization', id, 'update', before, after);
     return after;
   }
 
   // ---- 3.1 证书管理 (EASA Form 143) ----
 
-  async addCertificate(organizationId: string, dto: CreateCertificateDto) {
-    const org = await this.findOne(organizationId);
+  async addCertificate(organizationId: string, tenantId: string, dto: CreateCertificateDto) {
+    const org = await this.findOne(organizationId, tenantId);
     const cert = await this.prisma.organizationCertificate.create({
       data: {
         organizationId,
@@ -82,21 +86,31 @@ export class OrganizationService {
     return cert;
   }
 
-  listCertificates(organizationId: string) {
+  async listCertificates(organizationId: string, tenantId: string) {
+    await this.findOne(organizationId, tenantId);
     return this.prisma.organizationCertificate.findMany({ where: { organizationId } });
   }
 
-  private async transitionCertificate(
-    certificateId: string,
-    targetStatus: CertificateStatus,
-    reason: string | undefined,
-    timestampField: 'suspendedAt' | 'revokedAt' | 'terminatedAt' | null,
-  ) {
+  /// certId 路由拿不到 organizationId, 需要反查证书所属机构再校验租户 (TenantGuard 覆盖不到这类路径)
+  private async findCertificateOrThrow(certificateId: string, tenantId: string) {
     const cert = await this.prisma.organizationCertificate.findUnique({
       where: { id: certificateId },
       include: { organization: true },
     });
-    if (!cert) throw new NotFoundException(`Certificate ${certificateId} not found`);
+    if (!cert || cert.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Certificate ${certificateId} not found`);
+    }
+    return cert;
+  }
+
+  private async transitionCertificate(
+    certificateId: string,
+    tenantId: string,
+    targetStatus: CertificateStatus,
+    reason: string | undefined,
+    timestampField: 'suspendedAt' | 'revokedAt' | 'terminatedAt' | null,
+  ) {
+    const cert = await this.findCertificateOrThrow(certificateId, tenantId);
 
     const allowed = ALLOWED_TRANSITIONS[cert.status];
     if (!allowed.includes(targetStatus)) {
@@ -115,7 +129,7 @@ export class OrganizationService {
     });
 
     await this.writeAuditLog(
-      cert.organization.tenantId,
+      tenantId,
       'OrganizationCertificate',
       certificateId,
       `status_change:${cert.status}->${targetStatus}`,
@@ -125,23 +139,19 @@ export class OrganizationService {
     return updated;
   }
 
-  /// 合规监督发现问题未按期整改 -> 暂停 (ORA.GEN.150 联动)
-  suspendCertificate(certificateId: string, reason?: string) {
-    return this.transitionCertificate(certificateId, CertificateStatus.SUSPENDED, reason, 'suspendedAt');
+  suspendCertificate(certificateId: string, tenantId: string, reason?: string) {
+    return this.transitionCertificate(certificateId, tenantId, CertificateStatus.SUSPENDED, reason, 'suspendedAt');
   }
 
-  /// 整改完成 -> 恢复持续有效
-  restoreCertificate(certificateId: string, reason?: string) {
-    return this.transitionCertificate(certificateId, CertificateStatus.ACTIVE, reason, null);
+  restoreCertificate(certificateId: string, tenantId: string, reason?: string) {
+    return this.transitionCertificate(certificateId, tenantId, CertificateStatus.ACTIVE, reason, null);
   }
 
-  /// 整改超期 -> 吊销
-  revokeCertificate(certificateId: string, reason?: string) {
-    return this.transitionCertificate(certificateId, CertificateStatus.REVOKED, reason, 'revokedAt');
+  revokeCertificate(certificateId: string, tenantId: string, reason?: string) {
+    return this.transitionCertificate(certificateId, tenantId, CertificateStatus.REVOKED, reason, 'revokedAt');
   }
 
-  /// 机构主动交回 -> 终止
-  terminateCertificate(certificateId: string, reason?: string) {
-    return this.transitionCertificate(certificateId, CertificateStatus.TERMINATED, reason, 'terminatedAt');
+  terminateCertificate(certificateId: string, tenantId: string, reason?: string) {
+    return this.transitionCertificate(certificateId, tenantId, CertificateStatus.TERMINATED, reason, 'terminatedAt');
   }
 }

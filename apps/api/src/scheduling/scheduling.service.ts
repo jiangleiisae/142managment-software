@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BookingResourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -25,6 +25,7 @@ export class SchedulingService {
   }
 
   async create(data: {
+    organizationId: string;
     resourceType: BookingResourceType;
     resourceId: string;
     startAt: string;
@@ -36,6 +37,7 @@ export class SchedulingService {
     const endAt = new Date(data.endAt);
     if (startAt >= endAt) throw new BadRequestException('startAt must be before endAt');
 
+    // organizationId 的租户归属已由全局 TenantGuard 校验
     await this.assertNoConflict(data.resourceType, data.resourceId, startAt, endAt);
 
     return this.prisma.booking.create({
@@ -43,14 +45,16 @@ export class SchedulingService {
     });
   }
 
-  findByResource(resourceType: BookingResourceType, resourceId: string) {
+  findByResource(resourceType: BookingResourceType, resourceId: string, tenantId: string) {
     return this.prisma.booking.findMany({
-      where: { resourceType, resourceId, status: 'confirmed' },
+      where: { resourceType, resourceId, status: 'confirmed', organization: { tenantId } },
       orderBy: { startAt: 'asc' },
     });
   }
 
-  cancel(id: string) {
+  async cancel(id: string, tenantId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id }, include: { organization: true } });
+    if (!booking || booking.organization.tenantId !== tenantId) throw new NotFoundException(`Booking ${id} not found`);
     return this.prisma.booking.update({ where: { id }, data: { status: 'cancelled' } });
   }
 }
