@@ -1,6 +1,8 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, Empty, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, DatePicker, Empty, Form, Input, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import type { EvaluationDueSoonItem, FstdChangeRequest, RecurrentEvaluation } from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
 import type { Fstd, FstdDeviceType, LegacyLevel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
@@ -10,24 +12,55 @@ const DEVICE_TYPES: FstdDeviceType[] = ['FFS', 'FTD', 'FNPT', 'BITD']
 const LEGACY_LEVELS: LegacyLevel[] = [
   'FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD',
 ]
+const CHANGE_TYPES = ['update', 'upgrade', 'major_modification', 'relocation', 'deactivation', 'transfer']
+
+const CR_STATUS_COLOR: Record<FstdChangeRequest['status'], string> = {
+  draft: 'default',
+  submitted: 'processing',
+  approved: 'green',
+  rejected: 'red',
+}
+
+interface FstdDetail extends Fstd {
+  evaluations?: RecurrentEvaluation[]
+  changeRequests?: FstdChangeRequest[]
+}
 
 export function FstdsPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
-  const [fstds, setFstds] = useState<Fstd[]>([])
+  const [fstds, setFstds] = useState<FstdDetail[]>([])
+  const [dueSoon, setDueSoon] = useState<EvaluationDueSoonItem[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const [form] = Form.useForm()
+  const [evalModalFstdId, setEvalModalFstdId] = useState<string>()
+  const [crModalFstdId, setCrModalFstdId] = useState<string>()
 
-  const load = () => {
+  const [form] = Form.useForm()
+  const [evalForm] = Form.useForm()
+  const [crForm] = Form.useForm()
+
+  const load = async () => {
     if (!selectedId) return
     setLoading(true)
-    fstdsApi
-      .list(selectedId)
-      .then(setFstds)
-      .finally(() => setLoading(false))
+    try {
+      const list = await fstdsApi.list(selectedId)
+      const detailed = await Promise.all(
+        list.map(async (f) => ({
+          ...f,
+          evaluations: await fstdsApi.listRecurrentEvaluations(f.id),
+          changeRequests: await fstdsApi.listChangeRequests(f.id),
+        })),
+      )
+      setFstds(detailed)
+    } finally {
+      setLoading(false)
+    }
+    fstdsApi.listEvaluationsDueSoon().then(setDueSoon)
   }
 
-  useEffect(load, [selectedId])
+  useEffect(() => {
+    load()
+  }, [selectedId])
 
   const handleCreate = async () => {
     if (!selectedId) return
@@ -39,6 +72,39 @@ export function FstdsPage() {
     load()
   }
 
+  const handleRecordEvaluation = async () => {
+    if (!evalModalFstdId) return
+    const values = await evalForm.validateFields()
+    await fstdsApi.recordRecurrentEvaluation(evalModalFstdId, {
+      periodStart: values.range[0].format('YYYY-MM-DD'),
+      periodEnd: values.range[1].format('YYYY-MM-DD'),
+      result: values.result,
+    })
+    message.success('周期性评估记录已保存, 下次到期日已自动计算')
+    setEvalModalFstdId(undefined)
+    evalForm.resetFields()
+    load()
+  }
+
+  const handleCreateChangeRequest = async () => {
+    if (!crModalFstdId) return
+    const values = await crForm.validateFields()
+    await fstdsApi.createChangeRequest(crModalFstdId, values)
+    message.success('变更请求已创建 (草稿), 请提交以通知主管机关')
+    setCrModalFstdId(undefined)
+    crForm.resetFields()
+    load()
+  }
+
+  const transitionChangeRequest = async (action: 'submit' | 'approve' | 'reject', crId: string) => {
+    const fn = { submit: fstdsApi.submitChangeRequest, approve: fstdsApi.approveChangeRequest, reject: fstdsApi.rejectChangeRequest }[
+      action
+    ]
+    await fn(crId)
+    message.success('状态已更新')
+    load()
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -47,13 +113,23 @@ export function FstdsPage() {
         <Empty description="请先创建并选择一个机构" />
       ) : (
         <>
+          {dueSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${dueSoon.length} 台设备的周期性评估即将到期或从未评估过, 请尽快安排 (需求清单3.3.5)`}
+              description={dueSoon.map((d) => d.deviceCode).join('、')}
+            />
+          )}
+
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               新增模拟机
             </Button>
           </Space>
 
-          <Table<Fstd>
+          <Table<FstdDetail>
             rowKey="id"
             loading={loading}
             dataSource={fstds}
@@ -67,12 +143,69 @@ export function FstdsPage() {
                 render: (v: Fstd['legacyLevel']) => (v ? <Tag color="blue">{v.level}</Tag> : '-'),
               },
               {
-                title: '已鉴定任务数',
-                dataIndex: 'qualifiedTasks',
-                render: (v: Fstd['qualifiedTasks']) => v?.length ?? 0,
+                title: '操作',
+                render: (_, fstd) => (
+                  <Space>
+                    <Button size="small" onClick={() => setEvalModalFstdId(fstd.id)}>
+                      记录周期评估
+                    </Button>
+                    <Button size="small" onClick={() => setCrModalFstdId(fstd.id)}>
+                      发起变更
+                    </Button>
+                  </Space>
+                ),
               },
-              { title: '状态', dataIndex: 'status' },
             ]}
+            expandable={{
+              expandedRowRender: (fstd) => (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <List
+                    header="周期性评估记录 (标准周期12个月, BITD为3年)"
+                    size="small"
+                    dataSource={fstd.evaluations ?? []}
+                    locale={{ emptyText: '尚未记录任何周期性评估' }}
+                    renderItem={(e) => (
+                      <List.Item>
+                        {new Date(e.periodStart).toLocaleDateString()} ~ {new Date(e.periodEnd).toLocaleDateString()}
+                        , 结果: {e.result ?? '-'}, 下次到期:{' '}
+                        <Tag color={e.nextDueDate && new Date(e.nextDueDate) < new Date() ? 'red' : 'default'}>
+                          {e.nextDueDate ? new Date(e.nextDueDate).toLocaleDateString() : '-'}
+                        </Tag>
+                      </List.Item>
+                    )}
+                  />
+                  <List
+                    header="变更请求 (draft → submitted → approved/rejected)"
+                    size="small"
+                    dataSource={fstd.changeRequests ?? []}
+                    locale={{ emptyText: '暂无变更请求' }}
+                    renderItem={(cr) => (
+                      <List.Item
+                        actions={[
+                          cr.status === 'draft' && (
+                            <Button key="submit" size="small" onClick={() => transitionChangeRequest('submit', cr.id)}>
+                              提交(通知主管机关)
+                            </Button>
+                          ),
+                          cr.status === 'submitted' && (
+                            <Button key="approve" size="small" type="primary" onClick={() => transitionChangeRequest('approve', cr.id)}>
+                              批准
+                            </Button>
+                          ),
+                          cr.status === 'submitted' && (
+                            <Button key="reject" size="small" danger onClick={() => transitionChangeRequest('reject', cr.id)}>
+                              驳回
+                            </Button>
+                          ),
+                        ].filter(Boolean)}
+                      >
+                        <Tag color={CR_STATUS_COLOR[cr.status]}>{cr.status}</Tag> {cr.changeType}: {cr.description}
+                      </List.Item>
+                    )}
+                  />
+                </Space>
+              ),
+            }}
           />
         </>
       )}
@@ -90,6 +223,44 @@ export function FstdsPage() {
           </Form.Item>
           <Form.Item name="legacyLevel" label="EASA 等级 (CS-FSTD(A) Issue 2)">
             <Select allowClear options={LEGACY_LEVELS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="记录周期性评估"
+        open={!!evalModalFstdId}
+        onOk={handleRecordEvaluation}
+        onCancel={() => setEvalModalFstdId(undefined)}
+      >
+        <Form form={evalForm} layout="vertical" initialValues={{ range: [dayjs().subtract(5, 'day'), dayjs()], result: 'pass' }}>
+          <Form.Item name="range" label="评估周期" rules={[{ required: true }]}>
+            <DatePicker.RangePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="result" label="结果" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'pass', label: '通过' },
+                { value: 'partial', label: '部分通过' },
+                { value: 'fail', label: '未通过' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="发起变更请求"
+        open={!!crModalFstdId}
+        onOk={handleCreateChangeRequest}
+        onCancel={() => setCrModalFstdId(undefined)}
+      >
+        <Form form={crForm} layout="vertical">
+          <Form.Item name="changeType" label="变更类型" rules={[{ required: true }]}>
+            <Select options={CHANGE_TYPES.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="description" label="变更说明">
+            <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>

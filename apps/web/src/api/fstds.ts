@@ -1,6 +1,31 @@
 import { apiClient } from './client'
 import type { Fstd, FstdDeviceType, LegacyLevel } from './types'
 
+export interface RecurrentEvaluation {
+  id: string
+  periodStart: string
+  periodEnd: string
+  evaluationType: string
+  result?: string | null
+  nextDueDate?: string | null
+}
+
+export interface FstdChangeRequest {
+  id: string
+  changeType: string
+  description?: string | null
+  status: 'draft' | 'submitted' | 'approved' | 'rejected'
+  notifiedAuthorityAt?: string | null
+  createdAt: string
+}
+
+export interface EvaluationDueSoonItem {
+  fstdId: string
+  deviceCode: string
+  nextDueDate?: string | null
+  lastResult?: string | null
+}
+
 export const fstdsApi = {
   list: (organizationId: string) => apiClient.get<Fstd[]>('/fstds', { params: { organizationId } }).then((r) => r.data),
 
@@ -19,4 +44,32 @@ export const fstdsApi = {
 
   reportDiscrepancy: (fstdId: string, data: { description: string; isMmi?: boolean }) =>
     apiClient.post(`/fstds/${fstdId}/discrepancies`, data).then((r) => r.data),
+
+  // ---- 3.3.5 周期性评估 ----
+
+  recordRecurrentEvaluation: (fstdId: string, data: { periodStart: string; periodEnd: string; result?: string }) =>
+    apiClient.post<RecurrentEvaluation>(`/fstds/${fstdId}/recurrent-evaluations`, data).then((r) => r.data),
+
+  listRecurrentEvaluations: (fstdId: string) =>
+    apiClient.get<RecurrentEvaluation[]>(`/fstds/${fstdId}/recurrent-evaluations`).then((r) => r.data),
+
+  listEvaluationsDueSoon: (withinDays = 60) =>
+    apiClient.get<EvaluationDueSoonItem[]>('/fstds/evaluations/due-soon', { params: { withinDays } }).then((r) => r.data),
+
+  // ---- 3.3.6 变更管理 ----
+
+  createChangeRequest: (fstdId: string, data: { changeType: string; description?: string }) =>
+    apiClient.post<FstdChangeRequest>(`/fstds/${fstdId}/change-requests`, data).then((r) => r.data),
+
+  listChangeRequests: (fstdId: string) =>
+    apiClient.get<FstdChangeRequest[]>(`/fstds/${fstdId}/change-requests`).then((r) => r.data),
+
+  submitChangeRequest: (crId: string) =>
+    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/submit`).then((r) => r.data),
+
+  approveChangeRequest: (crId: string) =>
+    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/approve`).then((r) => r.data),
+
+  rejectChangeRequest: (crId: string) =>
+    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/reject`).then((r) => r.data),
 }

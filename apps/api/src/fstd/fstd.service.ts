@@ -121,4 +121,98 @@ export class FstdService {
       },
     });
   }
+
+  // ---- 3.3.5 周期性评估: 标准周期12个月(BITD为3年), 评估窗口内完成即视为按时 ----
+
+  async recordRecurrentEvaluation(
+    fstdId: string,
+    tenantId: string,
+    data: { periodStart: string; periodEnd: string; evaluationType?: string; result?: string },
+  ) {
+    const fstd = await this.findFstdOrThrow(fstdId, tenantId);
+    const periodEnd = new Date(data.periodEnd);
+    const nextDueDate = new Date(periodEnd);
+    // BITD 标准周期3年, 其余(FFS/FTD/FNPT) 标准周期12个月 (需求清单3.3.5)
+    if (fstd.deviceType === 'BITD') {
+      nextDueDate.setFullYear(nextDueDate.getFullYear() + 3);
+    } else {
+      nextDueDate.setMonth(nextDueDate.getMonth() + 12);
+    }
+    return this.prisma.fstdRecurrentEvaluation.create({
+      data: {
+        fstdId,
+        periodStart: new Date(data.periodStart),
+        periodEnd,
+        evaluationType: data.evaluationType ?? 'standard',
+        result: data.result,
+        nextDueDate,
+      },
+    });
+  }
+
+  async listRecurrentEvaluations(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdRecurrentEvaluation.findMany({ where: { fstdId }, orderBy: { periodEnd: 'desc' } });
+  }
+
+  /// 找出评估窗口即将到期(或已过期)的设备, 每台设备只看最近一次评估记录 (供仪表盘/告警使用)
+  async findEvaluationsDueSoon(tenantId: string, withinDays = 60) {
+    const fstds = await this.prisma.fstd.findMany({
+      where: { organization: { tenantId }, status: 'active' },
+      include: { recurrentEvals: { orderBy: { periodEnd: 'desc' }, take: 1 } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return fstds
+      .filter((f) => {
+        const latest = f.recurrentEvals[0];
+        return !latest || (latest.nextDueDate && latest.nextDueDate <= cutoff); // 从未评估过的也算需要立即安排
+      })
+      .map((f) => ({
+        fstdId: f.id,
+        deviceCode: f.deviceCode,
+        nextDueDate: f.recurrentEvals[0]?.nextDueDate ?? null,
+        lastResult: f.recurrentEvals[0]?.result ?? null,
+      }));
+  }
+
+  // ---- 3.3.6 变更/改装/搬迁/停用: draft -> submitted(已通知主管机关) -> approved / rejected ----
+
+  async createChangeRequest(fstdId: string, tenantId: string, data: { changeType: string; description?: string }) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdChangeRequest.create({ data: { fstdId, ...data } });
+  }
+
+  async listChangeRequests(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdChangeRequest.findMany({ where: { fstdId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  private async findChangeRequestOrThrow(id: string, tenantId: string) {
+    const cr = await this.prisma.fstdChangeRequest.findUnique({
+      where: { id },
+      include: { fstd: { include: { organization: true } } },
+    });
+    if (!cr || cr.fstd.organization.tenantId !== tenantId) throw new NotFoundException(`Change request ${id} not found`);
+    return cr;
+  }
+
+  /// 提前告知主管机关 (需求清单3.3.6: EASA条文只要求"提前告知", FAA的21天等待期可作为默认SLA参考)
+  async submitChangeRequest(id: string, tenantId: string) {
+    await this.findChangeRequestOrThrow(id, tenantId);
+    return this.prisma.fstdChangeRequest.update({
+      where: { id },
+      data: { status: 'submitted', notifiedAuthorityAt: new Date() },
+    });
+  }
+
+  async approveChangeRequest(id: string, tenantId: string) {
+    await this.findChangeRequestOrThrow(id, tenantId);
+    return this.prisma.fstdChangeRequest.update({ where: { id }, data: { status: 'approved' } });
+  }
+
+  async rejectChangeRequest(id: string, tenantId: string) {
+    await this.findChangeRequestOrThrow(id, tenantId);
+    return this.prisma.fstdChangeRequest.update({ where: { id }, data: { status: 'rejected' } });
+  }
 }

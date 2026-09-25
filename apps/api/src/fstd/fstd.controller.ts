@@ -66,4 +66,56 @@ export class FstdController {
   ) {
     return this.fstdService.correctDiscrepancy(discrepancyId, user.tenantId, dto);
   }
+
+  // ---- 3.3.5 周期性评估 ----
+
+  @Post(':id/recurrent-evaluations')
+  recordRecurrentEvaluation(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { periodStart: string; periodEnd: string; evaluationType?: string; result?: string },
+  ) {
+    return this.fstdService.recordRecurrentEvaluation(id, user.tenantId, dto);
+  }
+
+  @Get(':id/recurrent-evaluations')
+  listRecurrentEvaluations(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listRecurrentEvaluations(id, user.tenantId);
+  }
+
+  @Get('evaluations/due-soon')
+  findEvaluationsDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.fstdService.findEvaluationsDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
+  // ---- 3.3.6 变更管理: draft -> submitted -> approved / rejected ----
+
+  @Post(':id/change-requests')
+  createChangeRequest(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { changeType: string; description?: string },
+  ) {
+    return this.fstdService.createChangeRequest(id, user.tenantId, dto);
+  }
+
+  @Get(':id/change-requests')
+  listChangeRequests(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listChangeRequests(id, user.tenantId);
+  }
+
+  @Post('change-requests/:crId/submit')
+  submitChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
+    return this.fstdService.submitChangeRequest(crId, user.tenantId);
+  }
+
+  @Post('change-requests/:crId/approve')
+  approveChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
+    return this.fstdService.approveChangeRequest(crId, user.tenantId);
+  }
+
+  @Post('change-requests/:crId/reject')
+  rejectChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
+    return this.fstdService.rejectChangeRequest(crId, user.tenantId);
+  }
 }
