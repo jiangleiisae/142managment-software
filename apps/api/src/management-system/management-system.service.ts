@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ManagementRoleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -177,5 +177,101 @@ export class ManagementSystemService {
       throw new NotFoundException(`CorrectiveAction ${id} not found`);
     }
     return this.prisma.correctiveAction.update({ where: { id }, data: { status: 'closed', closedAt: new Date() } });
+  }
+
+  // ---- SMS 风险管理闭环: hazard_register -> risk_assessment -> mitigation_action (ORA.GEN.200(a)(3)) ----
+
+  reportHazard(data: { organizationId: string; source: string; description: string; affectedArea?: string }) {
+    return this.prisma.hazardRegisterEntry.create({ data });
+  }
+
+  listHazards(organizationId: string) {
+    return this.prisma.hazardRegisterEntry.findMany({
+      where: { organizationId },
+      include: { riskAssessments: { include: { mitigations: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async findHazardOrThrow(hazardId: string, tenantId: string) {
+    const hazard = await this.prisma.hazardRegisterEntry.findUnique({
+      where: { id: hazardId },
+      include: { organization: true },
+    });
+    if (!hazard || hazard.organization.tenantId !== tenantId) throw new NotFoundException(`Hazard ${hazardId} not found`);
+    return hazard;
+  }
+
+  private async findRiskAssessmentOrThrow(riskAssessmentId: string, tenantId: string) {
+    const assessment = await this.prisma.riskAssessment.findUnique({
+      where: { id: riskAssessmentId },
+      include: { hazard: { include: { organization: true } } },
+    });
+    if (!assessment || assessment.hazard.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Risk assessment ${riskAssessmentId} not found`);
+    }
+    return assessment;
+  }
+
+  /// 风险矩阵: riskScore = probabilityLevel(1-5) x severityLevel(1-5), 分值越高优先级越高
+  async assessRisk(
+    hazardId: string,
+    tenantId: string,
+    data: { probabilityLevel: number; severityLevel: number; existingMitigation?: string; residualRiskLevel?: number },
+  ) {
+    await this.findHazardOrThrow(hazardId, tenantId);
+    if (data.probabilityLevel < 1 || data.probabilityLevel > 5 || data.severityLevel < 1 || data.severityLevel > 5) {
+      throw new BadRequestException('probabilityLevel 和 severityLevel 必须在 1-5 之间');
+    }
+    return this.prisma.riskAssessment.create({
+      data: {
+        hazardId,
+        probabilityLevel: data.probabilityLevel,
+        severityLevel: data.severityLevel,
+        riskScore: data.probabilityLevel * data.severityLevel,
+        existingMitigation: data.existingMitigation,
+        residualRiskLevel: data.residualRiskLevel,
+      },
+    });
+  }
+
+  async addMitigationAction(
+    riskAssessmentId: string,
+    tenantId: string,
+    data: { description: string; responsiblePersonnelId?: string; dueDate?: string },
+  ) {
+    await this.findRiskAssessmentOrThrow(riskAssessmentId, tenantId);
+    return this.prisma.mitigationAction.create({
+      data: {
+        riskAssessmentId,
+        description: data.description,
+        responsiblePersonnelId: data.responsiblePersonnelId,
+        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+      },
+    });
+  }
+
+  async closeMitigationAction(id: string, tenantId: string) {
+    const action = await this.prisma.mitigationAction.findUnique({
+      where: { id },
+      include: { riskAssessment: { include: { hazard: { include: { organization: true } } } } },
+    });
+    if (!action || action.riskAssessment.hazard.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`MitigationAction ${id} not found`);
+    }
+    return this.prisma.mitigationAction.update({ where: { id }, data: { status: 'closed' } });
+  }
+
+  /// 高风险且尚未被完全缓解的项 (含"一条缓解措施都还没有"这种最紧急的情况), 供仪表盘/告警使用。
+  /// 注意: 不能写成 mitigations.some(status != closed), 那样会把"零缓解措施"的高风险误判为已处理而漏掉。
+  async listOpenHighRisks(tenantId: string, riskScoreThreshold = 12) {
+    return this.prisma.riskAssessment.findMany({
+      where: {
+        riskScore: { gte: riskScoreThreshold },
+        hazard: { organization: { tenantId } },
+        OR: [{ mitigations: { none: {} } }, { mitigations: { some: { status: { not: 'closed' } } } }],
+      },
+      include: { hazard: true, mitigations: true },
+    });
   }
 }

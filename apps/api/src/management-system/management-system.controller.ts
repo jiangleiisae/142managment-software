@@ -96,4 +96,44 @@ export class ManagementSystemController {
   closeCorrectiveAction(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.service.closeCorrectiveAction(id, user.tenantId);
   }
+
+  // ---- SMS 风险管理闭环: 危险源 -> 风险评估 -> 缓解措施 ----
+
+  @Post('hazards')
+  reportHazard(@Body() dto: { organizationId: string; source: string; description: string; affectedArea?: string }) {
+    return this.service.reportHazard(dto);
+  }
+
+  @Get('hazards')
+  listHazards(@Query('organizationId') organizationId: string) {
+    return this.service.listHazards(organizationId);
+  }
+
+  @Post('hazards/:id/risk-assessments')
+  assessRisk(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { probabilityLevel: number; severityLevel: number; existingMitigation?: string; residualRiskLevel?: number },
+  ) {
+    return this.service.assessRisk(id, user.tenantId, dto);
+  }
+
+  @Post('risk-assessments/:id/mitigation-actions')
+  addMitigationAction(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { description: string; responsiblePersonnelId?: string; dueDate?: string },
+  ) {
+    return this.service.addMitigationAction(id, user.tenantId, dto);
+  }
+
+  @Post('mitigation-actions/:id/close')
+  closeMitigationAction(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.closeMitigationAction(id, user.tenantId);
+  }
+
+  @Get('risks/open-high')
+  listOpenHighRisks(@CurrentUser() user: AuthContext) {
+    return this.service.listOpenHighRisks(user.tenantId);
+  }
 }

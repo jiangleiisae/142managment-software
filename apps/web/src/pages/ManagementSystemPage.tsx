@@ -1,9 +1,9 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Empty, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
-import type { ManagementRoleType, OccurrenceReport, RoleAssignment } from '../api/managementSystem'
+import type { HazardRegisterEntry, ManagementRoleType, OccurrenceReport, RoleAssignment } from '../api/managementSystem'
 import { managementSystemApi } from '../api/managementSystem'
 import type { Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
@@ -19,20 +19,39 @@ const ROLES: ManagementRoleType[] = [
   'CTKI',
 ]
 
+/// 风险矩阵配色: riskScore = probabilityLevel x severityLevel (1-25)
+function riskColor(score: number) {
+  if (score >= 15) return 'red'
+  if (score >= 8) return 'orange'
+  return 'green'
+}
+
 export function ManagementSystemPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [roleAssignments, setRoleAssignments] = useState<RoleAssignment[]>([])
   const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [overdueOccurrences, setOverdueOccurrences] = useState<OccurrenceReport[]>([])
+  const [hazards, setHazards] = useState<HazardRegisterEntry[]>([])
+  const [openHighRiskCount, setOpenHighRiskCount] = useState(0)
+
   const [roleModalOpen, setRoleModalOpen] = useState(false)
   const [occurrenceModalOpen, setOccurrenceModalOpen] = useState(false)
+  const [hazardModalOpen, setHazardModalOpen] = useState(false)
+  const [riskModalHazardId, setRiskModalHazardId] = useState<string>()
+  const [mitigationModalRiskId, setMitigationModalRiskId] = useState<string>()
+
   const [roleForm] = Form.useForm()
   const [occurrenceForm] = Form.useForm()
+  const [hazardForm] = Form.useForm()
+  const [riskForm] = Form.useForm()
+  const [mitigationForm] = Form.useForm()
 
   const load = () => {
     if (!selectedId) return
     managementSystemApi.listRoleAssignments(selectedId).then(setRoleAssignments)
     managementSystemApi.listOverdueOccurrences().then(setOverdueOccurrences)
+    managementSystemApi.listHazards(selectedId).then(setHazards)
+    managementSystemApi.listOpenHighRisks().then((risks) => setOpenHighRiskCount(risks.length))
   }
 
   useEffect(load, [selectedId])
@@ -68,6 +87,45 @@ export function ManagementSystemPage() {
     load()
   }
 
+  const handleReportHazard = async () => {
+    if (!selectedId) return
+    const values = await hazardForm.validateFields()
+    await managementSystemApi.reportHazard({ organizationId: selectedId, ...values })
+    message.success('危险源已登记')
+    setHazardModalOpen(false)
+    hazardForm.resetFields()
+    load()
+  }
+
+  const handleAssessRisk = async () => {
+    if (!riskModalHazardId) return
+    const values = await riskForm.validateFields()
+    await managementSystemApi.assessRisk(riskModalHazardId, values)
+    message.success('风险评估已提交')
+    setRiskModalHazardId(undefined)
+    riskForm.resetFields()
+    load()
+  }
+
+  const handleAddMitigation = async () => {
+    if (!mitigationModalRiskId) return
+    const values = await mitigationForm.validateFields()
+    await managementSystemApi.addMitigationAction(mitigationModalRiskId, {
+      ...values,
+      dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
+    })
+    message.success('缓解措施已添加')
+    setMitigationModalRiskId(undefined)
+    mitigationForm.resetFields()
+    load()
+  }
+
+  const closeMitigation = async (id: string) => {
+    await managementSystemApi.closeMitigationAction(id)
+    message.success('缓解措施已关闭')
+    load()
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -82,6 +140,14 @@ export function ManagementSystemPage() {
               type="error"
               showIcon
               message={`有 ${overdueOccurrences.length} 起事件已超过72小时强制上报时限 (ORA.GEN.160), 请立即处理`}
+            />
+          )}
+          {openHighRiskCount > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${openHighRiskCount} 项高风险(评分≥12)尚未完成缓解措施, 建议优先处理`}
             />
           )}
 
@@ -116,8 +182,74 @@ export function ManagementSystemPage() {
                 登记事件
               </Button>
             }
+            style={{ marginBottom: 16 }}
           >
-            <p style={{ color: '#888' }}>下方展示全租户范围内已超时未上报的强制性事件, 需要立即跟进。</p>
+            <p style={{ color: '#888' }}>上方红色提示展示全租户范围内已超时未上报的强制性事件, 需要立即跟进。</p>
+          </Card>
+
+          <Card
+            title="风险管理: 危险源 → 风险评估 → 缓解措施 (ORA.GEN.200(a)(3) SMS核心)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setHazardModalOpen(true)}>
+                登记危险源
+              </Button>
+            }
+          >
+            <Table<HazardRegisterEntry>
+              rowKey="id"
+              dataSource={hazards}
+              columns={[
+                { title: '来源', dataIndex: 'source' },
+                { title: '危险源描述', dataIndex: 'description' },
+                { title: '涉及环节', dataIndex: 'affectedArea' },
+                {
+                  title: '操作',
+                  render: (_, hazard) => (
+                    <Button size="small" onClick={() => setRiskModalHazardId(hazard.id)}>
+                      做风险评估
+                    </Button>
+                  ),
+                },
+              ]}
+              expandable={{
+                expandedRowRender: (hazard) => (
+                  <List
+                    size="small"
+                    dataSource={hazard.riskAssessments ?? []}
+                    locale={{ emptyText: '尚未做风险评估' }}
+                    renderItem={(risk) => (
+                      <List.Item
+                        actions={[
+                          <Button key="add" size="small" onClick={() => setMitigationModalRiskId(risk.id)}>
+                            添加缓解措施
+                          </Button>,
+                        ]}
+                      >
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <Space>
+                            <Tag color={riskColor(risk.riskScore)}>
+                              风险评分 {risk.riskScore} (概率{risk.probabilityLevel} × 严重度{risk.severityLevel})
+                            </Tag>
+                          </Space>
+                          <Space wrap>
+                            {(risk.mitigations ?? []).map((m) => (
+                              <Tag
+                                key={m.id}
+                                color={m.status === 'closed' ? 'default' : 'processing'}
+                                onClick={() => m.status !== 'closed' && closeMitigation(m.id)}
+                                style={{ cursor: m.status !== 'closed' ? 'pointer' : 'default' }}
+                              >
+                                {m.description} [{m.status === 'closed' ? '已关闭' : '点击关闭'}]
+                              </Tag>
+                            ))}
+                          </Space>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ),
+              }}
+            />
           </Card>
         </>
       )}
@@ -152,6 +284,61 @@ export function ManagementSystemPage() {
           </Form.Item>
           <Form.Item name="discoveredAt" label="发现时间 (72小时倒计时起点)" rules={[{ required: true }]}>
             <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="登记危险源" open={hazardModalOpen} onOk={handleReportHazard} onCancel={() => setHazardModalOpen(false)}>
+        <Form form={hazardForm} layout="vertical" initialValues={{ source: 'internal_report' }}>
+          <Form.Item name="source" label="来源" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'internal_report', label: '内部报告' },
+                { value: 'audit', label: '审计发现' },
+                { value: 'occurrence', label: '来自事件报告' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="description" label="危险源描述" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="affectedArea" label="涉及运行环节">
+            <Input placeholder="如: 某型FSTD训练 / 某训练科目 / 某场地" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="风险评估 (概率 x 严重度矩阵)"
+        open={!!riskModalHazardId}
+        onOk={handleAssessRisk}
+        onCancel={() => setRiskModalHazardId(undefined)}
+      >
+        <Form form={riskForm} layout="vertical">
+          <Form.Item name="probabilityLevel" label="概率等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+            <InputNumber min={1} max={5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="severityLevel" label="严重度等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+            <InputNumber min={1} max={5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="existingMitigation" label="现有缓解措施说明">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="添加缓解措施"
+        open={!!mitigationModalRiskId}
+        onOk={handleAddMitigation}
+        onCancel={() => setMitigationModalRiskId(undefined)}
+      >
+        <Form form={mitigationForm} layout="vertical">
+          <Form.Item name="description" label="措施描述" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="dueDate" label="计划完成日期">
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
