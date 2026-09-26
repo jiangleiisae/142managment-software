@@ -4,6 +4,7 @@ import { AppLayout } from './layout/AppLayout'
 import { BookingsPage } from './pages/BookingsPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
+import { InventoryPage } from './pages/InventoryPage'
 import { LoginPage } from './pages/LoginPage'
 import { ManagementSystemPage } from './pages/ManagementSystemPage'
 import { OrganizationDetailPage } from './pages/OrganizationDetailPage'
@@ -25,6 +26,7 @@ function App() {
           <Route path="/organizations/:id" element={<OrganizationDetailPage />} />
           <Route path="/management-system" element={<ManagementSystemPage />} />
           <Route path="/fstds" element={<FstdsPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/courses" element={<CoursesPage />} />
           <Route path="/students" element={<StudentsPage />} />

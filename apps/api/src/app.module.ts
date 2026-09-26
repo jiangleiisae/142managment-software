@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
 import { TenantGuard } from './auth/tenant.guard.js';
 import { CourseModule } from './course/course.module.js';
 import { FstdModule } from './fstd/fstd.module.js';
+import { InventoryModule } from './inventory/inventory.module.js';
 import { ManagementSystemModule } from './management-system/management-system.module.js';
 import { OrganizationModule } from './organization/organization.module.js';
 import { PersonnelModule } from './personnel/personnel.module.js';
@@ -23,6 +24,7 @@ import { StudentModule } from './student/student.module.js';
     OrganizationModule,
     ManagementSystemModule,
     FstdModule,
+    InventoryModule,
     PersonnelModule,
     CourseModule,
     StudentModule,

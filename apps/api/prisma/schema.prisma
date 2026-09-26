@@ -144,6 +144,10 @@ model Organization {
   occurrenceReports    OccurrenceReport[]
   contracts            ContractRecord[]
   bookings             Booking[]
+  spareParts           SparePart[]
+  tools                Tool[]
+  suppliers            Supplier[]
+  purchaseOrders       PurchaseOrder[]
 
   @@map("organizations")
 }
@@ -499,6 +503,132 @@ model FstdChangeRequest {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_change_requests")
+}
+
+// ============================================================
+// 3.4 备件/工具/校准管理 (对标 Simorg Inventory & Tool)
+// ============================================================
+
+model SparePart {
+  id             String   @id @default(cuid())
+  organizationId String
+  partNumber     String
+  name           String
+  compatibleWith String? // 按配置树关联使用类型, 一期简化为文本描述, 如 "A320 FFS" / "通用"
+  unit           String  @default("pcs")
+  minQuantity    Int     @default(0)
+  currentQuantity Int    @default(0)
+  location       String?
+  createdAt      DateTime @default(now())
+
+  organization      Organization        @relation(fields: [organizationId], references: [id])
+  movements          PartMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
+
+  @@unique([organizationId, partNumber])
+  @@map("spare_parts")
+}
+
+enum PartMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+/// 备件出入库记录, currentQuantity 由此累计得出
+model PartMovement {
+  id                  String           @id @default(cuid())
+  sparePartId         String
+  type                PartMovementType
+  quantity            Int // ADJUSTMENT 可为负数表示盘亏
+  relatedDiscrepancyId String? // 可关联到消耗该备件的缺陷维修记录 (DiscrepancyLog.id)
+  note                String?
+  performedAt         DateTime         @default(now())
+
+  sparePart SparePart @relation(fields: [sparePartId], references: [id])
+
+  @@map("part_movements")
+}
+
+model Tool {
+  id                       String   @id @default(cuid())
+  organizationId           String
+  toolCode                 String
+  name                     String
+  category                 String?
+  location                 String?
+  calibrationIntervalMonths Int     @default(12)
+  createdAt                DateTime @default(now())
+
+  organization Organization             @relation(fields: [organizationId], references: [id])
+  calibrations ToolCalibrationRecord[]
+
+  @@unique([organizationId, toolCode])
+  @@map("tools")
+}
+
+model ToolCalibrationRecord {
+  id            String    @id @default(cuid())
+  toolId        String
+  calibratedAt  DateTime
+  result        String    @default("pass") // pass / fail
+  nextDueDate   DateTime?
+  performedBy   String?
+  createdAt     DateTime  @default(now())
+
+  tool Tool @relation(fields: [toolId], references: [id])
+
+  @@map("tool_calibration_records")
+}
+
+model Supplier {
+  id              String  @id @default(cuid())
+  organizationId  String
+  name            String
+  serviceCategory String?
+  contactInfo     String?
+
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  purchaseOrders  PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id             String              @id @default(cuid())
+  organizationId String
+  supplierId     String
+  status         PurchaseOrderStatus @default(DRAFT)
+  createdAt      DateTime            @default(now())
+  approvedAt     DateTime?
+  receivedAt     DateTime?
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  items        PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  sparePartId     String
+  quantity        Int
+  unitPrice       Float?
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  sparePart     SparePart     @relation(fields: [sparePartId], references: [id])
+
+  @@map("purchase_order_items")
 }
 
 // ============================================================
