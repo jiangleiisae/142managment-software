@@ -274,4 +274,264 @@ export class ManagementSystemService {
       include: { hazard: true, mitigations: true },
     });
   }
+
+  // ---- 3.2.2 安全政策 (Safety Policy): 版本化, 须由负责人签署 ----
+
+  async addSafetyPolicy(data: { organizationId: string; version: string; policyText: string; effectiveDate: string }) {
+    await this.prisma.safetyPolicy.updateMany({
+      where: { organizationId: data.organizationId, supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    return this.prisma.safetyPolicy.create({
+      data: {
+        organizationId: data.organizationId,
+        version: data.version,
+        policyText: data.policyText,
+        effectiveDate: new Date(data.effectiveDate),
+      },
+    });
+  }
+
+  listSafetyPolicies(organizationId: string) {
+    return this.prisma.safetyPolicy.findMany({ where: { organizationId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  private async findSafetyPolicyOrThrow(id: string, tenantId: string) {
+    const policy = await this.prisma.safetyPolicy.findUnique({ where: { id }, include: { organization: true } });
+    if (!policy || policy.organization.tenantId !== tenantId) throw new NotFoundException(`Safety policy ${id} not found`);
+    return policy;
+  }
+
+  /// 安全政策须由现任负责人(Accountable Manager)签署才生效 (ORA.GEN.210(a) 负责人对安全负直接责任)
+  async signSafetyPolicy(id: string, tenantId: string, personnelId: string) {
+    const policy = await this.findSafetyPolicyOrThrow(id, tenantId);
+    const hasRole = await this.prisma.personnelRoleAssignment.findFirst({
+      where: { organizationId: policy.organizationId, personnelId, role: 'ACCOUNTABLE_MANAGER', endDate: null },
+    });
+    if (!hasRole) {
+      throw new BadRequestException(
+        `Personnel ${personnelId} does not currently hold the ACCOUNTABLE_MANAGER role for this organization`,
+      );
+    }
+    return this.prisma.safetyPolicy.update({ where: { id }, data: { signedById: personnelId, signedAt: new Date() } });
+  }
+
+  // ---- 3.2.2 变更管理 MOC: draft -> risk_assessed -> implemented -> verified ----
+
+  createMoc(data: { organizationId: string; changeDescription: string }) {
+    return this.prisma.managementOfChange.create({ data });
+  }
+
+  listMocs(organizationId: string) {
+    return this.prisma.managementOfChange.findMany({
+      where: { organizationId },
+      include: { riskAssessment: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async findMocOrThrow(id: string, tenantId: string) {
+    const moc = await this.prisma.managementOfChange.findUnique({ where: { id }, include: { organization: true } });
+    if (!moc || moc.organization.tenantId !== tenantId) throw new NotFoundException(`MOC ${id} not found`);
+    return moc;
+  }
+
+  /// 变更前必须完成风险评估才能进入实施阶段 (ORA.GEN.200(a)(3) 变更管理核心要求)
+  async attachRiskAssessmentToMoc(id: string, tenantId: string, riskAssessmentId: string) {
+    const moc = await this.findMocOrThrow(id, tenantId);
+    if (moc.status !== 'DRAFT') {
+      throw new BadRequestException(`Cannot attach risk assessment from status ${moc.status}`);
+    }
+    await this.findRiskAssessmentOrThrow(riskAssessmentId, tenantId);
+    return this.prisma.managementOfChange.update({
+      where: { id },
+      data: { riskAssessmentId, status: 'RISK_ASSESSED' },
+    });
+  }
+
+  async implementMoc(id: string, tenantId: string, implementationPlan: string) {
+    const moc = await this.findMocOrThrow(id, tenantId);
+    if (moc.status !== 'RISK_ASSESSED') {
+      throw new BadRequestException(`Cannot implement MOC from status ${moc.status}: risk assessment must be attached first`);
+    }
+    return this.prisma.managementOfChange.update({
+      where: { id },
+      data: { implementationPlan, status: 'IMPLEMENTED', implementedAt: new Date() },
+    });
+  }
+
+  async verifyMoc(id: string, tenantId: string, verificationNotes: string) {
+    const moc = await this.findMocOrThrow(id, tenantId);
+    if (moc.status !== 'IMPLEMENTED') {
+      throw new BadRequestException(`Cannot verify MOC from status ${moc.status}: must be implemented first`);
+    }
+    return this.prisma.managementOfChange.update({
+      where: { id },
+      data: { verificationNotes, status: 'VERIFIED', verifiedAt: new Date() },
+    });
+  }
+
+  // ---- 3.2.2 应急响应计划 ERP: 版本化预案 + 年度演练 ----
+
+  async addErpPlan(data: { organizationId: string; version: string; planText: string; effectiveDate: string }) {
+    await this.prisma.emergencyResponsePlan.updateMany({
+      where: { organizationId: data.organizationId, supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    return this.prisma.emergencyResponsePlan.create({
+      data: {
+        organizationId: data.organizationId,
+        version: data.version,
+        planText: data.planText,
+        effectiveDate: new Date(data.effectiveDate),
+      },
+    });
+  }
+
+  listErpPlans(organizationId: string) {
+    return this.prisma.emergencyResponsePlan.findMany({
+      where: { organizationId },
+      include: { drills: { orderBy: { drilledAt: 'desc' } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async findErpOrThrow(id: string, tenantId: string) {
+    const erp = await this.prisma.emergencyResponsePlan.findUnique({ where: { id }, include: { organization: true } });
+    if (!erp || erp.organization.tenantId !== tenantId) throw new NotFoundException(`ERP ${id} not found`);
+    return erp;
+  }
+
+  async recordErpDrill(erpId: string, tenantId: string, data: { drilledAt: string; scenario: string; outcome?: string }) {
+    await this.findErpOrThrow(erpId, tenantId);
+    const drilledAt = new Date(data.drilledAt);
+    const nextDueDate = new Date(drilledAt);
+    nextDueDate.setMonth(nextDueDate.getMonth() + 12);
+    return this.prisma.erpDrill.create({
+      data: { erpId, drilledAt, scenario: data.scenario, outcome: data.outcome, nextDueDate },
+    });
+  }
+
+  /// 找出演练即将到期(或已过期, 或从未演练过)的当前有效ERP (仪表盘告警, 镜像3.3.5周期性评估的模式)
+  async findErpDrillsDueSoon(tenantId: string, withinDays = 60) {
+    const erps = await this.prisma.emergencyResponsePlan.findMany({
+      where: { organization: { tenantId }, supersededAt: null },
+      include: { organization: true, drills: { orderBy: { drilledAt: 'desc' }, take: 1 } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return erps
+      .filter((e) => {
+        const latest = e.drills[0];
+        return !latest || latest.nextDueDate <= cutoff;
+      })
+      .map((e) => ({
+        erpId: e.id,
+        organizationName: e.organization.name,
+        nextDueDate: e.drills[0]?.nextDueDate ?? null,
+      }));
+  }
+
+  // ---- 3.2.2 安全绩效指标 SPI/SPT ----
+
+  createIndicator(data: {
+    organizationId: string;
+    name: string;
+    description?: string;
+    targetValue: number;
+    direction?: 'LOWER_IS_BETTER' | 'HIGHER_IS_BETTER';
+  }) {
+    return this.prisma.safetyPerformanceIndicator.create({
+      data: { ...data, direction: data.direction ?? 'LOWER_IS_BETTER' },
+    });
+  }
+
+  private async findIndicatorOrThrow(id: string, tenantId: string) {
+    const indicator = await this.prisma.safetyPerformanceIndicator.findUnique({
+      where: { id },
+      include: { organization: true },
+    });
+    if (!indicator || indicator.organization.tenantId !== tenantId) throw new NotFoundException(`SPI ${id} not found`);
+    return indicator;
+  }
+
+  async recordMeasurement(indicatorId: string, tenantId: string, data: { periodStart: string; periodEnd: string; value: number }) {
+    await this.findIndicatorOrThrow(indicatorId, tenantId);
+    return this.prisma.safetyPerformanceMeasurement.create({
+      data: {
+        indicatorId,
+        periodStart: new Date(data.periodStart),
+        periodEnd: new Date(data.periodEnd),
+        value: data.value,
+      },
+    });
+  }
+
+  /// 逐个指标判断最新一期采集值是否达标 (breach = 偏离目标方向错误的一侧, 而非简单的"低于目标值")
+  async listIndicatorsWithStatus(organizationId: string) {
+    const indicators = await this.prisma.safetyPerformanceIndicator.findMany({
+      where: { organizationId },
+      include: { measurements: { orderBy: { periodEnd: 'desc' }, take: 1 } },
+    });
+    return indicators.map((i) => {
+      const latest = i.measurements[0];
+      let breached = false;
+      if (latest) {
+        breached = i.direction === 'LOWER_IS_BETTER' ? latest.value > i.targetValue : latest.value < i.targetValue;
+      }
+      return {
+        id: i.id,
+        name: i.name,
+        description: i.description,
+        targetValue: i.targetValue,
+        direction: i.direction,
+        latestValue: latest?.value ?? null,
+        latestPeriodEnd: latest?.periodEnd ?? null,
+        breached,
+      };
+    });
+  }
+
+  // ---- 3.2.2 安全评审委员会 (复杂机构) ----
+
+  createSrbMeeting(data: { organizationId: string; meetingDate: string; attendeeRoles: string[]; agenda: string; decisions?: string }) {
+    return this.prisma.safetyReviewBoardMeeting.create({
+      data: { ...data, meetingDate: new Date(data.meetingDate) },
+    });
+  }
+
+  listSrbMeetings(organizationId: string) {
+    return this.prisma.safetyReviewBoardMeeting.findMany({
+      where: { organizationId },
+      include: { actions: true },
+      orderBy: { meetingDate: 'desc' },
+    });
+  }
+
+  private async findSrbMeetingOrThrow(id: string, tenantId: string) {
+    const meeting = await this.prisma.safetyReviewBoardMeeting.findUnique({ where: { id }, include: { organization: true } });
+    if (!meeting || meeting.organization.tenantId !== tenantId) throw new NotFoundException(`SRB meeting ${id} not found`);
+    return meeting;
+  }
+
+  async addSrbAction(meetingId: string, tenantId: string, data: { description: string; responsiblePersonnelId?: string; dueDate?: string }) {
+    await this.findSrbMeetingOrThrow(meetingId, tenantId);
+    return this.prisma.safetyReviewBoardAction.create({
+      data: {
+        meetingId,
+        description: data.description,
+        responsiblePersonnelId: data.responsiblePersonnelId,
+        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+      },
+    });
+  }
+
+  async closeSrbAction(id: string, tenantId: string) {
+    const action = await this.prisma.safetyReviewBoardAction.findUnique({
+      where: { id },
+      include: { meeting: { include: { organization: true } } },
+    });
+    if (!action || action.meeting.organization.tenantId !== tenantId) throw new NotFoundException(`SRB action ${id} not found`);
+    return this.prisma.safetyReviewBoardAction.update({ where: { id }, data: { status: 'closed' } });
+  }
 }

@@ -136,4 +136,132 @@ export class ManagementSystemController {
   listOpenHighRisks(@CurrentUser() user: AuthContext) {
     return this.service.listOpenHighRisks(user.tenantId);
   }
+
+  // ---- 3.2.2 安全政策 (Safety Policy) ----
+
+  @Post('safety-policies')
+  addSafetyPolicy(@Body() dto: { organizationId: string; version: string; policyText: string; effectiveDate: string }) {
+    return this.service.addSafetyPolicy(dto);
+  }
+
+  @Get('safety-policies')
+  listSafetyPolicies(@Query('organizationId') organizationId: string) {
+    return this.service.listSafetyPolicies(organizationId);
+  }
+
+  @Post('safety-policies/:id/sign')
+  signSafetyPolicy(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { personnelId: string }) {
+    return this.service.signSafetyPolicy(id, user.tenantId, dto.personnelId);
+  }
+
+  // ---- 3.2.2 变更管理 MOC ----
+
+  @Post('mocs')
+  createMoc(@Body() dto: { organizationId: string; changeDescription: string }) {
+    return this.service.createMoc(dto);
+  }
+
+  @Get('mocs')
+  listMocs(@Query('organizationId') organizationId: string) {
+    return this.service.listMocs(organizationId);
+  }
+
+  @Post('mocs/:id/risk-assessment')
+  attachRiskAssessmentToMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { riskAssessmentId: string }) {
+    return this.service.attachRiskAssessmentToMoc(id, user.tenantId, dto.riskAssessmentId);
+  }
+
+  @Post('mocs/:id/implement')
+  implementMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { implementationPlan: string }) {
+    return this.service.implementMoc(id, user.tenantId, dto.implementationPlan);
+  }
+
+  @Post('mocs/:id/verify')
+  verifyMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { verificationNotes: string }) {
+    return this.service.verifyMoc(id, user.tenantId, dto.verificationNotes);
+  }
+
+  // ---- 3.2.2 应急响应计划 ERP ----
+
+  @Post('erp-plans')
+  addErpPlan(@Body() dto: { organizationId: string; version: string; planText: string; effectiveDate: string }) {
+    return this.service.addErpPlan(dto);
+  }
+
+  @Get('erp-plans')
+  listErpPlans(@Query('organizationId') organizationId: string) {
+    return this.service.listErpPlans(organizationId);
+  }
+
+  @Post('erp-plans/:id/drills')
+  recordErpDrill(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { drilledAt: string; scenario: string; outcome?: string },
+  ) {
+    return this.service.recordErpDrill(id, user.tenantId, dto);
+  }
+
+  @Get('erp-plans/drills/due-soon')
+  findErpDrillsDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.service.findErpDrillsDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
+  // ---- 3.2.2 安全绩效指标 SPI/SPT ----
+
+  @Post('safety-indicators')
+  createIndicator(
+    @Body()
+    dto: {
+      organizationId: string;
+      name: string;
+      description?: string;
+      targetValue: number;
+      direction?: 'LOWER_IS_BETTER' | 'HIGHER_IS_BETTER';
+    },
+  ) {
+    return this.service.createIndicator(dto);
+  }
+
+  @Get('safety-indicators')
+  listIndicatorsWithStatus(@Query('organizationId') organizationId: string) {
+    return this.service.listIndicatorsWithStatus(organizationId);
+  }
+
+  @Post('safety-indicators/:id/measurements')
+  recordMeasurement(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { periodStart: string; periodEnd: string; value: number },
+  ) {
+    return this.service.recordMeasurement(id, user.tenantId, dto);
+  }
+
+  // ---- 3.2.2 安全评审委员会 (复杂机构) ----
+
+  @Post('srb-meetings')
+  createSrbMeeting(
+    @Body() dto: { organizationId: string; meetingDate: string; attendeeRoles: string[]; agenda: string; decisions?: string },
+  ) {
+    return this.service.createSrbMeeting(dto);
+  }
+
+  @Get('srb-meetings')
+  listSrbMeetings(@Query('organizationId') organizationId: string) {
+    return this.service.listSrbMeetings(organizationId);
+  }
+
+  @Post('srb-meetings/:id/actions')
+  addSrbAction(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { description: string; responsiblePersonnelId?: string; dueDate?: string },
+  ) {
+    return this.service.addSrbAction(id, user.tenantId, dto);
+  }
+
+  @Post('srb-actions/:id/close')
+  closeSrbAction(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.closeSrbAction(id, user.tenantId);
+  }
 }

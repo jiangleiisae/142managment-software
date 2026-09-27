@@ -149,6 +149,11 @@ model Organization {
   tools                Tool[]
   suppliers            Supplier[]
   purchaseOrders       PurchaseOrder[]
+  safetyPolicies             SafetyPolicy[]
+  managementOfChanges        ManagementOfChange[]
+  emergencyResponsePlans     EmergencyResponsePlan[]
+  safetyPerformanceIndicators SafetyPerformanceIndicator[]
+  safetyReviewBoardMeetings  SafetyReviewBoardMeeting[]
 
   @@map("organizations")
 }
@@ -274,6 +279,7 @@ model RiskAssessment {
 
   hazard    HazardRegisterEntry @relation(fields: [hazardId], references: [id])
   mitigations MitigationAction[]
+  changesUsingThisAssessment ManagementOfChange[]
 
   @@map("risk_assessments")
 }
@@ -289,6 +295,142 @@ model MitigationAction {
   riskAssessment RiskAssessment @relation(fields: [riskAssessmentId], references: [id])
 
   @@map("mitigation_actions")
+}
+
+/// 安全政策 (3.2.2 SMS核心要素2): 版本化, 新版本生效时旧版本自动标记为已替代; 须由负责人(Accountable Manager)签署
+model SafetyPolicy {
+  id             String    @id @default(cuid())
+  organizationId String
+  version        String
+  policyText     String
+  effectiveDate  DateTime
+  signedById     String? // Personnel.id, 应为负责人 Accountable Manager
+  signedAt       DateTime?
+  supersededAt   DateTime? // 被新版本替代的时间, null=当前生效版本
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("safety_policies")
+}
+
+/// 变更管理 MOC (3.2.2): draft -> risk_assessed -> implemented -> verified, 变更前必须完成风险评估才能实施
+enum MocStatus {
+  DRAFT
+  RISK_ASSESSED
+  IMPLEMENTED
+  VERIFIED
+}
+
+model ManagementOfChange {
+  id                  String    @id @default(cuid())
+  organizationId      String
+  changeDescription   String // 新课程/新设备/新场地等
+  status              MocStatus @default(DRAFT)
+  riskAssessmentId    String? // 变更前风险评估, 必须存在才能进入实施阶段
+  implementationPlan  String?
+  implementedAt       DateTime?
+  verificationNotes   String?
+  verifiedAt          DateTime?
+  createdAt           DateTime  @default(now())
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  riskAssessment RiskAssessment? @relation(fields: [riskAssessmentId], references: [id])
+
+  @@map("management_of_changes")
+}
+
+/// 应急响应计划 ERP (3.2.2): 版本化预案 + 演练记录, 标准演练周期12个月
+model EmergencyResponsePlan {
+  id             String    @id @default(cuid())
+  organizationId String
+  version        String
+  planText       String
+  effectiveDate  DateTime
+  supersededAt   DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  drills       ErpDrill[]
+
+  @@map("emergency_response_plans")
+}
+
+model ErpDrill {
+  id          String   @id @default(cuid())
+  erpId       String
+  drilledAt   DateTime
+  scenario    String
+  outcome     String?
+  nextDueDate DateTime // drilledAt + 12个月 (标准年度演练周期)
+  createdAt   DateTime @default(now())
+
+  erp EmergencyResponsePlan @relation(fields: [erpId], references: [id])
+
+  @@map("erp_drills")
+}
+
+/// 安全绩效指标 SPI/SPT (3.2.2): 指标定义+目标值, 周期采集值判断是否达标
+enum SpiDirection {
+  LOWER_IS_BETTER // 如: 事件率, 数值越低越好
+  HIGHER_IS_BETTER // 如: 培训完成率, 数值越高越好
+}
+
+model SafetyPerformanceIndicator {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  targetValue    Float // SPT (Safety Performance Target)
+  direction      SpiDirection @default(LOWER_IS_BETTER)
+  createdAt      DateTime     @default(now())
+
+  organization Organization                   @relation(fields: [organizationId], references: [id])
+  measurements SafetyPerformanceMeasurement[]
+
+  @@map("safety_performance_indicators")
+}
+
+model SafetyPerformanceMeasurement {
+  id          String   @id @default(cuid())
+  indicatorId String
+  periodStart DateTime
+  periodEnd   DateTime
+  value       Float
+  createdAt   DateTime @default(now())
+
+  indicator SafetyPerformanceIndicator @relation(fields: [indicatorId], references: [id])
+
+  @@map("safety_performance_measurements")
+}
+
+/// 安全评审委员会会议 (3.2.2, 复杂机构): 会议+决议+行动跟踪, 复用类似缓解措施的开闭状态
+model SafetyReviewBoardMeeting {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingDate    DateTime
+  attendeeRoles  String[] // ManagementRoleType 值的数组
+  agenda         String
+  decisions      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization              @relation(fields: [organizationId], references: [id])
+  actions      SafetyReviewBoardAction[]
+
+  @@map("safety_review_board_meetings")
+}
+
+model SafetyReviewBoardAction {
+  id                     String    @id @default(cuid())
+  meetingId              String
+  description            String
+  responsiblePersonnelId String?
+  dueDate                DateTime?
+  status                 String    @default("open") // open / closed
+
+  meeting SafetyReviewBoardMeeting @relation(fields: [meetingId], references: [id])
+
+  @@map("safety_review_board_actions")
 }
 
 /// 事件报告 (ORA.GEN.160), 72小时强制上报倒计时是核心告警需求

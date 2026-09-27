@@ -3,7 +3,19 @@ import { Alert, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List,
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
-import type { HazardRegisterEntry, ManagementRoleType, OccurrenceReport, RoleAssignment } from '../api/managementSystem'
+import type {
+  EmergencyResponsePlan,
+  ErpDrillDueSoonItem,
+  HazardRegisterEntry,
+  ManagementOfChange,
+  ManagementRoleType,
+  OccurrenceReport,
+  RoleAssignment,
+  SafetyIndicatorWithStatus,
+  SafetyPolicy,
+  SpiDirection,
+  SrbMeeting,
+} from '../api/managementSystem'
 import { managementSystemApi } from '../api/managementSystem'
 import type { RetentionStatusItem } from '../api/retention'
 import { retentionApi } from '../api/retention'
@@ -31,6 +43,13 @@ const ROLES: ManagementRoleType[] = [
   'CTKI',
 ]
 
+const MOC_STATUS_COLOR: Record<ManagementOfChange['status'], string> = {
+  DRAFT: 'default',
+  RISK_ASSESSED: 'processing',
+  IMPLEMENTED: 'orange',
+  VERIFIED: 'green',
+}
+
 /// 风险矩阵配色: riskScore = probabilityLevel x severityLevel (1-25)
 function riskColor(score: number) {
   if (score >= 15) return 'red'
@@ -46,18 +65,48 @@ export function ManagementSystemPage() {
   const [hazards, setHazards] = useState<HazardRegisterEntry[]>([])
   const [openHighRiskCount, setOpenHighRiskCount] = useState(0)
   const [retentionStatus, setRetentionStatus] = useState<RetentionStatusItem[]>([])
+  const [safetyPolicies, setSafetyPolicies] = useState<SafetyPolicy[]>([])
+  const [mocs, setMocs] = useState<ManagementOfChange[]>([])
+  const [erpPlans, setErpPlans] = useState<EmergencyResponsePlan[]>([])
+  const [erpDrillsDueSoon, setErpDrillsDueSoon] = useState<ErpDrillDueSoonItem[]>([])
+  const [indicators, setIndicators] = useState<SafetyIndicatorWithStatus[]>([])
+  const [srbMeetings, setSrbMeetings] = useState<SrbMeeting[]>([])
 
   const [roleModalOpen, setRoleModalOpen] = useState(false)
   const [occurrenceModalOpen, setOccurrenceModalOpen] = useState(false)
   const [hazardModalOpen, setHazardModalOpen] = useState(false)
   const [riskModalHazardId, setRiskModalHazardId] = useState<string>()
   const [mitigationModalRiskId, setMitigationModalRiskId] = useState<string>()
+  const [policyModalOpen, setPolicyModalOpen] = useState(false)
+  const [signPolicyModalId, setSignPolicyModalId] = useState<string>()
+  const [mocModalOpen, setMocModalOpen] = useState(false)
+  const [mocRiskModalId, setMocRiskModalId] = useState<string>()
+  const [mocImplementModalId, setMocImplementModalId] = useState<string>()
+  const [mocVerifyModalId, setMocVerifyModalId] = useState<string>()
+  const [erpModalOpen, setErpModalOpen] = useState(false)
+  const [drillModalErpId, setDrillModalErpId] = useState<string>()
+  const [indicatorModalOpen, setIndicatorModalOpen] = useState(false)
+  const [measurementModalIndicatorId, setMeasurementModalIndicatorId] = useState<string>()
+  const [srbModalOpen, setSrbModalOpen] = useState(false)
+  const [srbActionModalId, setSrbActionModalId] = useState<string>()
 
   const [roleForm] = Form.useForm()
   const [occurrenceForm] = Form.useForm()
   const [hazardForm] = Form.useForm()
   const [riskForm] = Form.useForm()
   const [mitigationForm] = Form.useForm()
+  const [policyForm] = Form.useForm()
+  const [signPolicyForm] = Form.useForm()
+  const [mocForm] = Form.useForm()
+  const [mocRiskForm] = Form.useForm()
+  const [mocImplementForm] = Form.useForm()
+  const [mocVerifyForm] = Form.useForm()
+  const [erpForm] = Form.useForm()
+  const [drillForm] = Form.useForm()
+  const [indicatorForm] = Form.useForm()
+  const [measurementForm] = Form.useForm()
+  const [srbForm] = Form.useForm()
+  const [srbActionForm] = Form.useForm()
 
   const load = () => {
     if (!selectedId) return
@@ -65,6 +114,12 @@ export function ManagementSystemPage() {
     managementSystemApi.listOverdueOccurrences().then(setOverdueOccurrences)
     managementSystemApi.listHazards(selectedId).then(setHazards)
     managementSystemApi.listOpenHighRisks().then((risks) => setOpenHighRiskCount(risks.length))
+    managementSystemApi.listSafetyPolicies(selectedId).then(setSafetyPolicies)
+    managementSystemApi.listMocs(selectedId).then(setMocs)
+    managementSystemApi.listErpPlans(selectedId).then(setErpPlans)
+    managementSystemApi.findErpDrillsDueSoon().then(setErpDrillsDueSoon)
+    managementSystemApi.listIndicatorsWithStatus(selectedId).then(setIndicators)
+    managementSystemApi.listSrbMeetings(selectedId).then(setSrbMeetings)
   }
 
   useEffect(load, [selectedId])
@@ -140,6 +195,178 @@ export function ManagementSystemPage() {
     load()
   }
 
+  const allRiskAssessments = hazards.flatMap((h) =>
+    (h.riskAssessments ?? []).map((r) => ({ id: r.id, label: `${h.description} - 风险评分${r.riskScore}` })),
+  )
+
+  const handleAddPolicy = async () => {
+    if (!selectedId) return
+    const values = await policyForm.validateFields()
+    await managementSystemApi.addSafetyPolicy({
+      organizationId: selectedId,
+      ...values,
+      effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
+    })
+    message.success('安全政策版本已登记, 旧版本已自动标记为已替代')
+    setPolicyModalOpen(false)
+    policyForm.resetFields()
+    load()
+  }
+
+  const handleSignPolicy = async () => {
+    if (!signPolicyModalId) return
+    const values = await signPolicyForm.validateFields()
+    try {
+      await managementSystemApi.signSafetyPolicy(signPolicyModalId, values.personnelId)
+      message.success('安全政策已签署')
+      setSignPolicyModalId(undefined)
+      signPolicyForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '签署失败, 该人员可能未持有负责人(Accountable Manager)角色')
+    }
+  }
+
+  const handleCreateMoc = async () => {
+    if (!selectedId) return
+    const values = await mocForm.validateFields()
+    await managementSystemApi.createMoc({ organizationId: selectedId, ...values })
+    message.success('变更管理(MOC)记录已创建, 需先完成变更前风险评估')
+    setMocModalOpen(false)
+    mocForm.resetFields()
+    load()
+  }
+
+  const handleAttachMocRisk = async () => {
+    if (!mocRiskModalId) return
+    const values = await mocRiskForm.validateFields()
+    try {
+      await managementSystemApi.attachRiskAssessmentToMoc(mocRiskModalId, values.riskAssessmentId)
+      message.success('已关联变更前风险评估, MOC进入风险已评估阶段')
+      setMocRiskModalId(undefined)
+      mocRiskForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleImplementMoc = async () => {
+    if (!mocImplementModalId) return
+    const values = await mocImplementForm.validateFields()
+    try {
+      await managementSystemApi.implementMoc(mocImplementModalId, values.implementationPlan)
+      message.success('MOC已标记为实施完成')
+      setMocImplementModalId(undefined)
+      mocImplementForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleVerifyMoc = async () => {
+    if (!mocVerifyModalId) return
+    const values = await mocVerifyForm.validateFields()
+    try {
+      await managementSystemApi.verifyMoc(mocVerifyModalId, values.verificationNotes)
+      message.success('MOC变更后验证已完成')
+      setMocVerifyModalId(undefined)
+      mocVerifyForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleAddErpPlan = async () => {
+    if (!selectedId) return
+    const values = await erpForm.validateFields()
+    await managementSystemApi.addErpPlan({
+      organizationId: selectedId,
+      ...values,
+      effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
+    })
+    message.success('应急响应计划版本已登记')
+    setErpModalOpen(false)
+    erpForm.resetFields()
+    load()
+  }
+
+  const handleRecordDrill = async () => {
+    if (!drillModalErpId) return
+    const values = await drillForm.validateFields()
+    await managementSystemApi.recordErpDrill(drillModalErpId, {
+      ...values,
+      drilledAt: values.drilledAt.format('YYYY-MM-DD'),
+    })
+    message.success('演练记录已保存, 下次到期日已自动计算(12个月)')
+    setDrillModalErpId(undefined)
+    drillForm.resetFields()
+    load()
+  }
+
+  const handleCreateIndicator = async () => {
+    if (!selectedId) return
+    const values = await indicatorForm.validateFields()
+    await managementSystemApi.createIndicator({ organizationId: selectedId, ...values })
+    message.success('安全绩效指标已创建')
+    setIndicatorModalOpen(false)
+    indicatorForm.resetFields()
+    load()
+  }
+
+  const handleRecordMeasurement = async () => {
+    if (!measurementModalIndicatorId) return
+    const values = await measurementForm.validateFields()
+    await managementSystemApi.recordMeasurement(measurementModalIndicatorId, {
+      periodStart: values.range[0].format('YYYY-MM-DD'),
+      periodEnd: values.range[1].format('YYYY-MM-DD'),
+      value: values.value,
+    })
+    message.success('采集值已记录')
+    setMeasurementModalIndicatorId(undefined)
+    measurementForm.resetFields()
+    load()
+  }
+
+  const handleCreateSrbMeeting = async () => {
+    if (!selectedId) return
+    const values = await srbForm.validateFields()
+    await managementSystemApi.createSrbMeeting({
+      organizationId: selectedId,
+      ...values,
+      meetingDate: values.meetingDate.format('YYYY-MM-DD'),
+    })
+    message.success('安全评审委员会会议记录已创建')
+    setSrbModalOpen(false)
+    srbForm.resetFields()
+    load()
+  }
+
+  const handleAddSrbAction = async () => {
+    if (!srbActionModalId) return
+    const values = await srbActionForm.validateFields()
+    await managementSystemApi.addSrbAction(srbActionModalId, {
+      ...values,
+      dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
+    })
+    message.success('行动项已添加')
+    setSrbActionModalId(undefined)
+    srbActionForm.resetFields()
+    load()
+  }
+
+  const closeSrbAction = async (id: string) => {
+    await managementSystemApi.closeSrbAction(id)
+    message.success('行动项已关闭')
+    load()
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -197,6 +424,27 @@ export function ManagementSystemPage() {
               type="warning"
               showIcon
               message={`有 ${openHighRiskCount} 项高风险(评分≥12)尚未完成缓解措施, 建议优先处理`}
+            />
+          )}
+          {erpDrillsDueSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${erpDrillsDueSoon.length} 个机构的应急响应演练即将到期或从未演练过 (3.2.2 ERP)`}
+              description={erpDrillsDueSoon.map((d) => d.organizationName).join('、')}
+            />
+          )}
+          {indicators.some((i) => i.breached) && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="error"
+              showIcon
+              message={`有 ${indicators.filter((i) => i.breached).length} 项安全绩效指标(SPI)最新采集值未达标 (3.2.2 SPI/SPT)`}
+              description={indicators
+                .filter((i) => i.breached)
+                .map((i) => `${i.name}: 最新值${i.latestValue} vs 目标${i.targetValue}`)
+                .join('; ')}
             />
           )}
 
@@ -300,6 +548,216 @@ export function ManagementSystemPage() {
               }}
             />
           </Card>
+
+          <Card
+            title="安全政策 Safety Policy (3.2.2 SMS核心要素2)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setPolicyModalOpen(true)}>
+                登记新版本
+              </Button>
+            }
+            style={{ marginTop: 16, marginBottom: 16 }}
+          >
+            <List
+              size="small"
+              dataSource={safetyPolicies}
+              locale={{ emptyText: '尚未登记安全政策' }}
+              renderItem={(p) => (
+                <List.Item
+                  actions={
+                    !p.signedAt
+                      ? [
+                          <Button key="sign" size="small" onClick={() => setSignPolicyModalId(p.id)}>
+                            签署
+                          </Button>,
+                        ]
+                      : []
+                  }
+                >
+                  <Tag color={p.supersededAt ? 'default' : 'green'}>{p.supersededAt ? '历史版本' : '当前版本'}</Tag>
+                  {p.version}
+                  <Tag color={p.signedAt ? 'blue' : 'orange'} style={{ marginLeft: 8 }}>
+                    {p.signedAt ? `已由负责人签署 ${new Date(p.signedAt).toLocaleDateString()}` : '待负责人签署'}
+                  </Tag>
+                  <span style={{ color: '#888', marginLeft: 8 }}>生效日期 {new Date(p.effectiveDate).toLocaleDateString()}</span>
+                </List.Item>
+              )}
+            />
+          </Card>
+
+          <Card
+            title="变更管理 MOC (3.2.2): draft → risk_assessed → implemented → verified"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setMocModalOpen(true)}>
+                发起变更
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <List
+              size="small"
+              dataSource={mocs}
+              locale={{ emptyText: '暂无变更管理记录' }}
+              renderItem={(m) => (
+                <List.Item
+                  actions={[
+                    m.status === 'DRAFT' && (
+                      <Button key="risk" size="small" onClick={() => setMocRiskModalId(m.id)}>
+                        关联风险评估
+                      </Button>
+                    ),
+                    m.status === 'RISK_ASSESSED' && (
+                      <Button key="impl" size="small" type="primary" onClick={() => setMocImplementModalId(m.id)}>
+                        标记已实施
+                      </Button>
+                    ),
+                    m.status === 'IMPLEMENTED' && (
+                      <Button key="verify" size="small" type="primary" onClick={() => setMocVerifyModalId(m.id)}>
+                        变更后验证
+                      </Button>
+                    ),
+                  ].filter(Boolean)}
+                >
+                  <Tag color={MOC_STATUS_COLOR[m.status]}>{m.status}</Tag>
+                  {m.changeDescription}
+                </List.Item>
+              )}
+            />
+          </Card>
+
+          <Card
+            title="应急响应计划 ERP (3.2.2, 标准演练周期12个月)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setErpModalOpen(true)}>
+                登记新版本
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <List
+              size="small"
+              dataSource={erpPlans}
+              locale={{ emptyText: '尚未登记应急响应计划' }}
+              renderItem={(e) => (
+                <List.Item
+                  actions={
+                    !e.supersededAt
+                      ? [
+                          <Button key="drill" size="small" onClick={() => setDrillModalErpId(e.id)}>
+                            记录演练
+                          </Button>,
+                        ]
+                      : []
+                  }
+                >
+                  <div style={{ width: '100%' }}>
+                    <Tag color={e.supersededAt ? 'default' : 'green'}>{e.supersededAt ? '历史版本' : '当前版本'}</Tag>
+                    {e.version}
+                    <span style={{ color: '#888', marginLeft: 8 }}>生效日期 {new Date(e.effectiveDate).toLocaleDateString()}</span>
+                    <div style={{ marginTop: 4 }}>
+                      {(e.drills ?? []).map((d) => (
+                        <Tag key={d.id} style={{ marginBottom: 4 }}>
+                          {new Date(d.drilledAt).toLocaleDateString()} {d.scenario} ({d.outcome ?? '-'}) 下次到期{' '}
+                          {new Date(d.nextDueDate).toLocaleDateString()}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </Card>
+
+          <Card
+            title="安全绩效指标 SPI/SPT (3.2.2)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setIndicatorModalOpen(true)}>
+                新增指标
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <Table<SafetyIndicatorWithStatus>
+              rowKey="id"
+              size="small"
+              dataSource={indicators}
+              pagination={false}
+              columns={[
+                { title: '指标名称', dataIndex: 'name' },
+                {
+                  title: '方向',
+                  dataIndex: 'direction',
+                  render: (v: SpiDirection) => (v === 'LOWER_IS_BETTER' ? '越低越好' : '越高越好'),
+                },
+                { title: '目标值 (SPT)', dataIndex: 'targetValue' },
+                { title: '最新采集值', dataIndex: 'latestValue', render: (v?: number | null) => v ?? '-' },
+                {
+                  title: '状态',
+                  render: (_, i) =>
+                    i.latestValue == null ? (
+                      <Tag>尚无采集值</Tag>
+                    ) : (
+                      <Tag color={i.breached ? 'red' : 'green'}>{i.breached ? '未达标' : '达标'}</Tag>
+                    ),
+                },
+                {
+                  title: '操作',
+                  render: (_, i) => (
+                    <Button size="small" onClick={() => setMeasurementModalIndicatorId(i.id)}>
+                      录入采集值
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          </Card>
+
+          <Card
+            title="安全评审委员会 Safety Review Board (3.2.2, 复杂机构)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setSrbModalOpen(true)}>
+                新增会议
+              </Button>
+            }
+          >
+            <List
+              size="small"
+              dataSource={srbMeetings}
+              locale={{ emptyText: '暂无会议记录' }}
+              renderItem={(m) => (
+                <List.Item
+                  actions={[
+                    <Button key="action" size="small" onClick={() => setSrbActionModalId(m.id)}>
+                      添加行动项
+                    </Button>,
+                  ]}
+                >
+                  <div style={{ width: '100%' }}>
+                    <span>
+                      {new Date(m.meetingDate).toLocaleDateString()} - {m.agenda}
+                    </span>
+                    <Space wrap style={{ marginLeft: 8 }}>
+                      {m.attendeeRoles.map((r) => (
+                        <Tag key={r}>{r}</Tag>
+                      ))}
+                    </Space>
+                    <div style={{ marginTop: 4 }}>
+                      {(m.actions ?? []).map((a) => (
+                        <Tag
+                          key={a.id}
+                          color={a.status === 'closed' ? 'default' : 'processing'}
+                          onClick={() => a.status !== 'closed' && closeSrbAction(a.id)}
+                          style={{ cursor: a.status !== 'closed' ? 'pointer' : 'default', marginBottom: 4 }}
+                        >
+                          {a.description} [{a.status === 'closed' ? '已关闭' : '点击关闭'}]
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </Card>
         </>
       )}
 
@@ -384,6 +842,196 @@ export function ManagementSystemPage() {
       >
         <Form form={mitigationForm} layout="vertical">
           <Form.Item name="description" label="措施描述" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="dueDate" label="计划完成日期">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="登记安全政策新版本" open={policyModalOpen} onOk={handleAddPolicy} onCancel={() => setPolicyModalOpen(false)}>
+        <Form form={policyForm} layout="vertical" initialValues={{ effectiveDate: dayjs() }}>
+          <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
+            <Input placeholder="如 v2.0" />
+          </Form.Item>
+          <Form.Item name="policyText" label="政策文本" rules={[{ required: true }]}>
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="签署安全政策 (须为负责人 Accountable Manager)"
+        open={!!signPolicyModalId}
+        onOk={handleSignPolicy}
+        onCancel={() => setSignPolicyModalId(undefined)}
+      >
+        <Form form={signPolicyForm} layout="vertical">
+          <Form.Item name="personnelId" label="签署人" rules={[{ required: true }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="发起变更管理 (MOC)" open={mocModalOpen} onOk={handleCreateMoc} onCancel={() => setMocModalOpen(false)}>
+        <Form form={mocForm} layout="vertical">
+          <Form.Item name="changeDescription" label="变更描述" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder="如: 引进新型A320 FTD设备" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="关联变更前风险评估"
+        open={!!mocRiskModalId}
+        onOk={handleAttachMocRisk}
+        onCancel={() => setMocRiskModalId(undefined)}
+      >
+        <Form form={mocRiskForm} layout="vertical">
+          <Form.Item name="riskAssessmentId" label="风险评估" rules={[{ required: true }]}>
+            <Select
+              placeholder={allRiskAssessments.length === 0 ? '请先在风险管理中完成一次风险评估' : undefined}
+              options={allRiskAssessments.map((r) => ({ value: r.id, label: r.label }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="标记MOC已实施"
+        open={!!mocImplementModalId}
+        onOk={handleImplementMoc}
+        onCancel={() => setMocImplementModalId(undefined)}
+      >
+        <Form form={mocImplementForm} layout="vertical">
+          <Form.Item name="implementationPlan" label="实施计划/说明" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="MOC变更后验证" open={!!mocVerifyModalId} onOk={handleVerifyMoc} onCancel={() => setMocVerifyModalId(undefined)}>
+        <Form form={mocVerifyForm} layout="vertical">
+          <Form.Item name="verificationNotes" label="验证结论" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder="如: 已运行两周, 各项指标正常" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="登记应急响应计划新版本"
+        open={erpModalOpen}
+        onOk={handleAddErpPlan}
+        onCancel={() => setErpModalOpen(false)}
+      >
+        <Form form={erpForm} layout="vertical" initialValues={{ effectiveDate: dayjs() }}>
+          <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
+            <Input placeholder="如 v2.0" />
+          </Form.Item>
+          <Form.Item name="planText" label="预案文本" rules={[{ required: true }]}>
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="记录应急演练" open={!!drillModalErpId} onOk={handleRecordDrill} onCancel={() => setDrillModalErpId(undefined)}>
+        <Form form={drillForm} layout="vertical" initialValues={{ drilledAt: dayjs() }}>
+          <Form.Item name="drilledAt" label="演练日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="scenario" label="演练场景" rules={[{ required: true }]}>
+            <Input placeholder="如: 火灾疏散演练" />
+          </Form.Item>
+          <Form.Item name="outcome" label="演练结果">
+            <Input placeholder="如: 通过 / 发现问题" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增安全绩效指标 (SPI/SPT)"
+        open={indicatorModalOpen}
+        onOk={handleCreateIndicator}
+        onCancel={() => setIndicatorModalOpen(false)}
+      >
+        <Form form={indicatorForm} layout="vertical" initialValues={{ direction: 'LOWER_IS_BETTER' }}>
+          <Form.Item name="name" label="指标名称" rules={[{ required: true }]}>
+            <Input placeholder="如: 每千小时事件率" />
+          </Form.Item>
+          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'LOWER_IS_BETTER', label: '越低越好 (如事件率)' },
+                { value: 'HIGHER_IS_BETTER', label: '越高越好 (如培训完成率)' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="targetValue" label="目标值 (SPT)" rules={[{ required: true }]}>
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="description" label="指标说明">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="录入采集值"
+        open={!!measurementModalIndicatorId}
+        onOk={handleRecordMeasurement}
+        onCancel={() => setMeasurementModalIndicatorId(undefined)}
+      >
+        <Form form={measurementForm} layout="vertical">
+          <Form.Item name="range" label="统计周期" rules={[{ required: true }]}>
+            <DatePicker.RangePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="value" label="采集值" rules={[{ required: true }]}>
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增安全评审委员会会议"
+        open={srbModalOpen}
+        onOk={handleCreateSrbMeeting}
+        onCancel={() => setSrbModalOpen(false)}
+      >
+        <Form form={srbForm} layout="vertical" initialValues={{ meetingDate: dayjs() }}>
+          <Form.Item name="meetingDate" label="会议日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="attendeeRoles" label="参会角色" rules={[{ required: true }]}>
+            <Select mode="multiple" options={ROLES.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="agenda" label="议题" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="decisions" label="决议">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="添加行动项"
+        open={!!srbActionModalId}
+        onOk={handleAddSrbAction}
+        onCancel={() => setSrbActionModalId(undefined)}
+      >
+        <Form form={srbActionForm} layout="vertical">
+          <Form.Item name="description" label="行动描述" rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
           <Form.Item name="dueDate" label="计划完成日期">
