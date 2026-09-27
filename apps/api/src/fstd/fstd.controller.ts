@@ -105,6 +105,28 @@ export class FstdController {
     return this.fstdService.findEvaluationsDueSoon(user.tenantId, Number(withinDays) || 60);
   }
 
+  // ---- 3.3.8 安全设施年检 ----
+
+  @Post(':id/safety-facility-checks')
+  recordSafetyFacilityCheck(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: { checkedAt: string; checkedById?: string; items: { item: string; passed: boolean; notes?: string }[] },
+  ) {
+    return this.fstdService.recordSafetyFacilityCheck(id, user.tenantId, dto);
+  }
+
+  @Get(':id/safety-facility-checks')
+  listSafetyFacilityChecks(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listSafetyFacilityChecks(id, user.tenantId);
+  }
+
+  @Get('safety-facility-checks/due-soon')
+  findSafetyChecksDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.fstdService.findSafetyChecksDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
   // ---- 3.3.6 变更管理: draft -> submitted -> approved / rejected ----
 
   @Post(':id/change-requests')

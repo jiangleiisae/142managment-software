@@ -1,14 +1,22 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
-import type { Discrepancy, EvaluationDueSoonItem, FstdChangeRequest, RecurrentEvaluation } from '../api/fstds'
+import type {
+  Discrepancy,
+  EvaluationDueSoonItem,
+  FstdChangeRequest,
+  RecurrentEvaluation,
+  SafetyCheckDueSoonItem,
+  SafetyFacilityCheck,
+} from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
 import type { Fstd, FstdDeviceType, LegacyLevel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
 const DEVICE_TYPES: FstdDeviceType[] = ['FFS', 'FTD', 'FNPT', 'BITD']
+const SAFETY_CHECK_ITEMS = ['急停按钮', '应急照明', '灭火器', '舱内通讯系统']
 const LEGACY_LEVELS: LegacyLevel[] = [
   'FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD',
 ]
@@ -25,6 +33,7 @@ interface FstdDetail extends Fstd {
   evaluations?: RecurrentEvaluation[]
   changeRequests?: FstdChangeRequest[]
   discrepancies?: Discrepancy[]
+  safetyChecks?: SafetyFacilityCheck[]
 }
 
 export function FstdsPage() {
@@ -32,18 +41,24 @@ export function FstdsPage() {
   const [fstds, setFstds] = useState<FstdDetail[]>([])
   const [dueSoon, setDueSoon] = useState<EvaluationDueSoonItem[]>([])
   const [overdueDiscrepancies, setOverdueDiscrepancies] = useState<Discrepancy[]>([])
+  const [safetyCheckDueSoon, setSafetyCheckDueSoon] = useState<SafetyCheckDueSoonItem[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [evalModalFstdId, setEvalModalFstdId] = useState<string>()
   const [crModalFstdId, setCrModalFstdId] = useState<string>()
   const [discrepancyModalFstdId, setDiscrepancyModalFstdId] = useState<string>()
   const [correctModalDiscrepancyId, setCorrectModalDiscrepancyId] = useState<string>()
+  const [safetyCheckModalFstdId, setSafetyCheckModalFstdId] = useState<string>()
+  const [safetyCheckItemState, setSafetyCheckItemState] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(SAFETY_CHECK_ITEMS.map((item) => [item, true])),
+  )
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
   const [crForm] = Form.useForm()
   const [discrepancyForm] = Form.useForm()
   const [correctForm] = Form.useForm()
+  const [safetyCheckForm] = Form.useForm()
 
   const load = async () => {
     if (!selectedId) return
@@ -56,6 +71,7 @@ export function FstdsPage() {
           evaluations: await fstdsApi.listRecurrentEvaluations(f.id),
           changeRequests: await fstdsApi.listChangeRequests(f.id),
           discrepancies: await fstdsApi.listDiscrepancies(f.id),
+          safetyChecks: await fstdsApi.listSafetyFacilityChecks(f.id),
         })),
       )
       setFstds(detailed)
@@ -64,6 +80,7 @@ export function FstdsPage() {
     }
     fstdsApi.listEvaluationsDueSoon().then(setDueSoon)
     fstdsApi.findOverdueDiscrepancies().then(setOverdueDiscrepancies)
+    fstdsApi.findSafetyChecksDueSoon().then(setSafetyCheckDueSoon)
   }
 
   useEffect(() => {
@@ -133,6 +150,28 @@ export function FstdsPage() {
     load()
   }
 
+  const openSafetyCheckModal = (fstdId: string) => {
+    setSafetyCheckItemState(Object.fromEntries(SAFETY_CHECK_ITEMS.map((item) => [item, true])))
+    safetyCheckForm.resetFields()
+    setSafetyCheckModalFstdId(fstdId)
+  }
+
+  const handleRecordSafetyCheck = async () => {
+    if (!safetyCheckModalFstdId) return
+    const values = await safetyCheckForm.validateFields()
+    await fstdsApi.recordSafetyFacilityCheck(safetyCheckModalFstdId, {
+      checkedAt: values.checkedAt.format('YYYY-MM-DD'),
+      items: SAFETY_CHECK_ITEMS.map((item) => ({
+        item,
+        passed: safetyCheckItemState[item],
+        notes: !safetyCheckItemState[item] ? values.notes : undefined,
+      })),
+    })
+    message.success('安全设施年检记录已保存 (3.3.8)')
+    setSafetyCheckModalFstdId(undefined)
+    load()
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -157,6 +196,15 @@ export function FstdsPage() {
               showIcon
               message={`有 ${overdueDiscrepancies.length} 项缺陷已超过30天修复时限仍未纠正 (3.3.7, 吸收FAA §60.25规则)`}
               description={overdueDiscrepancies.map((d) => `${d.fstd?.deviceCode ?? d.fstdId}: ${d.description}`).join('; ')}
+            />
+          )}
+          {safetyCheckDueSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${safetyCheckDueSoon.length} 台设备的安全设施年检即将到期或从未检查过 (3.3.8, ORA.FSTD.115(b))`}
+              description={safetyCheckDueSoon.map((d) => d.deviceCode).join('、')}
             />
           )}
 
@@ -191,6 +239,9 @@ export function FstdsPage() {
                     </Button>
                     <Button size="small" danger onClick={() => setDiscrepancyModalFstdId(fstd.id)}>
                       报告缺陷
+                    </Button>
+                    <Button size="small" onClick={() => openSafetyCheckModal(fstd.id)}>
+                      记录年检
                     </Button>
                   </Space>
                 ),
@@ -274,6 +325,34 @@ export function FstdsPage() {
                             报告于 {new Date(d.reportedAt).toLocaleString()}, 修复时限:{' '}
                             {d.dueDate ? new Date(d.dueDate).toLocaleDateString() : '-'}
                             {d.correctiveAction ? ` | 纠正措施: ${d.correctiveAction}` : ''}
+                          </span>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                  <List
+                    header="安全设施年检记录 (3.3.8, 标准周期12个月)"
+                    size="small"
+                    dataSource={fstd.safetyChecks ?? []}
+                    locale={{ emptyText: '尚未记录任何年检' }}
+                    renderItem={(c) => (
+                      <List.Item>
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Space wrap>
+                            <Tag color={c.overallResult === 'pass' ? 'green' : 'red'}>
+                              {c.overallResult === 'pass' ? '全部合格' : '发现问题'}
+                            </Tag>
+                            {c.itemsJson
+                              .filter((i) => !i.passed)
+                              .map((i) => (
+                                <Tag key={i.item} color="red">
+                                  {i.item}: {i.notes || '不合格'}
+                                </Tag>
+                              ))}
+                          </Space>
+                          <span style={{ color: '#888', fontSize: 12 }}>
+                            检查日期 {new Date(c.checkedAt).toLocaleDateString()}, 下次到期{' '}
+                            {new Date(c.nextDueDate).toLocaleDateString()}
                           </span>
                         </Space>
                       </List.Item>
@@ -378,6 +457,34 @@ export function FstdsPage() {
           <Form.Item name="correctiveAction" label="纠正措施" rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="记录安全设施年检 (3.3.8, ORA.FSTD.115(b))"
+        open={!!safetyCheckModalFstdId}
+        onOk={handleRecordSafetyCheck}
+        onCancel={() => setSafetyCheckModalFstdId(undefined)}
+      >
+        <Form form={safetyCheckForm} layout="vertical" initialValues={{ checkedAt: dayjs() }}>
+          <Form.Item name="checkedAt" label="检查日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          {SAFETY_CHECK_ITEMS.map((item) => (
+            <Form.Item key={item} label={item} style={{ marginBottom: 12 }}>
+              <Switch
+                checked={safetyCheckItemState[item]}
+                checkedChildren="合格"
+                unCheckedChildren="不合格"
+                onChange={(checked) => setSafetyCheckItemState((s) => ({ ...s, [item]: checked }))}
+              />
+            </Form.Item>
+          ))}
+          {Object.values(safetyCheckItemState).some((v) => !v) && (
+            <Form.Item name="notes" label="不合格项说明">
+              <Input.TextArea rows={2} />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

@@ -165,6 +165,11 @@ export class RetentionService implements OnModuleInit {
     });
     push('compliance_monitoring_finding', findings.map((f) => f.createdAt));
 
+    const safetyChecks = await this.prisma.fstdSafetyFacilityCheck.findMany({
+      where: { fstd: { organization: { tenantId } } },
+    });
+    push('fstd_safety_facility_check', safetyChecks.map((c) => c.createdAt));
+
     return results;
   }
 }

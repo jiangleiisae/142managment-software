@@ -26,6 +26,30 @@ export interface EvaluationDueSoonItem {
   lastResult?: string | null
 }
 
+export interface SafetyFacilityCheckItem {
+  item: string
+  passed: boolean
+  notes?: string
+}
+
+export interface SafetyFacilityCheck {
+  id: string
+  fstdId: string
+  checkedAt: string
+  checkedById?: string | null
+  itemsJson: SafetyFacilityCheckItem[]
+  overallResult: 'pass' | 'issues_found'
+  nextDueDate: string
+  createdAt: string
+}
+
+export interface SafetyCheckDueSoonItem {
+  fstdId: string
+  deviceCode: string
+  nextDueDate?: string | null
+  lastResult?: string | null
+}
+
 export interface Discrepancy {
   id: string
   fstdId: string
@@ -78,6 +102,21 @@ export const fstdsApi = {
 
   correctDiscrepancy: (discrepancyId: string, data: { correctiveAction: string; correctedById?: string }) =>
     apiClient.post<Discrepancy>(`/fstds/discrepancies/${discrepancyId}/correct`, data).then((r) => r.data),
+
+  // ---- 3.3.8 安全设施年检 ----
+
+  recordSafetyFacilityCheck: (
+    fstdId: string,
+    data: { checkedAt: string; checkedById?: string; items: SafetyFacilityCheckItem[] },
+  ) => apiClient.post<SafetyFacilityCheck>(`/fstds/${fstdId}/safety-facility-checks`, data).then((r) => r.data),
+
+  listSafetyFacilityChecks: (fstdId: string) =>
+    apiClient.get<SafetyFacilityCheck[]>(`/fstds/${fstdId}/safety-facility-checks`).then((r) => r.data),
+
+  findSafetyChecksDueSoon: (withinDays = 60) =>
+    apiClient
+      .get<SafetyCheckDueSoonItem[]>('/fstds/safety-facility-checks/due-soon', { params: { withinDays } })
+      .then((r) => r.data),
 
   // ---- 3.3.5 周期性评估 ----
 

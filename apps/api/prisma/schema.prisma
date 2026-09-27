@@ -415,6 +415,7 @@ model Fstd {
   legacyLevel     FstdLegacyLevel?
   qualifiedTasks  FstdQualifiedTask[]
   recurrentEvals  FstdRecurrentEvaluation[]
+  safetyFacilityChecks FstdSafetyFacilityCheck[]
   discrepancies   DiscrepancyLog[]
   changeRequests  FstdChangeRequest[]
 
@@ -471,6 +472,22 @@ model FstdRecurrentEvaluation {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_recurrent_evaluations")
+}
+
+/// 安全设施年检 (3.3.8, ORA.FSTD.115(b)): 急停/应急照明等, 每年至少检查一次并记录
+model FstdSafetyFacilityCheck {
+  id            String   @id @default(cuid())
+  fstdId        String
+  checkedAt     DateTime
+  checkedById   String? // Personnel.id
+  itemsJson     Json // [{ item: "急停按钮", passed: true, notes: string }, ...]
+  overallResult String // pass / issues_found
+  nextDueDate   DateTime // checkedAt + 12个月 (标准年度周期)
+  createdAt     DateTime @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_safety_facility_checks")
 }
 
 /// 缺陷/故障处理 (吸收FAA 30天规则 + Kiosk交互模式)

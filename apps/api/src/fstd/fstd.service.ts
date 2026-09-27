@@ -201,6 +201,56 @@ export class FstdService {
       }));
   }
 
+  // ---- 3.3.8 安全设施年检 (ORA.FSTD.115(b)): 急停/应急照明等, 标准周期12个月 ----
+
+  async recordSafetyFacilityCheck(
+    fstdId: string,
+    tenantId: string,
+    data: { checkedAt: string; checkedById?: string; items: { item: string; passed: boolean; notes?: string }[] },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    const checkedAt = new Date(data.checkedAt);
+    const nextDueDate = new Date(checkedAt);
+    nextDueDate.setMonth(nextDueDate.getMonth() + 12);
+    const overallResult = data.items.every((i) => i.passed) ? 'pass' : 'issues_found';
+    return this.prisma.fstdSafetyFacilityCheck.create({
+      data: {
+        fstdId,
+        checkedAt,
+        checkedById: data.checkedById,
+        itemsJson: data.items,
+        overallResult,
+        nextDueDate,
+      },
+    });
+  }
+
+  async listSafetyFacilityChecks(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdSafetyFacilityCheck.findMany({ where: { fstdId }, orderBy: { checkedAt: 'desc' } });
+  }
+
+  /// 找出安全设施年检即将到期(或已过期, 或从未检查过)的设备 (仪表盘告警, 镜像3.3.5周期性评估的模式)
+  async findSafetyChecksDueSoon(tenantId: string, withinDays = 60) {
+    const fstds = await this.prisma.fstd.findMany({
+      where: { organization: { tenantId }, status: 'active' },
+      include: { safetyFacilityChecks: { orderBy: { checkedAt: 'desc' }, take: 1 } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return fstds
+      .filter((f) => {
+        const latest = f.safetyFacilityChecks[0];
+        return !latest || latest.nextDueDate <= cutoff;
+      })
+      .map((f) => ({
+        fstdId: f.id,
+        deviceCode: f.deviceCode,
+        nextDueDate: f.safetyFacilityChecks[0]?.nextDueDate ?? null,
+        lastResult: f.safetyFacilityChecks[0]?.overallResult ?? null,
+      }));
+  }
+
   // ---- 3.3.6 变更/改装/搬迁/停用: draft -> submitted(已通知主管机关) -> approved / rejected ----
 
   async createChangeRequest(fstdId: string, tenantId: string, data: { changeType: string; description?: string }) {
