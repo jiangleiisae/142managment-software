@@ -5,6 +5,7 @@ import { BookingsPage } from './pages/BookingsPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
 import { InventoryPage } from './pages/InventoryPage'
+import { IsmsPage } from './pages/IsmsPage'
 import { KioskPage } from './pages/KioskPage'
 import { LoginPage } from './pages/LoginPage'
 import { ManagementSystemPage } from './pages/ManagementSystemPage'
@@ -33,6 +34,7 @@ function App() {
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/kiosk" element={<KioskPage />} />
+          <Route path="/isms" element={<IsmsPage />} />
         </Route>
       </Route>
     </Routes>

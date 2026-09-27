@@ -5,6 +5,7 @@ import {
   CalendarOutlined,
   DesktopOutlined,
   InboxOutlined,
+  LockOutlined,
   LogoutOutlined,
   RocketOutlined,
   TeamOutlined,
@@ -27,6 +28,7 @@ const menuItems: MenuProps['items'] = [
   { key: '/students', icon: <UserOutlined />, label: '学员记录' },
   { key: '/bookings', icon: <CalendarOutlined />, label: '排班预订' },
   { key: '/kiosk', icon: <DesktopOutlined />, label: '缺陷报告 Kiosk' },
+  { key: '/isms', icon: <LockOutlined />, label: '信息安全 ISMS' },
 ]
 
 export function AppLayout() {

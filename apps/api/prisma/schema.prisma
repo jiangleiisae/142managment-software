@@ -154,6 +154,8 @@ model Organization {
   emergencyResponsePlans     EmergencyResponsePlan[]
   safetyPerformanceIndicators SafetyPerformanceIndicator[]
   safetyReviewBoardMeetings  SafetyReviewBoardMeeting[]
+  informationAssets    InformationAsset[]
+  infoSecurityIncidents InfoSecurityIncident[]
 
   @@map("organizations")
 }
@@ -521,6 +523,92 @@ model ContractRecord {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@map("contract_records")
+}
+
+// ============================================================
+// 3.2.4 信息安全管理体系 ISMS ((EU) 2023/203, 2026-02-22起适用, 独立于Part-ORA的SMS)
+// ============================================================
+
+enum InfoAssetCriticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL // 直接影响飞行训练安全的资产 (如FSTD控制系统/学员资质数据库)
+}
+
+/// 信息资产清单
+model InformationAsset {
+  id               String               @id @default(cuid())
+  organizationId   String
+  name             String
+  category         String // 如: 数据库/网络设备/云服务/终端设备/第三方系统
+  criticality      InfoAssetCriticality @default(MEDIUM)
+  ownerPersonnelId String?
+  description      String?
+  createdAt        DateTime             @default(now())
+
+  organization    Organization                  @relation(fields: [organizationId], references: [id])
+  riskAssessments InfoSecurityRiskAssessment[]
+  incidents       InfoSecurityIncident[]
+
+  @@map("information_assets")
+}
+
+/// 信息安全风险评估: 复用SMS风险矩阵模式 (概率x影响), 保持系统内两套风险评估体验一致
+model InfoSecurityRiskAssessment {
+  id                String   @id @default(cuid())
+  assetId           String
+  likelihoodLevel   Int // 1-5
+  impactLevel       Int // 1-5
+  riskScore         Int // likelihoodLevel x impactLevel
+  existingControls  String?
+  residualRiskLevel Int?
+  assessedAt        DateTime @default(now())
+
+  asset       InformationAsset                @relation(fields: [assetId], references: [id])
+  mitigations InfoSecurityMitigationAction[]
+
+  @@map("info_security_risk_assessments")
+}
+
+model InfoSecurityMitigationAction {
+  id                     String    @id @default(cuid())
+  riskAssessmentId       String
+  description            String
+  responsiblePersonnelId String?
+  dueDate                DateTime?
+  status                 String    @default("open") // open / in_progress / closed
+
+  riskAssessment InfoSecurityRiskAssessment @relation(fields: [riskAssessmentId], references: [id])
+
+  @@map("info_security_mitigation_actions")
+}
+
+/// 信息安全事件响应: OPEN -> CONTAINED -> RESOLVED, 参照NIST事件响应流程(遏制先于解决)
+enum InfoSecurityIncidentStatus {
+  OPEN
+  CONTAINED
+  RESOLVED
+}
+
+model InfoSecurityIncident {
+  id              String                     @id @default(cuid())
+  organizationId  String
+  discoveredAt    DateTime
+  incidentType    String // 如: 未授权访问/数据泄露/勒索软件/系统中断/钓鱼攻击
+  description     String
+  affectedAssetId String?
+  severity        Int // 1-5
+  status          InfoSecurityIncidentStatus @default(OPEN)
+  responseActions String?
+  containedAt     DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime                   @default(now())
+
+  organization  Organization      @relation(fields: [organizationId], references: [id])
+  affectedAsset InformationAsset? @relation(fields: [affectedAssetId], references: [id])
+
+  @@map("info_security_incidents")
 }
 
 // ============================================================
