@@ -13,6 +13,7 @@ import { ManagementSystemModule } from './management-system/management-system.mo
 import { OrganizationModule } from './organization/organization.module.js';
 import { PersonnelModule } from './personnel/personnel.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { RetentionModule } from './retention/retention.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { StudentModule } from './student/student.module.js';
 
@@ -29,6 +30,7 @@ import { StudentModule } from './student/student.module.js';
     CourseModule,
     StudentModule,
     SchedulingModule,
+    RetentionModule,
   ],
   controllers: [AppController],
   providers: [

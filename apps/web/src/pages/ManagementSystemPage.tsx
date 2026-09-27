@@ -5,9 +5,21 @@ import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
 import type { HazardRegisterEntry, ManagementRoleType, OccurrenceReport, RoleAssignment } from '../api/managementSystem'
 import { managementSystemApi } from '../api/managementSystem'
+import type { RetentionStatusItem } from '../api/retention'
+import { retentionApi } from '../api/retention'
 import type { Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
+
+const DOCUMENT_TYPE_LABEL: Record<string, string> = {
+  default_fallback: '默认兜底 (未明确规定期限的记录)',
+  student_training_record: '学员训练记录',
+  personnel_qualification_record: '人员资质/经验记录',
+  fstd_initial_qualification: 'FSTD初始鉴定文件',
+  fstd_periodic_documentation: 'FSTD周期性复检文档',
+  fstd_safety_facility_check: 'FSTD安全设施年检记录',
+  compliance_monitoring_finding: '合规监督记录 (发现项/纠正措施)',
+}
 
 const ROLES: ManagementRoleType[] = [
   'ACCOUNTABLE_MANAGER',
@@ -33,6 +45,7 @@ export function ManagementSystemPage() {
   const [overdueOccurrences, setOverdueOccurrences] = useState<OccurrenceReport[]>([])
   const [hazards, setHazards] = useState<HazardRegisterEntry[]>([])
   const [openHighRiskCount, setOpenHighRiskCount] = useState(0)
+  const [retentionStatus, setRetentionStatus] = useState<RetentionStatusItem[]>([])
 
   const [roleModalOpen, setRoleModalOpen] = useState(false)
   const [occurrenceModalOpen, setOccurrenceModalOpen] = useState(false)
@@ -57,6 +70,7 @@ export function ManagementSystemPage() {
   useEffect(load, [selectedId])
   useEffect(() => {
     personnelApi.list().then(setPersonnel)
+    retentionApi.getComplianceStatus().then(setRetentionStatus)
   }, [])
 
   const handleAssignRole = async () => {
@@ -129,6 +143,41 @@ export function ManagementSystemPage() {
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
+
+      <Card
+        title="记录保存策略 (3.9 跨模块基础设施, 全租户范围)"
+        style={{ marginBottom: 16 }}
+      >
+        <p style={{ color: '#888' }}>
+          保存期限来自配置表而非硬编码; 满足最低保存期限前禁止物理删除, 到期后也仅表示"可归档"而非自动删除。
+        </p>
+        <Table<RetentionStatusItem>
+          rowKey="documentType"
+          size="small"
+          dataSource={retentionStatus}
+          pagination={false}
+          columns={[
+            { title: '记录类型', dataIndex: 'documentType', render: (v: string) => DOCUMENT_TYPE_LABEL[v] ?? v },
+            { title: '法规依据', dataIndex: 'basisRegulation' },
+            {
+              title: '保存期限',
+              dataIndex: 'retentionMonths',
+              render: (v?: number | null) => (v == null ? '设备/记录全生命周期' : `${(v / 12).toFixed(1)} 年`),
+            },
+            { title: '总数', dataIndex: 'totalCount' },
+            {
+              title: '强制保存中',
+              dataIndex: 'protectedCount',
+              render: (v: number) => <Tag color={v > 0 ? 'blue' : 'default'}>{v}</Tag>,
+            },
+            {
+              title: '已满期可归档',
+              dataIndex: 'eligibleForArchivalCount',
+              render: (v: number) => <Tag color={v > 0 ? 'orange' : 'default'}>{v}</Tag>,
+            },
+          ]}
+        />
+      </Card>
 
       {!selectedId ? (
         <Empty description="请先创建并选择一个机构" />

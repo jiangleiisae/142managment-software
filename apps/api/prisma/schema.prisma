@@ -105,6 +105,7 @@ model RecordRetentionPolicy {
   id              String   @id @default(cuid())
   documentType    String   @unique // 如 "student_training_record" / "fstd_mqtg" / "audit_finding"
   retentionMonths Int? // null = 永久保存 (如 MQTG/初始鉴定记录)
+  anchorEvent     String   @default("created_at") // 保存期起算点: "created_at" | "enrollment_completed_at"
   basisRegulation String? // 法规依据, 如 "ORA.ATO.120"
   description     String?
 
@@ -680,6 +681,7 @@ model QualificationRecord {
   validFrom       DateTime?
   validUntil      DateTime?
   reminderSentAt  DateTime?
+  createdAt       DateTime  @default(now())
 
   personnel Personnel @relation(fields: [personnelId], references: [id])
 
