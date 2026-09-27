@@ -36,4 +36,23 @@ export class CourseController {
   ) {
     return this.courseService.setTrainingProgramme(id, user.tenantId, dto);
   }
+
+  @Post(':id/requirements')
+  addRequirement(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { taskCode: string; taskName: string; minHours?: number },
+  ) {
+    return this.courseService.addRequirement(id, user.tenantId, dto);
+  }
+
+  @Get(':id/requirements')
+  listRequirements(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.courseService.listRequirements(id, user.tenantId);
+  }
+
+  @Get(':id/fstd-compatibility/:fstdId')
+  checkFstdCompatibility(@CurrentUser() user: AuthContext, @Param('id') id: string, @Param('fstdId') fstdId: string) {
+    return this.courseService.checkFstdCompatibility(id, fstdId, user.tenantId);
+  }
 }

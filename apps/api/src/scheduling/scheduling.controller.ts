@@ -19,6 +19,7 @@ export class SchedulingController {
       endAt: string;
       courseId?: string;
       studentId?: string;
+      taskCode?: string;
     },
   ) {
     return this.schedulingService.create(dto);

@@ -715,8 +715,23 @@ model Course {
   trainingProgramme  TrainingProgramme?
   courseApprovals    TrainingCourseApprovalAttachment[]
   enrollments        Enrollment[]
+  requirements       CourseRequirement[]
 
   @@map("courses")
+}
+
+/// 课程对训练科目的要求 (旧体系: 课程直接与设备等级/科目挂钩, 需求清单3.3.3/3.6)
+/// taskCode 与 FstdQualifiedTask.taskCode 使用同一套科目编号体系, 用于校验某设备是否满足课程全部要求
+model CourseRequirement {
+  id       String  @id @default(cuid())
+  courseId String
+  taskCode String
+  taskName String
+  minHours Float?
+
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@map("course_requirements")
 }
 
 /// ORA.ATO.125 训练大纲
@@ -799,6 +814,7 @@ model Booking {
   resourceId     String // Fstd.id / classroom id / Personnel.id, 视 resourceType 而定
   courseId       String?
   studentId      String?
+  taskCode       String? // resourceType=FSTD 时可指定具体训练科目, 用于校验该设备是否已鉴定该科目
   startAt        DateTime
   endAt          DateTime
   status         String              @default("confirmed") // confirmed / cancelled

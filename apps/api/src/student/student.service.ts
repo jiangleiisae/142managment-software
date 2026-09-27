@@ -87,4 +87,49 @@ export class StudentService {
       },
     });
   }
+
+  // ---- 学籍状态流转: active -> completed / withdrawn ----
+
+  private async findEnrollmentOrThrow(enrollmentId: string, tenantId: string) {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { student: { include: { organization: true } } },
+    });
+    if (!enrollment || enrollment.student.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Enrollment ${enrollmentId} not found`);
+    }
+    return enrollment;
+  }
+
+  async completeEnrollment(enrollmentId: string, tenantId: string) {
+    const enrollment = await this.findEnrollmentOrThrow(enrollmentId, tenantId);
+    if (enrollment.status !== 'active') {
+      throw new BadRequestException(`Cannot complete enrollment from status ${enrollment.status}`);
+    }
+    return this.prisma.enrollment.update({
+      where: { id: enrollmentId },
+      data: { status: 'completed', completedAt: new Date() },
+    });
+  }
+
+  async withdrawEnrollment(enrollmentId: string, tenantId: string) {
+    const enrollment = await this.findEnrollmentOrThrow(enrollmentId, tenantId);
+    if (enrollment.status !== 'active') {
+      throw new BadRequestException(`Cannot withdraw enrollment from status ${enrollment.status}`);
+    }
+    return this.prisma.enrollment.update({ where: { id: enrollmentId }, data: { status: 'withdrawn' } });
+  }
+
+  /// 体检证即将到期/已过期的学员 (镜像 FSTD评估到期/工具校准到期 的仪表盘告警模式, 支撑ORA.ATO.145前置条件校验)
+  async findExpiringMedicalCerts(tenantId: string, withinDays = 60) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return this.prisma.student.findMany({
+      where: {
+        organization: { tenantId },
+        medicalCertExpiry: { lte: cutoff },
+      },
+      orderBy: { medicalCertExpiry: 'asc' },
+    });
+  }
 }

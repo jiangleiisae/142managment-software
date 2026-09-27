@@ -1,18 +1,20 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, DatePicker, Empty, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Button, DatePicker, Empty, Form, Modal, Select, Space, Table, Tag, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { bookingsApi } from '../api/bookings'
 import { fstdsApi } from '../api/fstds'
-import type { Booking, BookingResourceType, Fstd } from '../api/types'
+import { studentsApi } from '../api/students'
+import type { Booking, BookingResourceType, Fstd, Student } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
 const { RangePicker } = DatePicker
 
-// 需求清单 3.8: 一期先做 FSTD 资源日历, 教室/教员资源留待后续扩展
+// 需求清单 3.8: 排课引擎强依赖设备能力(3.3)/学员前置条件(3.7)的实时校验, 校验逻辑全部在后端, 这里负责把结果透出给用户
 export function BookingsPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<Fstd[]>([])
+  const [students, setStudents] = useState<Student[]>([])
   const [selectedFstdId, setSelectedFstdId] = useState<string>()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(false)
@@ -25,6 +27,7 @@ export function BookingsPage() {
       setFstds(list)
       setSelectedFstdId(list[0]?.id)
     })
+    studentsApi.list(selectedId).then(setStudents)
   }, [selectedId])
 
   const load = () => {
@@ -38,6 +41,8 @@ export function BookingsPage() {
 
   useEffect(load, [selectedFstdId])
 
+  const selectedFstd = fstds.find((f) => f.id === selectedFstdId)
+
   const handleCreate = async () => {
     if (!selectedFstdId || !selectedId) return
     const values = await form.validateFields()
@@ -49,6 +54,8 @@ export function BookingsPage() {
         resourceId: selectedFstdId,
         startAt: startAt.toISOString(),
         endAt: endAt.toISOString(),
+        studentId: values.studentId,
+        taskCode: values.taskCode,
       })
       message.success('预订成功')
       setModalOpen(false)
@@ -56,7 +63,7 @@ export function BookingsPage() {
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '预订失败 (可能存在时间冲突)')
+      message.error(err.response?.data?.message ?? '预订失败')
     }
   }
 
@@ -95,6 +102,7 @@ export function BookingsPage() {
             columns={[
               { title: '开始时间', dataIndex: 'startAt', render: (v: string) => new Date(v).toLocaleString() },
               { title: '结束时间', dataIndex: 'endAt', render: (v: string) => new Date(v).toLocaleString() },
+              { title: '训练科目', dataIndex: 'taskCode', render: (v?: string) => (v ? <Tag color="blue">{v}</Tag> : '-') },
               { title: '状态', dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> },
               {
                 title: '操作',
@@ -114,8 +122,21 @@ export function BookingsPage() {
           <Form.Item name="range" label="时间段" rules={[{ required: true }]}>
             <RangePicker showTime style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item>
-            <Input disabled value="资源冲突会在后端自动校验并拒绝" />
+          <Form.Item name="taskCode" label="训练科目 (校验设备是否已鉴定该科目)">
+            <Select
+              allowClear
+              placeholder="不选则不校验具体科目"
+              options={(selectedFstd?.qualifiedTasks ?? []).map((t) => ({ value: t.taskCode, label: `${t.taskCode} - ${t.taskName}` }))}
+            />
+          </Form.Item>
+          <Form.Item name="studentId" label="学员 (校验体检证有效性, ORA.ATO.145)">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="不选则不校验学员前置条件"
+              options={students.map((s) => ({ value: s.id, label: `${s.lastName}${s.firstName}` }))}
+            />
           </Form.Item>
         </Form>
       </Modal>

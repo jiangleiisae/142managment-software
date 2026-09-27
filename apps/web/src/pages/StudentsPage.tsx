@@ -1,29 +1,48 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, DatePicker, Empty, Form, Input, Modal, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, DatePicker, Empty, Form, Input, List, Modal, Select, Space, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { coursesApi } from '../api/courses'
+import type { Enrollment, StudentDetail } from '../api/students'
 import { studentsApi } from '../api/students'
-import type { Student } from '../api/types'
+import type { Course } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
+const ENROLLMENT_STATUS_COLOR: Record<Enrollment['status'], string> = {
+  active: 'processing',
+  completed: 'green',
+  withdrawn: 'default',
+}
+
 export function StudentsPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
-  const [students, setStudents] = useState<Student[]>([])
+  const [students, setStudents] = useState<StudentDetail[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
+  const [expiringSoon, setExpiringSoon] = useState<StudentDetail[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [enrollModalStudentId, setEnrollModalStudentId] = useState<string>()
   const [form] = Form.useForm()
+  const [enrollForm] = Form.useForm()
 
-  const load = () => {
+  const load = async () => {
     if (!selectedId) return
     setLoading(true)
-    studentsApi
-      .list(selectedId)
-      .then(setStudents)
-      .finally(() => setLoading(false))
+    try {
+      const list = await studentsApi.list(selectedId)
+      const detailed = await Promise.all(list.map((s) => studentsApi.get(s.id)))
+      setStudents(detailed)
+    } finally {
+      setLoading(false)
+    }
+    coursesApi.list(selectedId).then(setCourses)
+    studentsApi.listExpiringMedicalCerts().then(setExpiringSoon)
   }
 
-  useEffect(load, [selectedId])
+  useEffect(() => {
+    load()
+  }, [selectedId])
 
   const handleCreate = async () => {
     if (!selectedId) return
@@ -36,6 +55,28 @@ export function StudentsPage() {
     message.success('学员创建成功')
     setModalOpen(false)
     form.resetFields()
+    load()
+  }
+
+  const handleEnroll = async () => {
+    if (!enrollModalStudentId) return
+    const values = await enrollForm.validateFields()
+    try {
+      await studentsApi.enroll(enrollModalStudentId, values.courseId)
+      message.success('入学成功')
+      setEnrollModalStudentId(undefined)
+      enrollForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '入学失败')
+    }
+  }
+
+  const transitionEnrollment = async (action: 'complete' | 'withdraw', enrollmentId: string) => {
+    const fn = action === 'complete' ? studentsApi.completeEnrollment : studentsApi.withdrawEnrollment
+    await fn(enrollmentId)
+    message.success('学籍状态已更新')
     load()
   }
 
@@ -57,13 +98,23 @@ export function StudentsPage() {
         <Empty description="请先创建并选择一个机构" />
       ) : (
         <>
+          {expiringSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${expiringSoon.length} 名学员体检证即将到期或已过期 (ORA.ATO.145 训练前置条件)`}
+              description={expiringSoon.map((s) => `${s.lastName}${s.firstName}`).join('、')}
+            />
+          )}
+
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               新增学员
             </Button>
           </Space>
 
-          <Table<Student>
+          <Table<StudentDetail>
             rowKey="id"
             loading={loading}
             dataSource={students}
@@ -76,7 +127,43 @@ export function StudentsPage() {
                 dataIndex: 'medicalCertExpiry',
                 render: medicalStatus,
               },
+              {
+                title: '操作',
+                render: (_, s) => (
+                  <Button size="small" onClick={() => setEnrollModalStudentId(s.id)}>
+                    办理入学
+                  </Button>
+                ),
+              },
             ]}
+            expandable={{
+              expandedRowRender: (s) => (
+                <List
+                  size="small"
+                  header="学籍记录"
+                  dataSource={s.enrollments ?? []}
+                  locale={{ emptyText: '尚未入学任何课程' }}
+                  renderItem={(e) => (
+                    <List.Item
+                      actions={
+                        e.status === 'active'
+                          ? [
+                              <Button key="complete" size="small" type="primary" onClick={() => transitionEnrollment('complete', e.id)}>
+                                结业
+                              </Button>,
+                              <Button key="withdraw" size="small" danger onClick={() => transitionEnrollment('withdraw', e.id)}>
+                                退学
+                              </Button>,
+                            ]
+                          : []
+                      }
+                    >
+                      <Tag color={ENROLLMENT_STATUS_COLOR[e.status]}>{e.status}</Tag> {e.course?.name ?? e.courseId}
+                    </List.Item>
+                  )}
+                />
+              ),
+            }}
           />
         </>
       )}
@@ -94,6 +181,14 @@ export function StudentsPage() {
           </Form.Item>
           <Form.Item name="medicalCertExpiry" label="体检证到期日">
             <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="办理入学" open={!!enrollModalStudentId} onOk={handleEnroll} onCancel={() => setEnrollModalStudentId(undefined)}>
+        <Form form={enrollForm} layout="vertical">
+          <Form.Item name="courseId" label="课程" rules={[{ required: true }]}>
+            <Select options={courses.map((c) => ({ value: c.id, label: c.name }))} />
           </Form.Item>
         </Form>
       </Modal>

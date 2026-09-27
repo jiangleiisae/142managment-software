@@ -107,4 +107,6 @@ export interface Booking {
   startAt: string
   endAt: string
   status: string
+  studentId?: string | null
+  taskCode?: string | null
 }

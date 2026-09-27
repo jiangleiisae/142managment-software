@@ -20,6 +20,11 @@ export class StudentController {
     return this.studentService.findAll(organizationId);
   }
 
+  @Get('expiring-medical-certs')
+  findExpiringMedicalCerts(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.studentService.findExpiringMedicalCerts(user.tenantId, Number(withinDays) || 60);
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.studentService.findOne(id, user.tenantId);
@@ -38,5 +43,15 @@ export class StudentController {
     dto: { sessionDate: string; subject: string; progressNotes?: string; testScore?: string; assessedById?: string },
   ) {
     return this.studentService.addTrainingRecord(enrollmentId, user.tenantId, dto);
+  }
+
+  @Post('enrollments/:enrollmentId/complete')
+  completeEnrollment(@CurrentUser() user: AuthContext, @Param('enrollmentId') enrollmentId: string) {
+    return this.studentService.completeEnrollment(enrollmentId, user.tenantId);
+  }
+
+  @Post('enrollments/:enrollmentId/withdraw')
+  withdrawEnrollment(@CurrentUser() user: AuthContext, @Param('enrollmentId') enrollmentId: string) {
+    return this.studentService.withdrawEnrollment(enrollmentId, user.tenantId);
   }
 }
