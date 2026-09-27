@@ -15,6 +15,37 @@ export interface StudentDetail extends Student {
   enrollments?: Enrollment[]
 }
 
+export interface TrainingRecord {
+  id: string
+  enrollmentId: string
+  courseRequirementId?: string | null
+  sessionDate: string
+  subject: string
+  progressNotes?: string | null
+  testScore?: string | null
+  assessedById?: string | null
+  courseRequirement?: { taskCode: string; taskName: string } | null
+}
+
+export interface ProgressCardItem {
+  courseRequirementId: string
+  taskCode: string
+  taskName: string
+  minHours?: number | null
+  completed: boolean
+  latestSessionDate?: string | null
+  latestTestScore?: string | null
+  recordCount: number
+}
+
+export interface ProgressCard {
+  enrollmentId: string
+  totalRequirements: number
+  completedCount: number
+  completionRate: number | null
+  items: ProgressCardItem[]
+}
+
 export const studentsApi = {
   list: (organizationId: string) => apiClient.get<Student[]>('/students', { params: { organizationId } }).then((r) => r.data),
 
@@ -34,4 +65,22 @@ export const studentsApi = {
 
   withdrawEnrollment: (enrollmentId: string) =>
     apiClient.post<Enrollment>(`/students/enrollments/${enrollmentId}/withdraw`).then((r) => r.data),
+
+  listTrainingRecords: (enrollmentId: string) =>
+    apiClient.get<TrainingRecord[]>(`/students/enrollments/${enrollmentId}/training-records`).then((r) => r.data),
+
+  addTrainingRecord: (
+    enrollmentId: string,
+    data: {
+      sessionDate: string
+      subject: string
+      progressNotes?: string
+      testScore?: string
+      assessedById?: string
+      courseRequirementId?: string
+    },
+  ) => apiClient.post<TrainingRecord>(`/students/enrollments/${enrollmentId}/training-records`, data).then((r) => r.data),
+
+  getProgressCard: (enrollmentId: string) =>
+    apiClient.get<ProgressCard>(`/students/enrollments/${enrollmentId}/progress-card`).then((r) => r.data),
 }

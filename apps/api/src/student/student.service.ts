@@ -63,22 +63,42 @@ export class StudentService {
     return this.prisma.enrollment.create({ data: { studentId, courseId } });
   }
 
-  async addTrainingRecord(
-    enrollmentId: string,
-    tenantId: string,
-    data: { sessionDate: string; subject: string; progressNotes?: string; testScore?: string; assessedById?: string },
-  ) {
+  private async findEnrollmentOrThrow(enrollmentId: string, tenantId: string) {
     const enrollment = await this.prisma.enrollment.findUnique({
       where: { id: enrollmentId },
-      include: { student: { include: { organization: true } } },
+      include: { student: { include: { organization: true } }, course: { include: { requirements: true } } },
     });
     if (!enrollment || enrollment.student.organization.tenantId !== tenantId) {
       throw new NotFoundException(`Enrollment ${enrollmentId} not found`);
+    }
+    return enrollment;
+  }
+
+  /// 训练记录可选挂钩到课程要求的具体科目 (courseRequirementId), 用于生成进度卡 (3.7 progress card)
+  async addTrainingRecord(
+    enrollmentId: string,
+    tenantId: string,
+    data: {
+      sessionDate: string;
+      subject: string;
+      progressNotes?: string;
+      testScore?: string;
+      assessedById?: string;
+      courseRequirementId?: string;
+    },
+  ) {
+    const enrollment = await this.findEnrollmentOrThrow(enrollmentId, tenantId);
+
+    if (data.courseRequirementId && !enrollment.course.requirements.some((r) => r.id === data.courseRequirementId)) {
+      throw new BadRequestException(
+        `Course requirement ${data.courseRequirementId} does not belong to course ${enrollment.courseId}`,
+      );
     }
 
     return this.prisma.trainingRecord.create({
       data: {
         enrollmentId,
+        courseRequirementId: data.courseRequirementId,
         sessionDate: new Date(data.sessionDate),
         subject: data.subject,
         progressNotes: data.progressNotes,
@@ -88,23 +108,63 @@ export class StudentService {
     });
   }
 
-  // ---- 学籍状态流转: active -> completed / withdrawn ----
-
-  private async findEnrollmentOrThrow(enrollmentId: string, tenantId: string) {
-    const enrollment = await this.prisma.enrollment.findUnique({
-      where: { id: enrollmentId },
-      include: { student: { include: { organization: true } } },
+  async listTrainingRecords(enrollmentId: string, tenantId: string) {
+    await this.findEnrollmentOrThrow(enrollmentId, tenantId);
+    return this.prisma.trainingRecord.findMany({
+      where: { enrollmentId },
+      include: { courseRequirement: true },
+      orderBy: { sessionDate: 'desc' },
     });
-    if (!enrollment || enrollment.student.organization.tenantId !== tenantId) {
-      throw new NotFoundException(`Enrollment ${enrollmentId} not found`);
-    }
-    return enrollment;
   }
 
+  /// 进度卡 (3.7): 逐项对比课程要求科目 vs 已完成的训练记录, 覆盖率作为结业前置参考
+  async getProgressCard(enrollmentId: string, tenantId: string) {
+    const enrollment = await this.findEnrollmentOrThrow(enrollmentId, tenantId);
+    const records = await this.prisma.trainingRecord.findMany({
+      where: { enrollmentId, courseRequirementId: { not: null } },
+      orderBy: { sessionDate: 'desc' },
+    });
+
+    const items = enrollment.course.requirements.map((req) => {
+      const matched = records.filter((r) => r.courseRequirementId === req.id);
+      return {
+        courseRequirementId: req.id,
+        taskCode: req.taskCode,
+        taskName: req.taskName,
+        minHours: req.minHours,
+        completed: matched.length > 0,
+        latestSessionDate: matched[0]?.sessionDate ?? null,
+        latestTestScore: matched[0]?.testScore ?? null,
+        recordCount: matched.length,
+      };
+    });
+
+    const completedCount = items.filter((i) => i.completed).length;
+    return {
+      enrollmentId,
+      totalRequirements: items.length,
+      completedCount,
+      completionRate: items.length > 0 ? completedCount / items.length : null,
+      items,
+    };
+  }
+
+  // ---- 学籍状态流转: active -> completed / withdrawn ----
+
+  /// 结业前置校验: 若课程定义了要求科目 (3.6 CourseRequirement), 必须逐项有训练记录覆盖 (进度卡满项) 才允许结业
   async completeEnrollment(enrollmentId: string, tenantId: string) {
     const enrollment = await this.findEnrollmentOrThrow(enrollmentId, tenantId);
     if (enrollment.status !== 'active') {
       throw new BadRequestException(`Cannot complete enrollment from status ${enrollment.status}`);
+    }
+    if (enrollment.course.requirements.length > 0) {
+      const progressCard = await this.getProgressCard(enrollmentId, tenantId);
+      const missing = progressCard.items.filter((i) => !i.completed);
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Cannot complete enrollment: ${missing.length} course requirement(s) not yet covered by a training record - ${missing.map((m) => m.taskCode).join(', ')}`,
+        );
+      }
     }
     return this.prisma.enrollment.update({
       where: { id: enrollmentId },

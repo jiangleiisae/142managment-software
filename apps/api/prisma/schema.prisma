@@ -730,6 +730,7 @@ model CourseRequirement {
   minHours Float?
 
   course Course @relation(fields: [courseId], references: [id])
+  trainingRecords TrainingRecord[]
 
   @@map("course_requirements")
 }
@@ -783,16 +784,18 @@ model Enrollment {
 
 /// 训练全程 + 结课后3年保存 (ORA.ATO.120)
 model TrainingRecord {
-  id            String   @id @default(cuid())
-  enrollmentId  String
-  sessionDate   DateTime
-  subject       String
-  progressNotes String?
-  testScore     String?
-  assessedById  String? // Personnel.id
-  createdAt     DateTime @default(now())
+  id                  String   @id @default(cuid())
+  enrollmentId        String
+  courseRequirementId String? // 关联到课程要求的具体训练科目 (3.6 CourseRequirement), 用于生成进度卡; 留空则为不挂钩具体科目的地面训练记录
+  sessionDate         DateTime
+  subject             String
+  progressNotes       String?
+  testScore           String?
+  assessedById        String? // Personnel.id
+  createdAt           DateTime @default(now())
 
-  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+  enrollment        Enrollment         @relation(fields: [enrollmentId], references: [id])
+  courseRequirement CourseRequirement? @relation(fields: [courseRequirementId], references: [id])
 
   @@map("training_records")
 }

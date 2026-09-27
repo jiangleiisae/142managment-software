@@ -40,9 +40,26 @@ export class StudentController {
     @CurrentUser() user: AuthContext,
     @Param('enrollmentId') enrollmentId: string,
     @Body()
-    dto: { sessionDate: string; subject: string; progressNotes?: string; testScore?: string; assessedById?: string },
+    dto: {
+      sessionDate: string;
+      subject: string;
+      progressNotes?: string;
+      testScore?: string;
+      assessedById?: string;
+      courseRequirementId?: string;
+    },
   ) {
     return this.studentService.addTrainingRecord(enrollmentId, user.tenantId, dto);
+  }
+
+  @Get('enrollments/:enrollmentId/training-records')
+  listTrainingRecords(@CurrentUser() user: AuthContext, @Param('enrollmentId') enrollmentId: string) {
+    return this.studentService.listTrainingRecords(enrollmentId, user.tenantId);
+  }
+
+  @Get('enrollments/:enrollmentId/progress-card')
+  getProgressCard(@CurrentUser() user: AuthContext, @Param('enrollmentId') enrollmentId: string) {
+    return this.studentService.getProgressCard(enrollmentId, user.tenantId);
   }
 
   @Post('enrollments/:enrollmentId/complete')

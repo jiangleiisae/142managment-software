@@ -1,11 +1,13 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, DatePicker, Empty, Form, Input, List, Modal, Progress, Select, Space, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import type { CourseRequirement } from '../api/courses'
 import { coursesApi } from '../api/courses'
-import type { Enrollment, StudentDetail } from '../api/students'
+import { personnelApi } from '../api/personnel'
+import type { Enrollment, ProgressCard, StudentDetail, TrainingRecord } from '../api/students'
 import { studentsApi } from '../api/students'
-import type { Course } from '../api/types'
+import type { Course, Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
@@ -19,12 +21,22 @@ export function StudentsPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [students, setStudents] = useState<StudentDetail[]>([])
   const [courses, setCourses] = useState<Course[]>([])
+  const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [expiringSoon, setExpiringSoon] = useState<StudentDetail[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [enrollModalStudentId, setEnrollModalStudentId] = useState<string>()
   const [form] = Form.useForm()
   const [enrollForm] = Form.useForm()
+  const [recordForm] = Form.useForm()
+
+  const [progressCardEnrollment, setProgressCardEnrollment] = useState<Enrollment>()
+  const [progressCard, setProgressCard] = useState<ProgressCard>()
+  const [progressCardRecords, setProgressCardRecords] = useState<TrainingRecord[]>([])
+  const [progressCardLoading, setProgressCardLoading] = useState(false)
+
+  const [recordModalEnrollment, setRecordModalEnrollment] = useState<Enrollment>()
+  const [recordModalRequirements, setRecordModalRequirements] = useState<CourseRequirement[]>([])
 
   const load = async () => {
     if (!selectedId) return
@@ -38,6 +50,7 @@ export function StudentsPage() {
     }
     coursesApi.list(selectedId).then(setCourses)
     studentsApi.listExpiringMedicalCerts().then(setExpiringSoon)
+    personnelApi.list().then(setPersonnel)
   }
 
   useEffect(() => {
@@ -75,9 +88,50 @@ export function StudentsPage() {
 
   const transitionEnrollment = async (action: 'complete' | 'withdraw', enrollmentId: string) => {
     const fn = action === 'complete' ? studentsApi.completeEnrollment : studentsApi.withdrawEnrollment
-    await fn(enrollmentId)
-    message.success('学籍状态已更新')
-    load()
+    try {
+      await fn(enrollmentId)
+      message.success('学籍状态已更新')
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const openProgressCard = async (enrollment: Enrollment) => {
+    setProgressCardEnrollment(enrollment)
+    setProgressCardLoading(true)
+    try {
+      const [card, records] = await Promise.all([
+        studentsApi.getProgressCard(enrollment.id),
+        studentsApi.listTrainingRecords(enrollment.id),
+      ])
+      setProgressCard(card)
+      setProgressCardRecords(records)
+    } finally {
+      setProgressCardLoading(false)
+    }
+  }
+
+  const openAddTrainingRecord = async (enrollment: Enrollment) => {
+    setRecordModalEnrollment(enrollment)
+    recordForm.resetFields()
+    recordForm.setFieldsValue({ sessionDate: dayjs() })
+    setRecordModalRequirements(await coursesApi.listRequirements(enrollment.courseId))
+  }
+
+  const handleAddTrainingRecord = async () => {
+    if (!recordModalEnrollment) return
+    const values = await recordForm.validateFields()
+    await studentsApi.addTrainingRecord(recordModalEnrollment.id, {
+      ...values,
+      sessionDate: values.sessionDate.format('YYYY-MM-DD'),
+    })
+    message.success('训练记录已登记')
+    setRecordModalEnrollment(undefined)
+    if (progressCardEnrollment?.id === recordModalEnrollment.id) {
+      openProgressCard(progressCardEnrollment)
+    }
   }
 
   const medicalStatus = (expiry?: string | null) => {
@@ -145,9 +199,15 @@ export function StudentsPage() {
                   locale={{ emptyText: '尚未入学任何课程' }}
                   renderItem={(e) => (
                     <List.Item
-                      actions={
-                        e.status === 'active'
+                      actions={[
+                        <Button key="progress" size="small" onClick={() => openProgressCard(e)}>
+                          进度卡
+                        </Button>,
+                        ...(e.status === 'active'
                           ? [
+                              <Button key="record" size="small" onClick={() => openAddTrainingRecord(e)}>
+                                登记训练记录
+                              </Button>,
                               <Button key="complete" size="small" type="primary" onClick={() => transitionEnrollment('complete', e.id)}>
                                 结业
                               </Button>,
@@ -155,8 +215,8 @@ export function StudentsPage() {
                                 退学
                               </Button>,
                             ]
-                          : []
-                      }
+                          : []),
+                      ]}
                     >
                       <Tag color={ENROLLMENT_STATUS_COLOR[e.status]}>{e.status}</Tag> {e.course?.name ?? e.courseId}
                     </List.Item>
@@ -189,6 +249,106 @@ export function StudentsPage() {
         <Form form={enrollForm} layout="vertical">
           <Form.Item name="courseId" label="课程" rules={[{ required: true }]}>
             <Select options={courses.map((c) => ({ value: c.id, label: c.name }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`进度卡 - ${progressCardEnrollment?.course?.name ?? ''} (3.7 ORA.ATO.120 训练记录)`}
+        open={!!progressCardEnrollment}
+        onCancel={() => setProgressCardEnrollment(undefined)}
+        footer={null}
+        width={700}
+      >
+        {progressCard && (
+          <>
+            <Progress
+              percent={Math.round((progressCard.completionRate ?? 0) * 100)}
+              status={progressCard.completionRate === 1 ? 'success' : 'active'}
+              style={{ marginBottom: 16 }}
+            />
+            {progressCard.totalRequirements === 0 ? (
+              <Empty description="该课程未定义要求科目 (CourseRequirement), 无法生成进度卡" />
+            ) : (
+              <Table
+                size="small"
+                rowKey="courseRequirementId"
+                loading={progressCardLoading}
+                dataSource={progressCard.items}
+                pagination={false}
+                columns={[
+                  { title: '科目编号', dataIndex: 'taskCode' },
+                  { title: '科目名称', dataIndex: 'taskName' },
+                  { title: '要求最少学时', dataIndex: 'minHours', render: (v?: number | null) => v ?? '-' },
+                  {
+                    title: '状态',
+                    dataIndex: 'completed',
+                    render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? '已覆盖' : '未覆盖'}</Tag>,
+                  },
+                  {
+                    title: '最近记录',
+                    render: (_, item) =>
+                      item.latestSessionDate
+                        ? `${new Date(item.latestSessionDate).toLocaleDateString()} (${item.latestTestScore ?? '-'})`
+                        : '-',
+                  },
+                ]}
+              />
+            )}
+            <List
+              size="small"
+              header="全部训练记录 (含未挂钩具体科目的地面训练)"
+              style={{ marginTop: 16 }}
+              dataSource={progressCardRecords}
+              locale={{ emptyText: '尚无训练记录' }}
+              renderItem={(r) => (
+                <List.Item>
+                  {new Date(r.sessionDate).toLocaleDateString()} · {r.subject}
+                  {r.courseRequirement ? (
+                    <Tag style={{ marginLeft: 8 }} color="blue">
+                      {r.courseRequirement.taskCode}
+                    </Tag>
+                  ) : null}
+                  {r.testScore ? <Tag style={{ marginLeft: 8 }}>{r.testScore}</Tag> : null}
+                </List.Item>
+              )}
+            />
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        title="登记训练记录 (ORA.ATO.120)"
+        open={!!recordModalEnrollment}
+        onOk={handleAddTrainingRecord}
+        onCancel={() => setRecordModalEnrollment(undefined)}
+      >
+        <Form form={recordForm} layout="vertical">
+          <Form.Item name="sessionDate" label="训练日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="subject" label="训练内容" rules={[{ required: true }]}>
+            <Input placeholder="如: Basic maneuvers session 1 / 地面课: 空中法规" />
+          </Form.Item>
+          <Form.Item name="courseRequirementId" label="对应课程要求科目 (用于进度卡, 不选则视为地面训练)">
+            <Select
+              allowClear
+              options={recordModalRequirements.map((r) => ({ value: r.id, label: `${r.taskCode} - ${r.taskName}` }))}
+            />
+          </Form.Item>
+          <Form.Item name="testScore" label="测评结果">
+            <Input placeholder="如: Pass / Fail / 85分" />
+          </Form.Item>
+          <Form.Item name="assessedById" label="教员/考核人">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
+            />
+          </Form.Item>
+          <Form.Item name="progressNotes" label="备注">
+            <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
