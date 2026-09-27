@@ -1,5 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { FstdDeviceType, LegacyLevel, QtgDocumentType } from '@prisma/client';
+import {
+  FcsCharacteristic,
+  FcsFidelityLevel,
+  FstdDeviceType,
+  FstdQualificationBasisType,
+  LegacyLevel,
+  QtgDocumentType,
+} from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { FstdService } from './fstd.service.js';
@@ -19,6 +26,7 @@ export class FstdController {
       serialNumber?: string;
       location?: string;
       legacyLevel?: LegacyLevel;
+      qualificationBasisType?: FstdQualificationBasisType;
     },
   ) {
     // organizationId 的租户归属已由全局 TenantGuard 校验
@@ -28,6 +36,21 @@ export class FstdController {
   @Get()
   findAll(@Query('organizationId') organizationId: string) {
     return this.fstdService.findAll(organizationId);
+  }
+
+  // ---- 3.3.3 训练矩阵 (全局配置表, 必须在 :id 路由之前注册以避免被误匹配) ----
+
+  @Post('training-matrix-entries')
+  addTrainingMatrixEntry(
+    @Body()
+    dto: { taskCode: string; taskName: string; characteristic: FcsCharacteristic; thresholdT: FcsFidelityLevel; thresholdTP: FcsFidelityLevel },
+  ) {
+    return this.fstdService.addTrainingMatrixEntry(dto);
+  }
+
+  @Get('training-matrix-entries')
+  listTrainingMatrixEntries(@Query('taskCode') taskCode?: string) {
+    return this.fstdService.listTrainingMatrixEntries(taskCode);
   }
 
   @Get(':id')
@@ -47,6 +70,23 @@ export class FstdController {
   @Get(':id/can-perform/:taskCode')
   canPerformTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Param('taskCode') taskCode: string) {
     return this.fstdService.canPerformTask(id, user.tenantId, taskCode);
+  }
+
+  // ---- 3.3.2 FCS能力矩阵 ----
+
+  @Post(':id/fcs-capabilities')
+  setFcsCapability(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: { characteristic: FcsCharacteristic; fidelityLevel: FcsFidelityLevel; subsystem?: string; isAssigned?: boolean },
+  ) {
+    return this.fstdService.setFcsCapability(id, user.tenantId, dto);
+  }
+
+  @Get(':id/fcs-capabilities')
+  listFcsCapabilities(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listFcsCapabilities(id, user.tenantId);
   }
 
   @Post(':id/discrepancies')

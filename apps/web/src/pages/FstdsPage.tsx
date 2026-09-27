@@ -5,7 +5,10 @@ import { useEffect, useState } from 'react'
 import type {
   Discrepancy,
   EvaluationDueSoonItem,
+  FcsCharacteristic,
+  FcsFidelityLevel,
   FstdChangeRequest,
+  FstdFcsCapability,
   QtgDocument,
   QtgDocumentType,
   QuarterlyQtgIssue,
@@ -13,9 +16,11 @@ import type {
   RecurrentEvaluation,
   SafetyCheckDueSoonItem,
   SafetyFacilityCheck,
+  TaskCapabilityResult,
+  TrainingMatrixEntry,
 } from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
-import type { Fstd, FstdDeviceType, LegacyLevel } from '../api/types'
+import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
@@ -26,6 +31,12 @@ const LEGACY_LEVELS: LegacyLevel[] = [
   'FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD',
 ]
 const CHANGE_TYPES = ['update', 'upgrade', 'major_modification', 'relocation', 'deactivation', 'transfer']
+const QUALIFICATION_BASIS_TYPES: FstdQualificationBasisType[] = ['EASA_LEGACY_LEVEL', 'EASA_FCS']
+const FCS_CHARACTERISTICS: FcsCharacteristic[] = [
+  'FDK', 'CLH', 'CLO', 'SYS', 'GND', 'IGE', 'OGE', 'SND', 'VIB', 'MTN', 'VIS', 'NAV', 'ATM', 'OST',
+]
+const FCS_FIDELITY_LEVELS: FcsFidelityLevel[] = ['N', 'G', 'R', 'S']
+const FIDELITY_COLOR: Record<FcsFidelityLevel, string> = { N: 'default', G: 'blue', R: 'orange', S: 'purple' }
 
 const CR_STATUS_COLOR: Record<FstdChangeRequest['status'], string> = {
   draft: 'default',
@@ -41,6 +52,7 @@ interface FstdDetail extends Fstd {
   safetyChecks?: SafetyFacilityCheck[]
   qtgDocuments?: QtgDocument[]
   qtgRuns?: QuarterlyQtgRun[]
+  fcsCapabilities?: FstdFcsCapability[]
 }
 
 export function FstdsPage() {
@@ -62,6 +74,11 @@ export function FstdsPage() {
   const [qtgIssues, setQtgIssues] = useState<QuarterlyQtgIssue[]>([])
   const [qtgDocModalFstdId, setQtgDocModalFstdId] = useState<string>()
   const [qtgRunModalFstdId, setQtgRunModalFstdId] = useState<string>()
+  const [fcsCapModalFstdId, setFcsCapModalFstdId] = useState<string>()
+  const [checkTaskModalFstdId, setCheckTaskModalFstdId] = useState<string>()
+  const [checkTaskResult, setCheckTaskResult] = useState<TaskCapabilityResult>()
+  const [trainingMatrixEntries, setTrainingMatrixEntries] = useState<TrainingMatrixEntry[]>([])
+  const [trainingMatrixModalOpen, setTrainingMatrixModalOpen] = useState(false)
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
@@ -71,6 +88,9 @@ export function FstdsPage() {
   const [safetyCheckForm] = Form.useForm()
   const [qtgDocForm] = Form.useForm()
   const [qtgRunForm] = Form.useForm()
+  const [fcsCapForm] = Form.useForm()
+  const [checkTaskForm] = Form.useForm()
+  const [trainingMatrixForm] = Form.useForm()
 
   const load = async () => {
     if (!selectedId) return
@@ -86,6 +106,7 @@ export function FstdsPage() {
           safetyChecks: await fstdsApi.listSafetyFacilityChecks(f.id),
           qtgDocuments: await fstdsApi.listQtgDocuments(f.id),
           qtgRuns: await fstdsApi.listQuarterlyQtgRuns(f.id),
+          fcsCapabilities: await fstdsApi.listFcsCapabilities(f.id),
         })),
       )
       setFstds(detailed)
@@ -101,6 +122,10 @@ export function FstdsPage() {
   useEffect(() => {
     load()
   }, [selectedId])
+
+  useEffect(() => {
+    fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
+  }, [])
 
   const handleCreate = async () => {
     if (!selectedId) return
@@ -213,9 +238,62 @@ export function FstdsPage() {
     load()
   }
 
+  const handleSetFcsCapability = async () => {
+    if (!fcsCapModalFstdId) return
+    const values = await fcsCapForm.validateFields()
+    try {
+      await fstdsApi.setFcsCapability(fcsCapModalFstdId, values)
+      message.success('FCS能力已登记')
+      setFcsCapModalFstdId(undefined)
+      fcsCapForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleCheckTask = async () => {
+    if (!checkTaskModalFstdId) return
+    const values = await checkTaskForm.validateFields()
+    const result = await fstdsApi.canPerformTask(checkTaskModalFstdId, values.taskCode)
+    setCheckTaskResult(result)
+  }
+
+  const handleAddTrainingMatrixEntry = async () => {
+    const values = await trainingMatrixForm.validateFields()
+    await fstdsApi.addTrainingMatrixEntry(values)
+    message.success('训练矩阵条目已登记')
+    trainingMatrixForm.resetFields()
+    fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
+
+      <div style={{ marginBottom: 16 }}>
+        <Space style={{ marginBottom: 8 }}>
+          <span style={{ fontWeight: 600 }}>训练矩阵 (3.3.3, Part-FCL Appendix 9训练科目 x 14特征, 全局配置, 非机构范围)</span>
+          <Button size="small" icon={<PlusOutlined />} onClick={() => setTrainingMatrixModalOpen(true)}>
+            登记条目
+          </Button>
+        </Space>
+        <Table<TrainingMatrixEntry>
+          rowKey="id"
+          size="small"
+          dataSource={trainingMatrixEntries}
+          pagination={false}
+          locale={{ emptyText: '尚未登记训练矩阵条目 (官方Part-FCL Appendix 9完整清单未随需求分析获取, 按需登记)' }}
+          columns={[
+            { title: '科目编号', dataIndex: 'taskCode' },
+            { title: '科目名称', dataIndex: 'taskName' },
+            { title: '特征', dataIndex: 'characteristic', render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
+            { title: 'T阈值(可开始训练)', dataIndex: 'thresholdT', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
+            { title: 'TP阈值(完成训练)', dataIndex: 'thresholdTP', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
+          ]}
+        />
+      </div>
 
       {!selectedId ? (
         <Empty description="请先创建并选择一个机构" />
@@ -275,6 +353,11 @@ export function FstdsPage() {
               { title: '代表机型', dataIndex: 'representedAircraft' },
               { title: '设备类型', dataIndex: 'deviceType' },
               {
+                title: '鉴定基础',
+                dataIndex: 'qualificationBasisType',
+                render: (v: FstdQualificationBasisType) => <Tag color={v === 'EASA_FCS' ? 'purple' : 'blue'}>{v}</Tag>,
+              },
+              {
                 title: 'EASA 等级 (legacy)',
                 dataIndex: 'legacyLevel',
                 render: (v: Fstd['legacyLevel']) => (v ? <Tag color="blue">{v.level}</Tag> : '-'),
@@ -301,6 +384,21 @@ export function FstdsPage() {
                     <Button size="small" onClick={() => setQtgRunModalFstdId(fstd.id)}>
                       季度QTG记录
                     </Button>
+                    {fstd.qualificationBasisType === 'EASA_FCS' && (
+                      <Button size="small" onClick={() => setFcsCapModalFstdId(fstd.id)}>
+                        登记FCS能力
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setCheckTaskResult(undefined)
+                        checkTaskForm.resetFields()
+                        setCheckTaskModalFstdId(fstd.id)
+                      }}
+                    >
+                      科目能力检查
+                    </Button>
                   </Space>
                 ),
               },
@@ -308,6 +406,22 @@ export function FstdsPage() {
             expandable={{
               expandedRowRender: (fstd) => (
                 <Space direction="vertical" style={{ width: '100%' }}>
+                  {fstd.qualificationBasisType === 'EASA_FCS' && (
+                    <List
+                      header="FCS能力矩阵 (3.3.2, 14特征 x 4保真度: N < G < R < S)"
+                      size="small"
+                      dataSource={fstd.fcsCapabilities ?? []}
+                      locale={{ emptyText: '尚未登记任何FCS能力' }}
+                      renderItem={(c) => (
+                        <List.Item>
+                          <Tag>{c.characteristic}</Tag>
+                          {c.subsystem && <Tag color="cyan">{c.subsystem}</Tag>}
+                          <Tag color={FIDELITY_COLOR[c.fidelityLevel]}>{c.fidelityLevel}</Tag>
+                          {c.isAssigned && <Tag color="gold">assigned FCS</Tag>}
+                        </List.Item>
+                      )}
+                    />
+                  )}
                   <List
                     header="周期性评估记录 (标准周期12个月, BITD为3年)"
                     size="small"
@@ -461,7 +575,7 @@ export function FstdsPage() {
       )}
 
       <Modal title="新增模拟机" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={{ qualificationBasisType: 'EASA_LEGACY_LEVEL' }}>
           <Form.Item name="deviceCode" label="设备编号" rules={[{ required: true }]}>
             <Input placeholder="如 FFS-01" />
           </Form.Item>
@@ -471,8 +585,22 @@ export function FstdsPage() {
           <Form.Item name="deviceType" label="设备类型" rules={[{ required: true }]}>
             <Select options={DEVICE_TYPES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="legacyLevel" label="EASA 等级 (CS-FSTD(A) Issue 2)">
-            <Select allowClear options={LEGACY_LEVELS.map((v) => ({ value: v, label: v }))} />
+          <Form.Item name="qualificationBasisType" label="鉴定基础 (3.3.1)" rules={[{ required: true }]}>
+            <Select
+              options={QUALIFICATION_BASIS_TYPES.map((v) => ({
+                value: v,
+                label: v === 'EASA_FCS' ? 'EASA_FCS (CS-FSTD Issue 1, 14特征矩阵)' : 'EASA_LEGACY_LEVEL (CS-FSTD(A) Issue 2)',
+              }))}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.qualificationBasisType !== cur.qualificationBasisType}>
+            {({ getFieldValue }) =>
+              getFieldValue('qualificationBasisType') !== 'EASA_FCS' && (
+                <Form.Item name="legacyLevel" label="EASA 等级 (CS-FSTD(A) Issue 2)">
+                  <Select allowClear options={LEGACY_LEVELS.map((v) => ({ value: v, label: v }))} />
+                </Form.Item>
+              )
+            }
           </Form.Item>
         </Form>
       </Modal>
@@ -639,6 +767,81 @@ export function FstdsPage() {
           </Form.Item>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="登记FCS能力 (3.3.2)"
+        open={!!fcsCapModalFstdId}
+        onOk={handleSetFcsCapability}
+        onCancel={() => setFcsCapModalFstdId(undefined)}
+      >
+        <Form form={fcsCapForm} layout="vertical">
+          <Form.Item name="characteristic" label="特征" rules={[{ required: true }]}>
+            <Select options={FCS_CHARACTERISTICS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="fidelityLevel" label="保真度 (N < G < R < S)" rules={[{ required: true }]}>
+            <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="subsystem" label="子系统 (仅SYS特征需要展开时填写)">
+            <Input placeholder="如: autopilot / FMS / hydraulics" />
+          </Form.Item>
+          <Form.Item name="isAssigned" label="是否为assigned FCS (主管机关为存量设备指定)" initialValue={false}>
+            <Select
+              options={[
+                { value: false, label: '否 (原生FCS鉴定)' },
+                { value: true, label: '是 (assigned FCS)' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="科目能力检查 (can_device_perform_task)"
+        open={!!checkTaskModalFstdId}
+        onOk={handleCheckTask}
+        onCancel={() => setCheckTaskModalFstdId(undefined)}
+        okText="检查"
+      >
+        <Form form={checkTaskForm} layout="vertical">
+          <Form.Item name="taskCode" label="训练科目编号" rules={[{ required: true }]}>
+            <Input placeholder="如 CPL-01 (legacy) 或 FCS-APPR-01 (FCS)" />
+          </Form.Item>
+        </Form>
+        {checkTaskResult && (
+          <Alert
+            style={{ marginTop: 16 }}
+            type={checkTaskResult.eligible ? 'success' : 'error'}
+            showIcon
+            message={checkTaskResult.eligible ? `设备满足要求 (判定依据: ${checkTaskResult.basis})` : `设备不满足要求 (判定依据: ${checkTaskResult.basis})`}
+            description={checkTaskResult.reason}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        title="登记训练矩阵条目 (3.3.3)"
+        open={trainingMatrixModalOpen}
+        onOk={handleAddTrainingMatrixEntry}
+        onCancel={() => setTrainingMatrixModalOpen(false)}
+      >
+        <Form form={trainingMatrixForm} layout="vertical">
+          <Form.Item name="taskCode" label="训练科目编号" rules={[{ required: true }]}>
+            <Input placeholder="如 FCS-APPR-01" />
+          </Form.Item>
+          <Form.Item name="taskName" label="训练科目名称" rules={[{ required: true }]}>
+            <Input placeholder="如 Visual approach" />
+          </Form.Item>
+          <Form.Item name="characteristic" label="特征" rules={[{ required: true }]}>
+            <Select options={FCS_CHARACTERISTICS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="thresholdT" label="T阈值 (可开始训练)" rules={[{ required: true }]}>
+            <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="thresholdTP" label="TP阈值 (完成训练)" rules={[{ required: true }]}>
+            <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
         </Form>
       </Modal>

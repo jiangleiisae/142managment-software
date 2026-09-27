@@ -1,6 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { FstdDeviceType, LegacyLevel, QtgDocumentType } from '@prisma/client';
+import {
+  FcsCharacteristic,
+  FcsFidelityLevel,
+  FstdDeviceType,
+  FstdQualificationBasisType,
+  LegacyLevel,
+  QtgDocumentType,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+const FIDELITY_RANK: Record<FcsFidelityLevel, number> = { N: 0, G: 1, R: 2, S: 3 };
+
+export interface TaskCapabilityResult {
+  eligible: boolean;
+  basis: FstdQualificationBasisType;
+  reason?: string;
+  missingCharacteristics?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[];
+}
 
 @Injectable()
 export class FstdService {
@@ -16,7 +32,7 @@ export class FstdService {
     return fstd;
   }
 
-  // 需求清单 3.3.1: 一期仅 EASA legacy 等级字典, FCS矩阵留待三期 (qualificationBasisType 默认 EASA_LEGACY_LEVEL)
+  // 需求清单 3.3.1: EASA双轨, qualificationBasisType 默认 EASA_LEGACY_LEVEL, 三期启用 EASA_FCS 分支
   create(data: {
     organizationId: string;
     deviceCode: string;
@@ -25,6 +41,7 @@ export class FstdService {
     serialNumber?: string;
     location?: string;
     legacyLevel?: LegacyLevel;
+    qualificationBasisType?: FstdQualificationBasisType;
   }) {
     return this.prisma.fstd.create({
       data: {
@@ -34,6 +51,7 @@ export class FstdService {
         deviceType: data.deviceType,
         serialNumber: data.serialNumber,
         location: data.location,
+        qualificationBasisType: data.qualificationBasisType ?? 'EASA_LEGACY_LEVEL',
         ...(data.legacyLevel
           ? { legacyLevel: { create: { level: data.legacyLevel } } }
           : {}),
@@ -45,7 +63,7 @@ export class FstdService {
   findAll(organizationId: string) {
     return this.prisma.fstd.findMany({
       where: { organizationId },
-      include: { legacyLevel: true, qualifiedTasks: true },
+      include: { legacyLevel: true, qualifiedTasks: true, fcsCapabilities: true },
     });
   }
 
@@ -56,6 +74,7 @@ export class FstdService {
       include: {
         legacyLevel: true,
         qualifiedTasks: true,
+        fcsCapabilities: true,
         recurrentEvals: { orderBy: { periodStart: 'desc' } },
         discrepancies: { where: { status: 'open' } },
       },
@@ -72,11 +91,117 @@ export class FstdService {
     return this.prisma.fstdQualifiedTask.create({ data: { fstdId, ...data } });
   }
 
-  /// 排课引擎调用的核心校验接口 (需求清单 3.3.3: can_device_perform_task)
-  async canPerformTask(fstdId: string, tenantId: string, taskCode: string): Promise<boolean> {
+  // ---- 3.3.2 FCS能力矩阵 (qualificationBasisType=EASA_FCS时使用) ----
+
+  async setFcsCapability(
+    fstdId: string,
+    tenantId: string,
+    data: { characteristic: FcsCharacteristic; fidelityLevel: FcsFidelityLevel; subsystem?: string; isAssigned?: boolean },
+  ) {
+    const fstd = await this.findFstdOrThrow(fstdId, tenantId);
+    if (fstd.qualificationBasisType !== 'EASA_FCS') {
+      throw new BadRequestException(`FSTD ${fstd.deviceCode} 的鉴定基础是 ${fstd.qualificationBasisType}, 不是 EASA_FCS, 无法登记FCS能力`);
+    }
+    // 复合唯一键含可空的subsystem字段, upsert对null的处理在部分Prisma版本下类型推导不稳定, 改用手动find+create/update
+    const existing = await this.prisma.fstdFcsCapability.findFirst({
+      where: { fstdId, characteristic: data.characteristic, subsystem: data.subsystem ?? null },
+    });
+    if (existing) {
+      return this.prisma.fstdFcsCapability.update({
+        where: { id: existing.id },
+        data: { fidelityLevel: data.fidelityLevel, isAssigned: data.isAssigned ?? false },
+      });
+    }
+    return this.prisma.fstdFcsCapability.create({
+      data: {
+        fstdId,
+        characteristic: data.characteristic,
+        fidelityLevel: data.fidelityLevel,
+        subsystem: data.subsystem,
+        isAssigned: data.isAssigned ?? false,
+      },
+    });
+  }
+
+  async listFcsCapabilities(fstdId: string, tenantId: string) {
     await this.findFstdOrThrow(fstdId, tenantId);
-    const task = await this.prisma.fstdQualifiedTask.findFirst({ where: { fstdId, taskCode } });
-    return !!task;
+    return this.prisma.fstdFcsCapability.findMany({ where: { fstdId }, orderBy: { characteristic: 'asc' } });
+  }
+
+  // ---- 3.3.3 训练矩阵 (Part-FCL Appendix 9训练科目 x 14特征, 全局配置表, 非租户范围) ----
+
+  addTrainingMatrixEntry(data: {
+    taskCode: string;
+    taskName: string;
+    characteristic: FcsCharacteristic;
+    thresholdT: FcsFidelityLevel;
+    thresholdTP: FcsFidelityLevel;
+  }) {
+    return this.prisma.trainingMatrixEntry.upsert({
+      where: { taskCode_characteristic: { taskCode: data.taskCode, characteristic: data.characteristic } },
+      create: data,
+      update: { taskName: data.taskName, thresholdT: data.thresholdT, thresholdTP: data.thresholdTP },
+    });
+  }
+
+  listTrainingMatrixEntries(taskCode?: string) {
+    return this.prisma.trainingMatrixEntry.findMany({
+      where: taskCode ? { taskCode } : undefined,
+      orderBy: [{ taskCode: 'asc' }, { characteristic: 'asc' }],
+    });
+  }
+
+  /// 设备在某一特征上的实际保真度: SYS等可展开子系统的特征取所有子系统中的最低者 (整体能力受限于最弱子系统)
+  private capabilityRankFor(capabilities: { characteristic: FcsCharacteristic; fidelityLevel: FcsFidelityLevel }[], characteristic: FcsCharacteristic) {
+    const rows = capabilities.filter((c) => c.characteristic === characteristic);
+    if (rows.length === 0) return { rank: -1, level: null as FcsFidelityLevel | null };
+    const worst = rows.reduce((min, r) => (FIDELITY_RANK[r.fidelityLevel] < FIDELITY_RANK[min.fidelityLevel] ? r : min));
+    return { rank: FIDELITY_RANK[worst.fidelityLevel], level: worst.fidelityLevel };
+  }
+
+  /// 统一的设备能力判定入口 (需求清单3.3.3 can_device_perform_task): 内部按qualificationBasisType分流,
+  /// legacy体系查FstdQualifiedTask, FCS体系逐特征比对训练矩阵thresholdT要求 vs 设备实际保真度
+  async canDevicePerformTask(fstdId: string, taskCode: string): Promise<TaskCapabilityResult> {
+    const fstd = await this.prisma.fstd.findUnique({ where: { id: fstdId } });
+    if (!fstd) throw new NotFoundException(`FSTD ${fstdId} not found`);
+
+    if (fstd.qualificationBasisType === 'EASA_LEGACY_LEVEL') {
+      const task = await this.prisma.fstdQualifiedTask.findFirst({ where: { fstdId, taskCode } });
+      return {
+        eligible: !!task,
+        basis: 'EASA_LEGACY_LEVEL',
+        reason: task ? undefined : `设备未鉴定训练科目 ${taskCode}`,
+      };
+    }
+
+    // EASA_FCS 分支
+    const requirements = await this.prisma.trainingMatrixEntry.findMany({ where: { taskCode } });
+    if (requirements.length === 0) {
+      return { eligible: false, basis: 'EASA_FCS', reason: `训练科目 ${taskCode} 尚未定义训练矩阵要求` };
+    }
+    const capabilities = await this.prisma.fstdFcsCapability.findMany({ where: { fstdId } });
+    const missing: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[] = [];
+    for (const req of requirements) {
+      const actual = this.capabilityRankFor(capabilities, req.characteristic);
+      if (actual.rank < FIDELITY_RANK[req.thresholdT]) {
+        missing.push({ characteristic: req.characteristic, required: req.thresholdT, actual: actual.level });
+      }
+    }
+    return {
+      eligible: missing.length === 0,
+      basis: 'EASA_FCS',
+      reason:
+        missing.length > 0
+          ? `以下特征保真度不足: ${missing.map((m) => `${m.characteristic}(需要${m.required}, 实际${m.actual ?? '无'})`).join(', ')}`
+          : undefined,
+      missingCharacteristics: missing.length > 0 ? missing : undefined,
+    };
+  }
+
+  /// 兼容性包装: 供FstdController的租户校验入口使用
+  async canPerformTask(fstdId: string, tenantId: string, taskCode: string): Promise<TaskCapabilityResult> {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.canDevicePerformTask(fstdId, taskCode);
   }
 
   // 需求清单 3.3.7: 缺陷处理, 吸收FAA 30天修复时限规则; Kiosk交互额外采集打分与培训损失时间

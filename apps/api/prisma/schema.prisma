@@ -644,6 +644,7 @@ model Fstd {
   organization    Organization         @relation(fields: [organizationId], references: [id])
   legacyLevel     FstdLegacyLevel?
   qualifiedTasks  FstdQualifiedTask[]
+  fcsCapabilities FstdFcsCapability[]
   recurrentEvals  FstdRecurrentEvaluation[]
   safetyFacilityChecks FstdSafetyFacilityCheck[]
   discrepancies   DiscrepancyLog[]
@@ -689,6 +690,66 @@ model FstdQualifiedTask {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_qualified_tasks")
+}
+
+// ============================================================
+// 3.3.2/3.3.3 FCS能力矩阵与训练矩阵 (CS-FSTD Issue 1, qualificationBasisType=EASA_FCS时启用, 三期)
+// ============================================================
+
+/// 14个特征: 飞机仿真(7) + 感知仿真(4) + 环境仿真(3)
+enum FcsCharacteristic {
+  FDK // 飞行动力学 Flight Dynamics
+  CLH // 操纵负荷 Control Loading (手感)
+  CLO // 操纵负荷 Control Loading (其他轴)
+  SYS // 系统仿真 (支持子系统展开: 自动驾驶/FMS/液压等)
+  GND // 地面性能 Ground handling
+  IGE // 地面效应内 In Ground Effect
+  OGE // 地面效应外 Out of Ground Effect
+  SND // 声音仿真 Sound
+  VIB // 振动仿真 Vibration/Motion cueing
+  MTN // 运动仿真 Motion
+  VIS // 视景仿真 Visual
+  NAV // 导航环境仿真 Navigation environment
+  ATM // 空管环境仿真 ATM environment
+  OST // 其他系统 Other systems
+}
+
+/// 4级保真度, 顺序 N < G < R < S
+enum FcsFidelityLevel {
+  N // None 无
+  G // Generic 通用
+  R // Representative 代表
+  S // Specific 专用
+}
+
+/// FCS能力矩阵: 设备在14个特征上各自的保真度; SYS特征可按子系统(如autopilot/FMS/hydraulics)展开多条记录
+model FstdFcsCapability {
+  id             String            @id @default(cuid())
+  fstdId         String
+  characteristic FcsCharacteristic
+  fidelityLevel  FcsFidelityLevel
+  subsystem      String? // 仅SYS特征展开使用, 其余特征为null
+  isAssigned     Boolean           @default(false) // true=主管机关为存量设备指定的assigned FCS, false=原生FCS鉴定
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@unique([fstdId, characteristic, subsystem])
+  @@map("fstd_fcs_capabilities")
+}
+
+/// 训练矩阵 (Part-FCL Appendix 9训练科目 x 14特征 -> T可开始训练/TP完成训练阈值)。
+/// 全局配置表(非租户/机构范围), 与record_retention_policies同类性质——同一套Part-FCL标准适用于所有ATO。
+/// 官方完整清单未随本次分析获取, 此表按需登记, 不预置伪造的"官方"数据。
+model TrainingMatrixEntry {
+  id             String            @id @default(cuid())
+  taskCode       String // 训练科目编号, 与legacy体系FstdQualifiedTask.taskCode共用编号体系
+  taskName       String
+  characteristic FcsCharacteristic
+  thresholdT     FcsFidelityLevel // 可开始训练(Training)所需的最低保真度
+  thresholdTP    FcsFidelityLevel // 完成训练(Training to Proficiency)所需的最低保真度
+
+  @@unique([taskCode, characteristic])
+  @@map("training_matrix_entries")
 }
 
 model FstdRecurrentEvaluation {

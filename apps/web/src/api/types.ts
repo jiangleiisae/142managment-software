@@ -43,6 +43,8 @@ export type LegacyLevel =
   | 'FNPT_II_MCC'
   | 'BITD'
 
+export type FstdQualificationBasisType = 'EASA_LEGACY_LEVEL' | 'EASA_FCS'
+
 export interface Fstd {
   id: string
   organizationId: string
@@ -50,6 +52,7 @@ export interface Fstd {
   representedAircraft: string
   deviceType: FstdDeviceType
   status: string
+  qualificationBasisType: FstdQualificationBasisType
   legacyLevel?: { level: LegacyLevel } | null
   qualifiedTasks?: { id: string; taskCode: string; taskName: string }[]
 }

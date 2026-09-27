@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BookingResourceType } from '@prisma/client';
+import { FstdService } from '../fstd/fstd.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class SchedulingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fstdService: FstdService,
+  ) {}
 
   /// 需求清单 3.8: 排课引擎作为消费方, 校验资源在时间段内无冲突
   private async assertNoConflict(resourceType: BookingResourceType, resourceId: string, startAt: Date, endAt: Date) {
@@ -43,11 +47,11 @@ export class SchedulingService {
         throw new BadRequestException(`FSTD ${fstd.deviceCode} 当前状态为 ${fstd.status}, 不可排课`);
       }
       if (data.taskCode) {
-        const task = await this.prisma.fstdQualifiedTask.findFirst({
-          where: { fstdId: data.resourceId, taskCode: data.taskCode },
-        });
-        if (!task) {
-          throw new BadRequestException(`FSTD ${fstd.deviceCode} 未鉴定训练科目 "${data.taskCode}", 不能安排此训练 (需求清单3.3.3)`);
+        // 统一能力判定入口 (需求清单3.3.3 can_device_perform_task): 内部按qualificationBasisType自动分流到
+        // legacy已鉴定任务清单校验, 或FCS体系的训练矩阵逐特征保真度比对, 排课引擎作为消费方无需关心具体判定逻辑
+        const capability = await this.fstdService.canDevicePerformTask(data.resourceId, data.taskCode);
+        if (!capability.eligible) {
+          throw new BadRequestException(`FSTD ${fstd.deviceCode} 不满足训练科目 "${data.taskCode}" 的能力要求: ${capability.reason}`);
         }
         // Training Restriction: 若该科目所需部件存在未修复的MMI缺陷, 阻止排课 (吸收FAA §60.20 Training Restriction概念)
         const blockingDiscrepancy = await this.prisma.discrepancyLog.findFirst({

@@ -1,5 +1,33 @@
 import { apiClient } from './client'
-import type { Fstd, FstdDeviceType, LegacyLevel } from './types'
+import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel } from './types'
+
+export type FcsCharacteristic = 'FDK' | 'CLH' | 'CLO' | 'SYS' | 'GND' | 'IGE' | 'OGE' | 'SND' | 'VIB' | 'MTN' | 'VIS' | 'NAV' | 'ATM' | 'OST'
+export type FcsFidelityLevel = 'N' | 'G' | 'R' | 'S'
+
+export interface FstdFcsCapability {
+  id: string
+  fstdId: string
+  characteristic: FcsCharacteristic
+  fidelityLevel: FcsFidelityLevel
+  subsystem?: string | null
+  isAssigned: boolean
+}
+
+export interface TrainingMatrixEntry {
+  id: string
+  taskCode: string
+  taskName: string
+  characteristic: FcsCharacteristic
+  thresholdT: FcsFidelityLevel
+  thresholdTP: FcsFidelityLevel
+}
+
+export interface TaskCapabilityResult {
+  eligible: boolean
+  basis: FstdQualificationBasisType
+  reason?: string
+  missingCharacteristics?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[]
+}
 
 export interface RecurrentEvaluation {
   id: string
@@ -110,10 +138,39 @@ export const fstdsApi = {
     representedAircraft: string
     deviceType: FstdDeviceType
     legacyLevel?: LegacyLevel
+    qualificationBasisType?: FstdQualificationBasisType
   }) => apiClient.post<Fstd>('/fstds', data).then((r) => r.data),
 
   addQualifiedTask: (fstdId: string, data: { taskCode: string; taskName: string }) =>
     apiClient.post(`/fstds/${fstdId}/qualified-tasks`, data).then((r) => r.data),
+
+  canPerformTask: (fstdId: string, taskCode: string) =>
+    apiClient.get<TaskCapabilityResult>(`/fstds/${fstdId}/can-perform/${taskCode}`).then((r) => r.data),
+
+  // ---- 3.3.2 FCS能力矩阵 ----
+
+  setFcsCapability: (
+    fstdId: string,
+    data: { characteristic: FcsCharacteristic; fidelityLevel: FcsFidelityLevel; subsystem?: string; isAssigned?: boolean },
+  ) => apiClient.post<FstdFcsCapability>(`/fstds/${fstdId}/fcs-capabilities`, data).then((r) => r.data),
+
+  listFcsCapabilities: (fstdId: string) =>
+    apiClient.get<FstdFcsCapability[]>(`/fstds/${fstdId}/fcs-capabilities`).then((r) => r.data),
+
+  // ---- 3.3.3 训练矩阵 (全局配置表) ----
+
+  addTrainingMatrixEntry: (data: {
+    taskCode: string
+    taskName: string
+    characteristic: FcsCharacteristic
+    thresholdT: FcsFidelityLevel
+    thresholdTP: FcsFidelityLevel
+  }) => apiClient.post<TrainingMatrixEntry>('/fstds/training-matrix-entries', data).then((r) => r.data),
+
+  listTrainingMatrixEntries: (taskCode?: string) =>
+    apiClient
+      .get<TrainingMatrixEntry[]>('/fstds/training-matrix-entries', { params: taskCode ? { taskCode } : undefined })
+      .then((r) => r.data),
 
   reportDiscrepancy: (
     fstdId: string,
