@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { FstdDeviceType, LegacyLevel } from '@prisma/client';
+import { FstdDeviceType, LegacyLevel, QtgDocumentType } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { FstdService } from './fstd.service.js';
@@ -125,6 +125,43 @@ export class FstdController {
   @Get('safety-facility-checks/due-soon')
   findSafetyChecksDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
     return this.fstdService.findSafetyChecksDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
+  // ---- 3.3.4 QTG/MQTG生命周期: 文档版本管理 ----
+
+  @Post(':id/qtg-documents')
+  addQtgDocument(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+  ) {
+    return this.fstdService.addQtgDocument(id, user.tenantId, dto);
+  }
+
+  @Get(':id/qtg-documents')
+  listQtgDocuments(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listQtgDocuments(id, user.tenantId);
+  }
+
+  // ---- 3.3.4 年度QTG按季度滚动运行 ----
+
+  @Post(':id/qtg-quarterly-runs')
+  recordQuarterlyQtgRun(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { year: number; quarter: number; completedAt?: string; result?: string; notes?: string },
+  ) {
+    return this.fstdService.recordQuarterlyQtgRun(id, user.tenantId, dto);
+  }
+
+  @Get(':id/qtg-quarterly-runs')
+  listQuarterlyQtgRuns(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listQuarterlyQtgRuns(id, user.tenantId);
+  }
+
+  @Get('qtg-quarterly-runs/issues')
+  findQuarterlyQtgIssues(@CurrentUser() user: AuthContext) {
+    return this.fstdService.findQuarterlyQtgIssues(user.tenantId);
   }
 
   // ---- 3.3.6 变更管理: draft -> submitted -> approved / rejected ----

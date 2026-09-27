@@ -50,6 +50,38 @@ export interface SafetyCheckDueSoonItem {
   lastResult?: string | null
 }
 
+export type QtgDocumentType = 'SOC' | 'VDR' | 'MQTG'
+
+export interface QtgDocument {
+  id: string
+  fstdId: string
+  documentType: QtgDocumentType
+  version: string
+  effectiveDate: string
+  pointerUrl?: string | null
+  supersededAt?: string | null
+  createdAt: string
+}
+
+export interface QuarterlyQtgRun {
+  id: string
+  fstdId: string
+  year: number
+  quarter: number
+  completedAt?: string | null
+  result?: string | null
+  notes?: string | null
+  burstTested: boolean
+}
+
+export interface QuarterlyQtgIssue {
+  fstdId: string
+  deviceCode: string
+  year: number
+  quarter: number
+  issueType: 'overdue' | 'burst_tested'
+}
+
 export interface Discrepancy {
   id: string
   fstdId: string
@@ -117,6 +149,27 @@ export const fstdsApi = {
     apiClient
       .get<SafetyCheckDueSoonItem[]>('/fstds/safety-facility-checks/due-soon', { params: { withinDays } })
       .then((r) => r.data),
+
+  // ---- 3.3.4 QTG/MQTG生命周期 ----
+
+  addQtgDocument: (
+    fstdId: string,
+    data: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+  ) => apiClient.post<QtgDocument>(`/fstds/${fstdId}/qtg-documents`, data).then((r) => r.data),
+
+  listQtgDocuments: (fstdId: string) =>
+    apiClient.get<QtgDocument[]>(`/fstds/${fstdId}/qtg-documents`).then((r) => r.data),
+
+  recordQuarterlyQtgRun: (
+    fstdId: string,
+    data: { year: number; quarter: number; completedAt?: string; result?: string; notes?: string },
+  ) => apiClient.post<QuarterlyQtgRun>(`/fstds/${fstdId}/qtg-quarterly-runs`, data).then((r) => r.data),
+
+  listQuarterlyQtgRuns: (fstdId: string) =>
+    apiClient.get<QuarterlyQtgRun[]>(`/fstds/${fstdId}/qtg-quarterly-runs`).then((r) => r.data),
+
+  findQuarterlyQtgIssues: () =>
+    apiClient.get<QuarterlyQtgIssue[]>('/fstds/qtg-quarterly-runs/issues').then((r) => r.data),
 
   // ---- 3.3.5 周期性评估 ----
 

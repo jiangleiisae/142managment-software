@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { FstdDeviceType, LegacyLevel } from '@prisma/client';
+import { FstdDeviceType, LegacyLevel, QtgDocumentType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -249,6 +249,113 @@ export class FstdService {
         nextDueDate: f.safetyFacilityChecks[0]?.nextDueDate ?? null,
         lastResult: f.safetyFacilityChecks[0]?.overallResult ?? null,
       }));
+  }
+
+  // ---- 3.3.4 QTG/MQTG生命周期: 文档版本管理 (SOC/VDR/MQTG) ----
+
+  /// 新版本生效时自动将同类型现有"当前版本"标记为已替代, 保证同一documentType永远只有一个current版本
+  async addQtgDocument(
+    fstdId: string,
+    tenantId: string,
+    data: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    await this.prisma.fstdQtgDocument.updateMany({
+      where: { fstdId, documentType: data.documentType, supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    return this.prisma.fstdQtgDocument.create({
+      data: {
+        fstdId,
+        documentType: data.documentType,
+        version: data.version,
+        effectiveDate: new Date(data.effectiveDate),
+        pointerUrl: data.pointerUrl,
+      },
+    });
+  }
+
+  async listQtgDocuments(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdQtgDocument.findMany({ where: { fstdId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  // ---- 3.3.4 年度QTG按季度滚动运行 (吸收FAA细节: 不允许年检前突击补测) ----
+
+  private quarterDateRange(year: number, quarter: number) {
+    const startMonth = (quarter - 1) * 3;
+    const start = new Date(year, startMonth, 1);
+    const end = new Date(year, startMonth + 3, 0, 23, 59, 59, 999);
+    return { start, end };
+  }
+
+  async recordQuarterlyQtgRun(
+    fstdId: string,
+    tenantId: string,
+    data: { year: number; quarter: number; completedAt?: string; result?: string; notes?: string },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    if (data.quarter < 1 || data.quarter > 4) {
+      throw new BadRequestException(`quarter must be 1-4, got ${data.quarter}`);
+    }
+    const completedAt = data.completedAt ? new Date(data.completedAt) : new Date();
+    const run = await this.prisma.fstdQtgQuarterlyRun.upsert({
+      where: { fstdId_year_quarter: { fstdId, year: data.year, quarter: data.quarter } },
+      create: { fstdId, year: data.year, quarter: data.quarter, completedAt, result: data.result, notes: data.notes },
+      update: { completedAt, result: data.result, notes: data.notes },
+    });
+    return { ...run, burstTested: this.isBurstTested(run) };
+  }
+
+  async listQuarterlyQtgRuns(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    const runs = await this.prisma.fstdQtgQuarterlyRun.findMany({
+      where: { fstdId },
+      orderBy: [{ year: 'desc' }, { quarter: 'desc' }],
+    });
+    return runs.map((r) => ({ ...r, burstTested: this.isBurstTested(r) }));
+  }
+
+  /// 突击补测判定: 该季度记录的完成日期落在自己所属日历季度范围之外 (如Q1的测试拖到年底才做)
+  private isBurstTested(run: { year: number; quarter: number; completedAt: Date | null }): boolean {
+    if (!run.completedAt) return false;
+    const { start, end } = this.quarterDateRange(run.year, run.quarter);
+    return run.completedAt < start || run.completedAt > end;
+  }
+
+  /// 合规问题仪表盘: 本年度已过季度中, 逾期未测 或 突击补测(完成日期不在所属季度内) 的设备清单
+  async findQuarterlyQtgIssues(tenantId: string) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+
+    const fstds = await this.prisma.fstd.findMany({
+      where: { organization: { tenantId }, status: 'active' },
+      include: { qtgQuarterlyRuns: { where: { year } } },
+    });
+
+    const issues: Array<{
+      fstdId: string;
+      deviceCode: string;
+      year: number;
+      quarter: number;
+      issueType: 'overdue' | 'burst_tested';
+    }> = [];
+
+    for (const fstd of fstds) {
+      for (let q = 1; q <= currentQuarter; q++) {
+        const run = fstd.qtgQuarterlyRuns.find((r) => r.quarter === q);
+        if (!run || !run.completedAt) {
+          const { end } = this.quarterDateRange(year, q);
+          if (now > end) {
+            issues.push({ fstdId: fstd.id, deviceCode: fstd.deviceCode, year, quarter: q, issueType: 'overdue' });
+          }
+        } else if (this.isBurstTested(run)) {
+          issues.push({ fstdId: fstd.id, deviceCode: fstd.deviceCode, year, quarter: q, issueType: 'burst_tested' });
+        }
+      }
+    }
+    return issues;
   }
 
   // ---- 3.3.6 变更/改装/搬迁/停用: draft -> submitted(已通知主管机关) -> approved / rejected ----

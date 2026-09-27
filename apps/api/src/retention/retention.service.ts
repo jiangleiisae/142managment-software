@@ -153,12 +153,27 @@ export class RetentionService implements OnModuleInit {
     push('personnel_qualification_record', qualifications.map((q) => q.createdAt));
 
     const fstds = await this.prisma.fstd.findMany({ where: { organization: { tenantId } } });
-    push('fstd_initial_qualification', fstds.map((f) => f.createdAt));
+    const mqtgDocs = await this.prisma.fstdQtgDocument.findMany({
+      where: { fstd: { organization: { tenantId } }, documentType: 'MQTG' },
+    });
+    // MQTG及初始鉴定记录合并计入同一"设备全生命周期"保存策略 (ORA.FSTD.240(a))
+    push('fstd_initial_qualification', [...fstds.map((f) => f.createdAt), ...mqtgDocs.map((d) => d.createdAt)]);
 
     const evaluations = await this.prisma.fstdRecurrentEvaluation.findMany({
       where: { fstd: { organization: { tenantId } } },
     });
-    push('fstd_periodic_documentation', evaluations.map((e) => e.createdAt));
+    const socVdrDocs = await this.prisma.fstdQtgDocument.findMany({
+      where: { fstd: { organization: { tenantId } }, documentType: { in: ['SOC', 'VDR'] } },
+    });
+    const quarterlyRuns = await this.prisma.fstdQtgQuarterlyRun.findMany({
+      where: { fstd: { organization: { tenantId } }, completedAt: { not: null } },
+    });
+    // 周期性QTG运行记录/SOC/VDR/内部测试报告等均归入"FSTD周期性复检文档"5年保存策略 (ORA.FSTD.240(b))
+    push('fstd_periodic_documentation', [
+      ...evaluations.map((e) => e.createdAt),
+      ...socVdrDocs.map((d) => d.createdAt),
+      ...quarterlyRuns.map((r) => r.completedAt),
+    ]);
 
     const findings = await this.prisma.finding.findMany({
       where: { auditTask: { auditSchedule: { organization: { tenantId } } } },

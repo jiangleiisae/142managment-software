@@ -418,6 +418,8 @@ model Fstd {
   safetyFacilityChecks FstdSafetyFacilityCheck[]
   discrepancies   DiscrepancyLog[]
   changeRequests  FstdChangeRequest[]
+  qtgDocuments    FstdQtgDocument[]
+  qtgQuarterlyRuns FstdQtgQuarterlyRun[]
 
   @@unique([organizationId, deviceCode])
   @@map("fstds")
@@ -472,6 +474,45 @@ model FstdRecurrentEvaluation {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_recurrent_evaluations")
+}
+
+/// 3.3.4 QTG/MQTG生命周期文档 (仅覆盖旧体系legacy相关文档类型: SOC/VDR/MQTG; SOJ/ER/ESL属新体系FCS分支, 三期实现)
+enum QtgDocumentType {
+  SOC // 旧体系合规声明 (Statement of Compliance)
+  VDR // 验证数据路线图 (Validation Data Roadmap), 新旧体系通用
+  MQTG // 主鉴定测试指南, 设备全生命周期永久保存 (ORA.FSTD.240(a))
+}
+
+model FstdQtgDocument {
+  id            String          @id @default(cuid())
+  fstdId        String
+  documentType  QtgDocumentType
+  version       String
+  effectiveDate DateTime
+  pointerUrl    String? // 对象存储指针(S3/R2), 一期先存文本占位, 不进数据库存实际文件
+  supersededAt  DateTime? // 被新版本替代的时间, null=当前有效版本
+  createdAt     DateTime        @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@map("fstd_qtg_documents")
+}
+
+/// 年度QTG按季度滚动运行记录 (吸收FAA细节: 不允许年检前突击补测, 呼应AMC1 FSTD(A).300(a)(9))
+model FstdQtgQuarterlyRun {
+  id          String    @id @default(cuid())
+  fstdId      String
+  year        Int
+  quarter     Int // 1-4
+  completedAt DateTime?
+  result      String? // pass / fail / partial
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@unique([fstdId, year, quarter])
+  @@map("fstd_qtg_quarterly_runs")
 }
 
 /// 安全设施年检 (3.3.8, ORA.FSTD.115(b)): 急停/应急照明等, 每年至少检查一次并记录
