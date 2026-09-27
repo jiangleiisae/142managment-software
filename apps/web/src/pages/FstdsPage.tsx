@@ -1,5 +1,5 @@
-import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, message } from 'antd'
+import { DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type {
@@ -215,14 +215,24 @@ export function FstdsPage() {
   const handleAddQtgDocument = async () => {
     if (!qtgDocModalFstdId) return
     const values = await qtgDocForm.validateFields()
+    const { fileList, ...rest } = values
     await fstdsApi.addQtgDocument(qtgDocModalFstdId, {
-      ...values,
+      ...rest,
       effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
+      file: fileList?.[0]?.originFileObj,
     })
     message.success('QTG文档版本已登记, 同类型旧版本已自动标记为已替代')
     setQtgDocModalFstdId(undefined)
     qtgDocForm.resetFields()
     load()
+  }
+
+  const handleDownloadQtgDocument = async (doc: QtgDocument) => {
+    try {
+      await fstdsApi.downloadQtgDocumentFile(doc)
+    } catch {
+      message.error('下载失败, 该记录可能没有已上传的文件 (仅登记了外部引用链接)')
+    }
   }
 
   const handleRecordQuarterlyRun = async () => {
@@ -536,7 +546,17 @@ export function FstdsPage() {
                     dataSource={fstd.qtgDocuments ?? []}
                     locale={{ emptyText: '尚未登记任何QTG文档' }}
                     renderItem={(d) => (
-                      <List.Item>
+                      <List.Item
+                        actions={
+                          d.originalFileName
+                            ? [
+                                <Button key="download" size="small" icon={<DownloadOutlined />} onClick={() => handleDownloadQtgDocument(d)}>
+                                  下载
+                                </Button>,
+                              ]
+                            : []
+                        }
+                      >
                         <Tag color={d.documentType === 'MQTG' ? 'purple' : 'blue'}>{d.documentType}</Tag>
                         {d.version}
                         <Tag color={d.supersededAt ? 'default' : 'green'} style={{ marginLeft: 8 }}>
@@ -545,6 +565,11 @@ export function FstdsPage() {
                         <span style={{ color: '#888', marginLeft: 8 }}>
                           生效日期 {new Date(d.effectiveDate).toLocaleDateString()}
                           {d.documentType === 'MQTG' ? ' (设备全生命周期保存)' : ''}
+                          {d.originalFileName
+                            ? ` | 已上传文件: ${d.originalFileName} (${((d.fileSize ?? 0) / 1024).toFixed(1)} KB)`
+                            : d.pointerUrl
+                              ? ` | 外部链接: ${d.pointerUrl}`
+                              : ''}
                         </span>
                       </List.Item>
                     )}
@@ -732,8 +757,18 @@ export function FstdsPage() {
           <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="pointerUrl" label="文件指针/链接 (对象存储地址, 可选)">
-            <Input placeholder="如 s3://qtg-docs/fstd-01/mqtg-v2.pdf" />
+          <Form.Item
+            name="fileList"
+            label="上传文件 (PDF/Word/Excel/图片, 最大25MB)"
+            valuePropName="fileList"
+            getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
+          >
+            <Upload beforeUpload={() => false} maxCount={1} accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg">
+              <Button icon={<UploadOutlined />}>选择文件</Button>
+            </Upload>
+          </Form.Item>
+          <Form.Item name="pointerUrl" label="或填写外部引用链接 (未上传文件时使用, 如内部文档系统地址)">
+            <Input placeholder="如 https://docs.internal/mqtg-v2" />
           </Form.Item>
         </Form>
       </Modal>

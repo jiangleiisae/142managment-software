@@ -379,10 +379,20 @@ export class FstdService {
   // ---- 3.3.4 QTG/MQTG生命周期: 文档版本管理 (SOC/VDR/MQTG) ----
 
   /// 新版本生效时自动将同类型现有"当前版本"标记为已替代, 保证同一documentType永远只有一个current版本
+  /// pointerUrl: 未上传文件时的手填外部引用链接; 上传文件时改由storedFileName等参数携带实际文件元数据, 两者互斥
   async addQtgDocument(
     fstdId: string,
     tenantId: string,
-    data: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+    data: {
+      documentType: QtgDocumentType;
+      version: string;
+      effectiveDate: string;
+      pointerUrl?: string;
+      storedFileName?: string;
+      originalFileName?: string;
+      mimeType?: string;
+      fileSize?: number;
+    },
   ) {
     await this.findFstdOrThrow(fstdId, tenantId);
     await this.prisma.fstdQtgDocument.updateMany({
@@ -395,7 +405,10 @@ export class FstdService {
         documentType: data.documentType,
         version: data.version,
         effectiveDate: new Date(data.effectiveDate),
-        pointerUrl: data.pointerUrl,
+        pointerUrl: data.storedFileName ?? data.pointerUrl,
+        originalFileName: data.originalFileName,
+        mimeType: data.mimeType,
+        fileSize: data.fileSize,
       },
     });
   }
@@ -403,6 +416,21 @@ export class FstdService {
   async listQtgDocuments(fstdId: string, tenantId: string) {
     await this.findFstdOrThrow(fstdId, tenantId);
     return this.prisma.fstdQtgDocument.findMany({ where: { fstdId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  /// 下载入口的租户校验: 通过文档反查所属设备的机构再核对租户, 与其余fstdId间接子资源的校验模式一致
+  async findQtgDocumentForDownload(docId: string, tenantId: string) {
+    const doc = await this.prisma.fstdQtgDocument.findUnique({
+      where: { id: docId },
+      include: { fstd: { include: { organization: true } } },
+    });
+    if (!doc || doc.fstd.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`QTG document ${docId} not found`);
+    }
+    if (!doc.originalFileName) {
+      throw new BadRequestException(`QTG document ${docId} 没有已上传的文件 (仅登记了外部引用链接)`);
+    }
+    return doc;
   }
 
   // ---- 3.3.4 年度QTG按季度滚动运行 (吸收FAA细节: 不允许年检前突击补测) ----

@@ -775,14 +775,17 @@ enum QtgDocumentType {
 }
 
 model FstdQtgDocument {
-  id            String          @id @default(cuid())
-  fstdId        String
-  documentType  QtgDocumentType
-  version       String
-  effectiveDate DateTime
-  pointerUrl    String? // 对象存储指针(S3/R2), 一期先存文本占位, 不进数据库存实际文件
-  supersededAt  DateTime? // 被新版本替代的时间, null=当前有效版本
-  createdAt     DateTime        @default(now())
+  id               String          @id @default(cuid())
+  fstdId           String
+  documentType     QtgDocumentType
+  version          String
+  effectiveDate    DateTime
+  pointerUrl       String? // 已上传文件: 本地磁盘存储路径; 未上传文件: 用户手填的外部引用链接(如企业内部文档系统地址)
+  originalFileName String? // 上传文件的原始文件名, 仅上传时有值
+  mimeType         String?
+  fileSize         Int? // 字节数
+  supersededAt     DateTime? // 被新版本替代的时间, null=当前有效版本
+  createdAt        DateTime        @default(now())
 
   fstd Fstd @relation(fields: [fstdId], references: [id])
 

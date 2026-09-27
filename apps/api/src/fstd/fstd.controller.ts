@@ -1,4 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
+import { join } from 'node:path';
+import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   FcsCharacteristic,
   FcsFidelityLevel,
@@ -7,9 +10,11 @@ import {
   LegacyLevel,
   QtgDocumentType,
 } from '@prisma/client';
+import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { FstdService } from './fstd.service.js';
+import { QTG_UPLOAD_DIR, qtgFileUploadOptions } from './qtg-file-storage.js';
 
 @Controller('fstds')
 export class FstdController {
@@ -170,17 +175,39 @@ export class FstdController {
   // ---- 3.3.4 QTG/MQTG生命周期: 文档版本管理 ----
 
   @Post(':id/qtg-documents')
+  @UseInterceptors(FileInterceptor('file', qtgFileUploadOptions))
   addQtgDocument(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
     @Body() dto: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.fstdService.addQtgDocument(id, user.tenantId, dto);
+    return this.fstdService.addQtgDocument(id, user.tenantId, {
+      ...dto,
+      storedFileName: file?.filename,
+      originalFileName: file?.originalname,
+      mimeType: file?.mimetype,
+      fileSize: file?.size,
+    });
   }
 
   @Get(':id/qtg-documents')
   listQtgDocuments(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.fstdService.listQtgDocuments(id, user.tenantId);
+  }
+
+  @Get('qtg-documents/:docId/file')
+  async downloadQtgDocumentFile(
+    @CurrentUser() user: AuthContext,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const doc = await this.fstdService.findQtgDocumentForDownload(docId, user.tenantId);
+    res.set({
+      'Content-Type': doc.mimeType ?? 'application/octet-stream',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.originalFileName!)}`,
+    });
+    return new StreamableFile(createReadStream(join(QTG_UPLOAD_DIR, doc.pointerUrl!)));
   }
 
   // ---- 3.3.4 年度QTG按季度滚动运行 ----

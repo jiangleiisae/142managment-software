@@ -87,6 +87,9 @@ export interface QtgDocument {
   version: string
   effectiveDate: string
   pointerUrl?: string | null
+  originalFileName?: string | null
+  mimeType?: string | null
+  fileSize?: number | null
   supersededAt?: string | null
   createdAt: string
 }
@@ -211,8 +214,26 @@ export const fstdsApi = {
 
   addQtgDocument: (
     fstdId: string,
-    data: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
-  ) => apiClient.post<QtgDocument>(`/fstds/${fstdId}/qtg-documents`, data).then((r) => r.data),
+    data: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string; file?: File },
+  ) => {
+    const form = new FormData()
+    form.append('documentType', data.documentType)
+    form.append('version', data.version)
+    form.append('effectiveDate', data.effectiveDate)
+    if (data.pointerUrl) form.append('pointerUrl', data.pointerUrl)
+    if (data.file) form.append('file', data.file)
+    return apiClient.post<QtgDocument>(`/fstds/${fstdId}/qtg-documents`, form).then((r) => r.data)
+  },
+
+  downloadQtgDocumentFile: async (doc: QtgDocument) => {
+    const res = await apiClient.get(`/fstds/qtg-documents/${doc.id}/file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = doc.originalFileName ?? doc.version
+    link.click()
+    URL.revokeObjectURL(url)
+  },
 
   listQtgDocuments: (fstdId: string) =>
     apiClient.get<QtgDocument[]>(`/fstds/${fstdId}/qtg-documents`).then((r) => r.data),
