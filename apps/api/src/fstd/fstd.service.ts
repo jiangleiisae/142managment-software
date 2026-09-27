@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { FstdDeviceType, LegacyLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -79,11 +79,17 @@ export class FstdService {
     return !!task;
   }
 
-  // 需求清单 3.3.7: 缺陷处理, 吸收FAA 30天修复时限规则
+  // 需求清单 3.3.7: 缺陷处理, 吸收FAA 30天修复时限规则; Kiosk交互额外采集打分与培训损失时间
   async reportDiscrepancy(
     fstdId: string,
     tenantId: string,
-    data: { description: string; isMmi?: boolean; reportedById?: string },
+    data: {
+      description: string;
+      isMmi?: boolean;
+      reportedById?: string;
+      severityRating?: number;
+      trainingTimeLostMinutes?: number;
+    },
   ) {
     await this.findFstdOrThrow(fstdId, tenantId);
     const dueDate = new Date();
@@ -94,8 +100,24 @@ export class FstdService {
         description: data.description,
         isMmi: data.isMmi ?? false,
         reportedById: data.reportedById,
+        severityRating: data.severityRating,
+        trainingTimeLostMinutes: data.trainingTimeLostMinutes,
         dueDate,
       },
+    });
+  }
+
+  async listDiscrepancies(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.discrepancyLog.findMany({ where: { fstdId }, orderBy: { reportedAt: 'desc' } });
+  }
+
+  /// 已逾期30天修复时限仍未纠正的缺陷 (仪表盘告警, 呼应其余到期类告警的统一模式)
+  async findOverdueDiscrepancies(tenantId: string) {
+    return this.prisma.discrepancyLog.findMany({
+      where: { status: 'open', fstd: { organization: { tenantId } }, dueDate: { lt: new Date() } },
+      include: { fstd: true },
+      orderBy: { dueDate: 'asc' },
     });
   }
 
@@ -110,6 +132,9 @@ export class FstdService {
     });
     if (!discrepancy || discrepancy.fstd.organization.tenantId !== tenantId) {
       throw new NotFoundException(`Discrepancy ${discrepancyId} not found`);
+    }
+    if (discrepancy.status !== 'open') {
+      throw new BadRequestException(`Discrepancy ${discrepancyId} is already ${discrepancy.status}`);
     }
     return this.prisma.discrepancyLog.update({
       where: { id: discrepancyId },

@@ -3,6 +3,7 @@ import {
   AuditOutlined,
   BookOutlined,
   CalendarOutlined,
+  DesktopOutlined,
   InboxOutlined,
   LogoutOutlined,
   RocketOutlined,
@@ -25,6 +26,7 @@ const menuItems: MenuProps['items'] = [
   { key: '/courses', icon: <BookOutlined />, label: '课程管理' },
   { key: '/students', icon: <UserOutlined />, label: '学员记录' },
   { key: '/bookings', icon: <CalendarOutlined />, label: '排班预订' },
+  { key: '/kiosk', icon: <DesktopOutlined />, label: '缺陷报告 Kiosk' },
 ]
 
 export function AppLayout() {

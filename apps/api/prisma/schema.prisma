@@ -481,6 +481,8 @@ model DiscrepancyLog {
   reportedAt      DateTime  @default(now())
   description     String
   isMmi           Boolean   @default(false) // Missing/Malfunctioning/Inoperative
+  severityRating  Int? // Kiosk打分 1-5, 5为最严重 (对标Simorg)
+  trainingTimeLostMinutes Int? // Kiosk记录培训损失时间(分钟)
   correctiveAction String?
   correctedById   String?
   correctedAt     DateTime?

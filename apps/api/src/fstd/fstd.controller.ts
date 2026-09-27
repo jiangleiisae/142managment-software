@@ -53,9 +53,26 @@ export class FstdController {
   reportDiscrepancy(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
-    @Body() dto: { description: string; isMmi?: boolean; reportedById?: string },
+    @Body()
+    dto: {
+      description: string;
+      isMmi?: boolean;
+      reportedById?: string;
+      severityRating?: number;
+      trainingTimeLostMinutes?: number;
+    },
   ) {
     return this.fstdService.reportDiscrepancy(id, user.tenantId, dto);
+  }
+
+  @Get(':id/discrepancies')
+  listDiscrepancies(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listDiscrepancies(id, user.tenantId);
+  }
+
+  @Get('discrepancies/overdue')
+  findOverdueDiscrepancies(@CurrentUser() user: AuthContext) {
+    return this.fstdService.findOverdueDiscrepancies(user.tenantId);
   }
 
   @Post('discrepancies/:discrepancyId/correct')

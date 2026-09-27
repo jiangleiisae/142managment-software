@@ -26,6 +26,23 @@ export interface EvaluationDueSoonItem {
   lastResult?: string | null
 }
 
+export interface Discrepancy {
+  id: string
+  fstdId: string
+  reportedById?: string | null
+  reportedAt: string
+  description: string
+  isMmi: boolean
+  severityRating?: number | null
+  trainingTimeLostMinutes?: number | null
+  correctiveAction?: string | null
+  correctedById?: string | null
+  correctedAt?: string | null
+  status: 'open' | 'corrected'
+  dueDate?: string | null
+  fstd?: { deviceCode: string }
+}
+
 export const fstdsApi = {
   list: (organizationId: string) => apiClient.get<Fstd[]>('/fstds', { params: { organizationId } }).then((r) => r.data),
 
@@ -42,8 +59,25 @@ export const fstdsApi = {
   addQualifiedTask: (fstdId: string, data: { taskCode: string; taskName: string }) =>
     apiClient.post(`/fstds/${fstdId}/qualified-tasks`, data).then((r) => r.data),
 
-  reportDiscrepancy: (fstdId: string, data: { description: string; isMmi?: boolean }) =>
-    apiClient.post(`/fstds/${fstdId}/discrepancies`, data).then((r) => r.data),
+  reportDiscrepancy: (
+    fstdId: string,
+    data: {
+      description: string
+      isMmi?: boolean
+      reportedById?: string
+      severityRating?: number
+      trainingTimeLostMinutes?: number
+    },
+  ) => apiClient.post<Discrepancy>(`/fstds/${fstdId}/discrepancies`, data).then((r) => r.data),
+
+  listDiscrepancies: (fstdId: string) =>
+    apiClient.get<Discrepancy[]>(`/fstds/${fstdId}/discrepancies`).then((r) => r.data),
+
+  findOverdueDiscrepancies: () =>
+    apiClient.get<Discrepancy[]>('/fstds/discrepancies/overdue').then((r) => r.data),
+
+  correctDiscrepancy: (discrepancyId: string, data: { correctiveAction: string; correctedById?: string }) =>
+    apiClient.post<Discrepancy>(`/fstds/discrepancies/${discrepancyId}/correct`, data).then((r) => r.data),
 
   // ---- 3.3.5 周期性评估 ----
 
