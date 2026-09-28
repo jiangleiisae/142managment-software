@@ -681,43 +681,5 @@ export class FstdService {
     return issues;
   }
 
-  // ---- 3.3.6 变更/改装/搬迁/停用: draft -> submitted(已通知主管机关) -> approved / rejected ----
-
-  async createChangeRequest(fstdId: string, tenantId: string, data: { changeType: string; description?: string }) {
-    await this.findFstdOrThrow(fstdId, tenantId);
-    return this.prisma.fstdChangeRequest.create({ data: { fstdId, ...data } });
-  }
-
-  async listChangeRequests(fstdId: string, tenantId: string) {
-    await this.findFstdOrThrow(fstdId, tenantId);
-    return this.prisma.fstdChangeRequest.findMany({ where: { fstdId }, orderBy: { createdAt: 'desc' } });
-  }
-
-  private async findChangeRequestOrThrow(id: string, tenantId: string) {
-    const cr = await this.prisma.fstdChangeRequest.findUnique({
-      where: { id },
-      include: { fstd: { include: { organization: true } } },
-    });
-    if (!cr || cr.fstd.organization.tenantId !== tenantId) throw new NotFoundException(`Change request ${id} not found`);
-    return cr;
-  }
-
-  /// 提前告知主管机关 (需求清单3.3.6: EASA条文只要求"提前告知", FAA的21天等待期可作为默认SLA参考)
-  async submitChangeRequest(id: string, tenantId: string) {
-    await this.findChangeRequestOrThrow(id, tenantId);
-    return this.prisma.fstdChangeRequest.update({
-      where: { id },
-      data: { status: 'submitted', notifiedAuthorityAt: new Date() },
-    });
-  }
-
-  async approveChangeRequest(id: string, tenantId: string) {
-    await this.findChangeRequestOrThrow(id, tenantId);
-    return this.prisma.fstdChangeRequest.update({ where: { id }, data: { status: 'approved' } });
-  }
-
-  async rejectChangeRequest(id: string, tenantId: string) {
-    await this.findChangeRequestOrThrow(id, tenantId);
-    return this.prisma.fstdChangeRequest.update({ where: { id }, data: { status: 'rejected' } });
-  }
+  // 3.3.6 变更管理已迁移至通用 /change-requests 接口 (entityType=Fstd), 见 change-management 模块
 }

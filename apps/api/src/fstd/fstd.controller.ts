@@ -290,34 +290,5 @@ export class FstdController {
     return this.fstdService.findQuarterlyQtgIssues(user.tenantId);
   }
 
-  // ---- 3.3.6 变更管理: draft -> submitted -> approved / rejected ----
-
-  @Post(':id/change-requests')
-  createChangeRequest(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { changeType: string; description?: string },
-  ) {
-    return this.fstdService.createChangeRequest(id, user.tenantId, dto);
-  }
-
-  @Get(':id/change-requests')
-  listChangeRequests(@CurrentUser() user: AuthContext, @Param('id') id: string) {
-    return this.fstdService.listChangeRequests(id, user.tenantId);
-  }
-
-  @Post('change-requests/:crId/submit')
-  submitChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
-    return this.fstdService.submitChangeRequest(crId, user.tenantId);
-  }
-
-  @Post('change-requests/:crId/approve')
-  approveChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
-    return this.fstdService.approveChangeRequest(crId, user.tenantId);
-  }
-
-  @Post('change-requests/:crId/reject')
-  rejectChangeRequest(@CurrentUser() user: AuthContext, @Param('crId') crId: string) {
-    return this.fstdService.rejectChangeRequest(crId, user.tenantId);
-  }
+  // 3.3.6 变更管理已迁移至通用 /change-requests 接口 (entityType=Fstd), 见 change-management 模块
 }

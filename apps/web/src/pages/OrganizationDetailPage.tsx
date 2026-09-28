@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { organizationsApi } from '../api/organizations'
 import type { CertificateStatus, Organization } from '../api/types'
+import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
 
 const STATUS_COLOR: Record<CertificateStatus, string> = {
   ACTIVE: 'green',
@@ -134,6 +135,10 @@ export function OrganizationDetailPage() {
             },
           ]}
         />
+      </Card>
+
+      <Card title="机构变更管理 (3.1, ORA.GEN.130)" style={{ marginTop: 16 }}>
+        {id && <ChangeRequestPanel entityType="Organization" entityId={id} />}
       </Card>
 
       <Modal title="新增证书" open={modalOpen} onOk={handleAddCertificate} onCancel={() => setModalOpen(false)}>

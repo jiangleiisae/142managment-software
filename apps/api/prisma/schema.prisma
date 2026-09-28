@@ -96,21 +96,27 @@ enum ChangeRequestStatus {
   NOTIFIED
 }
 
+/// 通用变更管理 (ORA.GEN.130): 供机构(3.1)/FSTD(3.3.6)等模块共用同一套状态机与审计轨迹,
+/// 不同entityType+changeType的审批类型/提前通知天数/所需详情字段由 change-management 模块的静态配置表决定。
 model ChangeRequest {
-  id             String              @id @default(cuid())
-  tenantId       String
-  entityType     String // "Organization" / "Fstd" / "Course" ...
-  entityId       String
-  changeType     String // 机构名称/地址/负责人变更/FSTD升级/搬迁 等具体类型
-  approvalType   ChangeApprovalType
-  status         ChangeRequestStatus @default(DRAFT)
-  beforeJson     Json?
-  afterJson      Json?
-  submittedAt    DateTime?
-  effectiveAt    DateTime?
-  authorityReply String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id                    String              @id @default(cuid())
+  tenantId              String
+  entityType            String // "Organization" / "Fstd"
+  entityId              String
+  changeType            String // 机构: NAME/SCOPE/ACCOUNTABLE_MANAGER等; FSTD: UPDATE/UPGRADE/MAJOR_MODIFICATION等 (3.3.6)
+  approvalType          ChangeApprovalType
+  status                ChangeRequestStatus @default(DRAFT)
+  description           String?
+  detailsJson           Json? // 特定变更类型所需的结构化详情, 如FSTD重大改装的impactAssessment/搬迁的验证测试完成百分比
+  beforeJson            Json?
+  afterJson             Json?
+  minNoticeDays         Int? // 创建时按changeType快照的最低提前通知天数, 即使后续配置调整也不影响已创建的变更单
+  submittedAt           DateTime?
+  earliestEffectiveDate DateTime? // submittedAt + minNoticeDays, 批准生效日期不得早于此日期
+  effectiveAt           DateTime?
+  authorityReply        String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   @@index([tenantId, entityType, entityId])
   @@map("change_requests")
@@ -665,7 +671,6 @@ model Fstd {
   recurrentEvals  FstdRecurrentEvaluation[]
   safetyFacilityChecks FstdSafetyFacilityCheck[]
   discrepancies   DiscrepancyLog[]
-  changeRequests  FstdChangeRequest[]
   qtgDocuments    FstdQtgDocument[]
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
   performanceMetrics FstdPerformanceMetric[]
@@ -921,20 +926,6 @@ model DiscrepancyLog {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("discrepancy_logs")
-}
-
-model FstdChangeRequest {
-  id          String   @id @default(cuid())
-  fstdId      String
-  changeType  String // update / upgrade / major_modification / relocation / deactivation / transfer
-  description String?
-  notifiedAuthorityAt DateTime?
-  status      String   @default("draft")
-  createdAt   DateTime @default(now())
-
-  fstd Fstd @relation(fields: [fstdId], references: [id])
-
-  @@map("fstd_change_requests")
 }
 
 // ============================================================

@@ -40,15 +40,6 @@ export interface RecurrentEvaluation {
   nextDueDate?: string | null
 }
 
-export interface FstdChangeRequest {
-  id: string
-  changeType: string
-  description?: string | null
-  status: 'draft' | 'submitted' | 'approved' | 'rejected'
-  notifiedAuthorityAt?: string | null
-  createdAt: string
-}
-
 export interface EvaluationDueSoonItem {
   fstdId: string
   deviceCode: string
@@ -358,20 +349,5 @@ export const fstdsApi = {
   listEvaluationsDueSoon: (withinDays = 60) =>
     apiClient.get<EvaluationDueSoonItem[]>('/fstds/evaluations/due-soon', { params: { withinDays } }).then((r) => r.data),
 
-  // ---- 3.3.6 变更管理 ----
-
-  createChangeRequest: (fstdId: string, data: { changeType: string; description?: string }) =>
-    apiClient.post<FstdChangeRequest>(`/fstds/${fstdId}/change-requests`, data).then((r) => r.data),
-
-  listChangeRequests: (fstdId: string) =>
-    apiClient.get<FstdChangeRequest[]>(`/fstds/${fstdId}/change-requests`).then((r) => r.data),
-
-  submitChangeRequest: (crId: string) =>
-    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/submit`).then((r) => r.data),
-
-  approveChangeRequest: (crId: string) =>
-    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/approve`).then((r) => r.data),
-
-  rejectChangeRequest: (crId: string) =>
-    apiClient.post<FstdChangeRequest>(`/fstds/change-requests/${crId}/reject`).then((r) => r.data),
+  // 3.3.6 变更管理已迁移至通用 changeRequestsApi (entityType='Fstd'), 见 api/changeRequests.ts
 }

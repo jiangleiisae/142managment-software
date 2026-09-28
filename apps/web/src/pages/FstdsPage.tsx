@@ -8,7 +8,6 @@ import type {
   EvaluationDueSoonItem,
   FcsCharacteristic,
   FcsFidelityLevel,
-  FstdChangeRequest,
   FstdFcsCapability,
   PerformanceMetricsSummary,
   QtgDocument,
@@ -24,6 +23,7 @@ import type {
 import { fstdsApi } from '../api/fstds'
 import { personnelApi } from '../api/personnel'
 import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel, Personnel } from '../api/types'
+import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
@@ -33,7 +33,6 @@ const QTG_DOCUMENT_TYPES: QtgDocumentType[] = ['SOC', 'VDR', 'MQTG']
 const LEGACY_LEVELS: LegacyLevel[] = [
   'FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD',
 ]
-const CHANGE_TYPES = ['update', 'upgrade', 'major_modification', 'relocation', 'deactivation', 'transfer']
 const QUALIFICATION_BASIS_TYPES: FstdQualificationBasisType[] = ['EASA_LEGACY_LEVEL', 'EASA_FCS']
 const FCS_CHARACTERISTICS: FcsCharacteristic[] = [
   'FDK', 'CLH', 'CLO', 'SYS', 'GND', 'IGE', 'OGE', 'SND', 'VIB', 'MTN', 'VIS', 'NAV', 'ATM', 'OST',
@@ -41,16 +40,8 @@ const FCS_CHARACTERISTICS: FcsCharacteristic[] = [
 const FCS_FIDELITY_LEVELS: FcsFidelityLevel[] = ['N', 'G', 'R', 'S']
 const FIDELITY_COLOR: Record<FcsFidelityLevel, string> = { N: 'default', G: 'blue', R: 'orange', S: 'purple' }
 
-const CR_STATUS_COLOR: Record<FstdChangeRequest['status'], string> = {
-  draft: 'default',
-  submitted: 'processing',
-  approved: 'green',
-  rejected: 'red',
-}
-
 interface FstdDetail extends Fstd {
   evaluations?: RecurrentEvaluation[]
-  changeRequests?: FstdChangeRequest[]
   discrepancies?: Discrepancy[]
   safetyChecks?: SafetyFacilityCheck[]
   qtgDocuments?: QtgDocument[]
@@ -74,7 +65,6 @@ export function FstdsPage() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [evalModalFstdId, setEvalModalFstdId] = useState<string>()
-  const [crModalFstdId, setCrModalFstdId] = useState<string>()
   const [discrepancyModalFstdId, setDiscrepancyModalFstdId] = useState<string>()
   const [correctModalDiscrepancyId, setCorrectModalDiscrepancyId] = useState<string>()
   const [safetyCheckModalFstdId, setSafetyCheckModalFstdId] = useState<string>()
@@ -97,7 +87,6 @@ export function FstdsPage() {
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
-  const [crForm] = Form.useForm()
   const [discrepancyForm] = Form.useForm()
   const [correctForm] = Form.useForm()
   const [safetyCheckForm] = Form.useForm()
@@ -119,7 +108,6 @@ export function FstdsPage() {
         list.map(async (f) => ({
           ...f,
           evaluations: await fstdsApi.listRecurrentEvaluations(f.id),
-          changeRequests: await fstdsApi.listChangeRequests(f.id),
           discrepancies: await fstdsApi.listDiscrepancies(f.id),
           safetyChecks: await fstdsApi.listSafetyFacilityChecks(f.id),
           qtgDocuments: await fstdsApi.listQtgDocuments(f.id),
@@ -169,25 +157,6 @@ export function FstdsPage() {
     message.success('周期性评估记录已保存, 下次到期日已自动计算')
     setEvalModalFstdId(undefined)
     evalForm.resetFields()
-    load()
-  }
-
-  const handleCreateChangeRequest = async () => {
-    if (!crModalFstdId) return
-    const values = await crForm.validateFields()
-    await fstdsApi.createChangeRequest(crModalFstdId, values)
-    message.success('变更请求已创建 (草稿), 请提交以通知主管机关')
-    setCrModalFstdId(undefined)
-    crForm.resetFields()
-    load()
-  }
-
-  const transitionChangeRequest = async (action: 'submit' | 'approve' | 'reject', crId: string) => {
-    const fn = { submit: fstdsApi.submitChangeRequest, approve: fstdsApi.approveChangeRequest, reject: fstdsApi.rejectChangeRequest }[
-      action
-    ]
-    await fn(crId)
-    message.success('状态已更新')
     load()
   }
 
@@ -463,9 +432,6 @@ export function FstdsPage() {
                     <Button size="small" onClick={() => setEvalModalFstdId(fstd.id)}>
                       记录周期评估
                     </Button>
-                    <Button size="small" onClick={() => setCrModalFstdId(fstd.id)}>
-                      发起变更
-                    </Button>
                     <Button size="small" danger onClick={() => setDiscrepancyModalFstdId(fstd.id)}>
                       报告缺陷
                     </Button>
@@ -636,35 +602,10 @@ export function FstdsPage() {
                       </List.Item>
                     )}
                   />
-                  <List
-                    header="变更请求 (draft → submitted → approved/rejected)"
-                    size="small"
-                    dataSource={fstd.changeRequests ?? []}
-                    locale={{ emptyText: '暂无变更请求' }}
-                    renderItem={(cr) => (
-                      <List.Item
-                        actions={[
-                          cr.status === 'draft' && (
-                            <Button key="submit" size="small" onClick={() => transitionChangeRequest('submit', cr.id)}>
-                              提交(通知主管机关)
-                            </Button>
-                          ),
-                          cr.status === 'submitted' && (
-                            <Button key="approve" size="small" type="primary" onClick={() => transitionChangeRequest('approve', cr.id)}>
-                              批准
-                            </Button>
-                          ),
-                          cr.status === 'submitted' && (
-                            <Button key="reject" size="small" danger onClick={() => transitionChangeRequest('reject', cr.id)}>
-                              驳回
-                            </Button>
-                          ),
-                        ].filter(Boolean)}
-                      >
-                        <Tag color={CR_STATUS_COLOR[cr.status]}>{cr.status}</Tag> {cr.changeType}: {cr.description}
-                      </List.Item>
-                    )}
-                  />
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>变更管理 (3.3.6, ORA.GEN.130)</div>
+                    <ChangeRequestPanel entityType="Fstd" entityId={fstd.id} />
+                  </div>
                   <List
                     header="缺陷/故障处理 (3.3.7, 30天修复时限)"
                     size="small"
@@ -837,22 +778,6 @@ export function FstdsPage() {
                 { value: 'fail', label: '未通过' },
               ]}
             />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="发起变更请求"
-        open={!!crModalFstdId}
-        onOk={handleCreateChangeRequest}
-        onCancel={() => setCrModalFstdId(undefined)}
-      >
-        <Form form={crForm} layout="vertical">
-          <Form.Item name="changeType" label="变更类型" rules={[{ required: true }]}>
-            <Select options={CHANGE_TYPES.map((v) => ({ value: v, label: v }))} />
-          </Form.Item>
-          <Form.Item name="description" label="变更说明">
-            <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>

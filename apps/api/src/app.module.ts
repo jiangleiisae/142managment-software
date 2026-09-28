@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
 import { TenantGuard } from './auth/tenant.guard.js';
+import { ChangeManagementModule } from './change-management/change-management.module.js';
 import { CourseModule } from './course/course.module.js';
 import { FstdModule } from './fstd/fstd.module.js';
 import { IsmsModule } from './isms/isms.module.js';
@@ -36,6 +37,7 @@ import { UserModule } from './user/user.module.js';
     RetentionModule,
     IsmsModule,
     UserModule,
+    ChangeManagementModule,
   ],
   controllers: [AppController],
   providers: [
