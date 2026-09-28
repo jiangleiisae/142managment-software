@@ -23,10 +23,12 @@ export interface TrainingMatrixEntry {
 }
 
 export interface TaskCapabilityResult {
-  eligible: boolean
   basis: FstdQualificationBasisType
+  canStartTraining: boolean
+  canCompleteTraining: boolean
   reason?: string
-  missingCharacteristics?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[]
+  missingForStart?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[]
+  missingForCompletion?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[]
 }
 
 export interface RecurrentEvaluation {
@@ -76,6 +78,27 @@ export interface SafetyCheckDueSoonItem {
   deviceCode: string
   nextDueDate?: string | null
   lastResult?: string | null
+}
+
+export interface EslFeatureEntry {
+  id: string
+  eslId: string
+  characteristic: FcsCharacteristic
+  fidelityLevel?: FcsFidelityLevel | null
+  equipmentDescription?: string | null
+  limitations?: string | null
+}
+
+export interface EquipmentSpecificationList {
+  id: string
+  fstdId: string
+  revisionNumber: string
+  revisionDate: string
+  declaredById?: string | null
+  declaredAt?: string | null
+  supersededAt?: string | null
+  createdAt: string
+  entries: EslFeatureEntry[]
 }
 
 export type QtgDocumentType = 'SOC' | 'VDR' | 'MQTG'
@@ -209,6 +232,23 @@ export const fstdsApi = {
     apiClient
       .get<SafetyCheckDueSoonItem[]>('/fstds/safety-facility-checks/due-soon', { params: { withinDays } })
       .then((r) => r.data),
+
+  // ---- 装备规格清单 ESL (AMC1/AMC2 ORA.FSTD.120) ----
+
+  createEslRevision: (
+    fstdId: string,
+    data: {
+      revisionNumber: string
+      revisionDate: string
+      entries: { characteristic: FcsCharacteristic; fidelityLevel?: FcsFidelityLevel; equipmentDescription?: string; limitations?: string }[]
+    },
+  ) => apiClient.post<EquipmentSpecificationList>(`/fstds/${fstdId}/esl`, data).then((r) => r.data),
+
+  listEsls: (fstdId: string) =>
+    apiClient.get<EquipmentSpecificationList[]>(`/fstds/${fstdId}/esl`).then((r) => r.data),
+
+  declareEsl: (eslId: string, personnelId: string) =>
+    apiClient.post<EquipmentSpecificationList>(`/fstds/esl/${eslId}/declare`, { personnelId }).then((r) => r.data),
 
   // ---- 3.3.4 QTG/MQTG生命周期 ----
 

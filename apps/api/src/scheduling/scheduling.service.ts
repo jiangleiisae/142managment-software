@@ -48,9 +48,10 @@ export class SchedulingService {
       }
       if (data.taskCode) {
         // 统一能力判定入口 (需求清单3.3.3 can_device_perform_task): 内部按qualificationBasisType自动分流到
-        // legacy已鉴定任务清单校验, 或FCS体系的训练矩阵逐特征保真度比对, 排课引擎作为消费方无需关心具体判定逻辑
+        // legacy已鉴定任务清单校验, 或FCS体系的训练矩阵逐特征保真度比对, 排课引擎作为消费方无需关心具体判定逻辑。
+        // 排课只要求达到T(可开始训练)即可预订; 是否达到TP(可完成训练/计入学时)留给训练记录/进度卡在结课时判断。
         const capability = await this.fstdService.canDevicePerformTask(data.resourceId, data.taskCode);
-        if (!capability.eligible) {
+        if (!capability.canStartTraining) {
           throw new BadRequestException(`FSTD ${fstd.deviceCode} 不满足训练科目 "${data.taskCode}" 的能力要求: ${capability.reason}`);
         }
         // Training Restriction: 若该科目所需部件存在未修复的MMI缺陷, 阻止排课 (吸收FAA §60.20 Training Restriction概念)

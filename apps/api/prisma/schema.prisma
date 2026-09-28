@@ -645,6 +645,7 @@ model Fstd {
   legacyLevel     FstdLegacyLevel?
   qualifiedTasks  FstdQualifiedTask[]
   fcsCapabilities FstdFcsCapability[]
+  equipmentSpecificationLists EquipmentSpecificationList[]
   recurrentEvals  FstdRecurrentEvaluation[]
   safetyFacilityChecks FstdSafetyFacilityCheck[]
   discrepancies   DiscrepancyLog[]
@@ -696,22 +697,25 @@ model FstdQualifiedTask {
 // 3.3.2/3.3.3 FCS能力矩阵与训练矩阵 (CS-FSTD Issue 1, qualificationBasisType=EASA_FCS时启用, 三期)
 // ============================================================
 
-/// 14个特征: 飞机仿真(7) + 感知仿真(4) + 环境仿真(3)
+/// 14个特征 (核对 AMC/GM to Part-FCL Issue 1 Amdt 15, GM1 to Appendix 9 Section A point 1g):
+/// 飞机仿真特征(7) + 感知/线索仿真特征(Cueing, 4) + 环境仿真特征(3)。
+/// 注: "运动仿真"缩写在两份2026年官方新文件中不一致——AMC/GM to Part-FCL写作MNT,
+/// AMC/GM to Part-ORA的ESL模板写作MTN; 本系统采用MTN(与ESL模板一致), 待官方勘误后再确认。
 enum FcsCharacteristic {
-  FDK // 飞行动力学 Flight Dynamics
-  CLH // 操纵负荷 Control Loading (手感)
-  CLO // 操纵负荷 Control Loading (其他轴)
-  SYS // 系统仿真 (支持子系统展开: 自动驾驶/FMS/液压等)
-  GND // 地面性能 Ground handling
-  IGE // 地面效应内 In Ground Effect
-  OGE // 地面效应外 Out of Ground Effect
-  SND // 声音仿真 Sound
-  VIB // 振动仿真 Vibration/Motion cueing
-  MTN // 运动仿真 Motion
-  VIS // 视景仿真 Visual
-  NAV // 导航环境仿真 Navigation environment
-  ATM // 空管环境仿真 ATM environment
-  OST // 其他系统 Other systems
+  FDK // 飞行甲板布局与结构 Flight deck layout and structure
+  CLH // 飞行操纵力与硬件 Flight controls forces and hardware
+  CLO // 飞行操纵系统操作 Flight controls systems operation
+  SYS // 飞机系统 Aircraft systems (支持子系统展开: 自动驾驶/FMS/液压等)
+  GND // 地面性能与操作 Performance and handling on ground
+  IGE // 地面效应内性能与操作 Performance and handling in ground effect
+  OGE // 地面效应外性能与操作 Performance and handling out of ground effect
+  SND // 声音仿真 Sound cueing
+  VIB // 振动仿真 Vibration cueing
+  MTN // 运动仿真 Motion cueing (官方缩写不一致, 见上方说明)
+  VIS // 视景仿真 Visual cueing
+  NAV // 导航 Navigation
+  ATM // 大气与天气 Atmosphere and weather
+  OST // 运行场地与地形 Operating sites and terrain
 }
 
 /// 4级保真度, 顺序 N < G < R < S
@@ -737,9 +741,42 @@ model FstdFcsCapability {
   @@map("fstd_fcs_capabilities")
 }
 
+/// 装备规格清单 ESL (AMC1/AMC2 ORA.FSTD.120): 每台FSTD证书都须配套一份(除BITD外, 含legacy设备),
+/// 按14个特征组织, 版本化(新修订自动替代旧版本)。声明人须为ORA.GEN.210(b)提名的合规负责人或其代表。
+model EquipmentSpecificationList {
+  id             String    @id @default(cuid())
+  fstdId         String
+  revisionNumber String
+  revisionDate   DateTime
+  declaredById   String? // Personnel.id, 应持有 NOMINATED_PERSON_COMPLIANCE 角色 (ORA.GEN.210(b))
+  declaredAt     DateTime?
+  supersededAt   DateTime? // 被新修订版本替代的时间, null=当前有效版本
+  createdAt      DateTime  @default(now())
+
+  fstd    Fstd              @relation(fields: [fstdId], references: [id])
+  entries EslFeatureEntry[]
+
+  @@map("equipment_specification_lists")
+}
+
+/// ESL逐特征条目: legacy设备的fidelityLevel按官方模板说明留空("leave blank for a legacy FSTD")
+model EslFeatureEntry {
+  id                   String            @id @default(cuid())
+  eslId                String
+  characteristic       FcsCharacteristic
+  fidelityLevel        FcsFidelityLevel?
+  equipmentDescription String?
+  limitations          String?
+
+  esl EquipmentSpecificationList @relation(fields: [eslId], references: [id])
+
+  @@unique([eslId, characteristic])
+  @@map("esl_feature_entries")
+}
+
 /// 训练矩阵 (Part-FCL Appendix 9训练科目 x 14特征 -> T可开始训练/TP完成训练阈值)。
 /// 全局配置表(非租户/机构范围), 与record_retention_policies同类性质——同一套Part-FCL标准适用于所有ATO。
-/// 官方完整清单未随本次分析获取, 此表按需登记, 不预置伪造的"官方"数据。
+/// 官方完整清单(AMC1 to Appendix 9 Section A point 1f)按需登记录入, 不预置整份矩阵数据以避免录入错误。
 model TrainingMatrixEntry {
   id             String            @id @default(cuid())
   taskCode       String // 训练科目编号, 与legacy体系FstdQualifiedTask.taskCode共用编号体系

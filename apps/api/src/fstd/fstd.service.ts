@@ -11,11 +11,17 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 const FIDELITY_RANK: Record<FcsFidelityLevel, number> = { N: 0, G: 1, R: 2, S: 3 };
 
+type MissingCharacteristic = { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null };
+
 export interface TaskCapabilityResult {
-  eligible: boolean;
   basis: FstdQualificationBasisType;
+  /// 可开始训练 (AMC1 to Appendix 9: 达到T阈值即可commence/practise, 但不能据此发放/续发签注学时)
+  canStartTraining: boolean;
+  /// 可完成训练并计入学时 (达到TP阈值; legacy体系下与canStartTraining相同, 因legacy只有二元的"已鉴定/未鉴定")
+  canCompleteTraining: boolean;
   reason?: string;
-  missingCharacteristics?: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[];
+  missingForStart?: MissingCharacteristic[];
+  missingForCompletion?: MissingCharacteristic[];
 }
 
 @Injectable()
@@ -128,6 +134,66 @@ export class FstdService {
     return this.prisma.fstdFcsCapability.findMany({ where: { fstdId }, orderBy: { characteristic: 'asc' } });
   }
 
+  // ---- 装备规格清单 ESL (AMC1/AMC2 ORA.FSTD.120): 每台FSTD证书须配套一份, 含legacy设备(除BITD), 按14特征组织 ----
+
+  /// 新修订生效时自动将该设备现有"当前修订版本"标记为已替代, 保证同一FSTD永远只有一个current ESL
+  async createEslRevision(
+    fstdId: string,
+    tenantId: string,
+    data: {
+      revisionNumber: string;
+      revisionDate: string;
+      entries: { characteristic: FcsCharacteristic; fidelityLevel?: FcsFidelityLevel; equipmentDescription?: string; limitations?: string }[];
+    },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    await this.prisma.equipmentSpecificationList.updateMany({
+      where: { fstdId, supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    return this.prisma.equipmentSpecificationList.create({
+      data: {
+        fstdId,
+        revisionNumber: data.revisionNumber,
+        revisionDate: new Date(data.revisionDate),
+        entries: { create: data.entries },
+      },
+      include: { entries: true },
+    });
+  }
+
+  async listEsls(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.equipmentSpecificationList.findMany({
+      where: { fstdId },
+      include: { entries: { orderBy: { characteristic: 'asc' } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /// ESL须由ORA.GEN.210(b)提名的合规负责人(NOMINATED_PERSON_COMPLIANCE)或其代表声明确认, 呼应安全政策的签署校验模式
+  async declareEsl(eslId: string, tenantId: string, personnelId: string) {
+    const esl = await this.prisma.equipmentSpecificationList.findUnique({
+      where: { id: eslId },
+      include: { fstd: { include: { organization: true } } },
+    });
+    if (!esl || esl.fstd.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`ESL ${eslId} not found`);
+    }
+    const hasRole = await this.prisma.personnelRoleAssignment.findFirst({
+      where: { organizationId: esl.fstd.organizationId, personnelId, role: 'NOMINATED_PERSON_COMPLIANCE', endDate: null },
+    });
+    if (!hasRole) {
+      throw new BadRequestException(
+        `Personnel ${personnelId} does not currently hold the NOMINATED_PERSON_COMPLIANCE role for this organization`,
+      );
+    }
+    return this.prisma.equipmentSpecificationList.update({
+      where: { id: eslId },
+      data: { declaredById: personnelId, declaredAt: new Date() },
+    });
+  }
+
   // ---- 3.3.3 训练矩阵 (Part-FCL Appendix 9训练科目 x 14特征, 全局配置表, 非租户范围) ----
 
   addTrainingMatrixEntry(data: {
@@ -137,6 +203,12 @@ export class FstdService {
     thresholdT: FcsFidelityLevel;
     thresholdTP: FcsFidelityLevel;
   }) {
+    // TP(完成训练)所需保真度理应不低于T(可开始训练), 否则数据本身自相矛盾 (AMC1 to Appendix 9的T/TP定义隐含此顺序)
+    if (FIDELITY_RANK[data.thresholdTP] < FIDELITY_RANK[data.thresholdT]) {
+      throw new BadRequestException(
+        `thresholdTP (${data.thresholdTP}) 不能低于 thresholdT (${data.thresholdT}): TP要求应等于或高于T`,
+      );
+    }
     return this.prisma.trainingMatrixEntry.upsert({
       where: { taskCode_characteristic: { taskCode: data.taskCode, characteristic: data.characteristic } },
       create: data,
@@ -160,7 +232,9 @@ export class FstdService {
   }
 
   /// 统一的设备能力判定入口 (需求清单3.3.3 can_device_perform_task): 内部按qualificationBasisType分流,
-  /// legacy体系查FstdQualifiedTask, FCS体系逐特征比对训练矩阵thresholdT要求 vs 设备实际保真度
+  /// legacy体系查FstdQualifiedTask (二元判定), FCS体系逐特征比对训练矩阵thresholdT/thresholdTP要求 vs 设备实际保真度。
+  /// 依据 AMC1 to Appendix 9 Section A point 1f: T=可开始训练(commence/practise), TP=可完成训练并计入学时,
+  /// 两者是独立的判定点, 不能用同一个阈值替代——达到T不代表达到TP。
   async canDevicePerformTask(fstdId: string, taskCode: string): Promise<TaskCapabilityResult> {
     const fstd = await this.prisma.fstd.findUnique({ where: { id: fstdId } });
     if (!fstd) throw new NotFoundException(`FSTD ${fstdId} not found`);
@@ -168,8 +242,9 @@ export class FstdService {
     if (fstd.qualificationBasisType === 'EASA_LEGACY_LEVEL') {
       const task = await this.prisma.fstdQualifiedTask.findFirst({ where: { fstdId, taskCode } });
       return {
-        eligible: !!task,
         basis: 'EASA_LEGACY_LEVEL',
+        canStartTraining: !!task,
+        canCompleteTraining: !!task,
         reason: task ? undefined : `设备未鉴定训练科目 ${taskCode}`,
       };
     }
@@ -177,24 +252,37 @@ export class FstdService {
     // EASA_FCS 分支
     const requirements = await this.prisma.trainingMatrixEntry.findMany({ where: { taskCode } });
     if (requirements.length === 0) {
-      return { eligible: false, basis: 'EASA_FCS', reason: `训练科目 ${taskCode} 尚未定义训练矩阵要求` };
+      return {
+        basis: 'EASA_FCS',
+        canStartTraining: false,
+        canCompleteTraining: false,
+        reason: `训练科目 ${taskCode} 尚未定义训练矩阵要求`,
+      };
     }
     const capabilities = await this.prisma.fstdFcsCapability.findMany({ where: { fstdId } });
-    const missing: { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null }[] = [];
+    const missingForStart: MissingCharacteristic[] = [];
+    const missingForCompletion: MissingCharacteristic[] = [];
     for (const req of requirements) {
       const actual = this.capabilityRankFor(capabilities, req.characteristic);
       if (actual.rank < FIDELITY_RANK[req.thresholdT]) {
-        missing.push({ characteristic: req.characteristic, required: req.thresholdT, actual: actual.level });
+        missingForStart.push({ characteristic: req.characteristic, required: req.thresholdT, actual: actual.level });
+      }
+      if (actual.rank < FIDELITY_RANK[req.thresholdTP]) {
+        missingForCompletion.push({ characteristic: req.characteristic, required: req.thresholdTP, actual: actual.level });
       }
     }
+    const describe = (missing: MissingCharacteristic[]) =>
+      missing.map((m) => `${m.characteristic}(需要${m.required}, 实际${m.actual ?? '无'})`).join(', ');
+    const reasonParts: string[] = [];
+    if (missingForStart.length > 0) reasonParts.push(`不满足可开始训练(T)要求: ${describe(missingForStart)}`);
+    if (missingForCompletion.length > 0) reasonParts.push(`不满足可完成训练(TP)要求: ${describe(missingForCompletion)}`);
     return {
-      eligible: missing.length === 0,
       basis: 'EASA_FCS',
-      reason:
-        missing.length > 0
-          ? `以下特征保真度不足: ${missing.map((m) => `${m.characteristic}(需要${m.required}, 实际${m.actual ?? '无'})`).join(', ')}`
-          : undefined,
-      missingCharacteristics: missing.length > 0 ? missing : undefined,
+      canStartTraining: missingForStart.length === 0,
+      canCompleteTraining: missingForCompletion.length === 0,
+      reason: reasonParts.length > 0 ? reasonParts.join('; ') : undefined,
+      missingForStart: missingForStart.length > 0 ? missingForStart : undefined,
+      missingForCompletion: missingForCompletion.length > 0 ? missingForCompletion : undefined,
     };
   }
 

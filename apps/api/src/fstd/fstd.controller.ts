@@ -94,6 +94,32 @@ export class FstdController {
     return this.fstdService.listFcsCapabilities(id, user.tenantId);
   }
 
+  // ---- 装备规格清单 ESL ----
+
+  @Post(':id/esl')
+  createEslRevision(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      revisionNumber: string;
+      revisionDate: string;
+      entries: { characteristic: FcsCharacteristic; fidelityLevel?: FcsFidelityLevel; equipmentDescription?: string; limitations?: string }[];
+    },
+  ) {
+    return this.fstdService.createEslRevision(id, user.tenantId, dto);
+  }
+
+  @Get(':id/esl')
+  listEsls(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listEsls(id, user.tenantId);
+  }
+
+  @Post('esl/:eslId/declare')
+  declareEsl(@CurrentUser() user: AuthContext, @Param('eslId') eslId: string, @Body() dto: { personnelId: string }) {
+    return this.fstdService.declareEsl(eslId, user.tenantId, dto.personnelId);
+  }
+
   @Post(':id/discrepancies')
   reportDiscrepancy(
     @CurrentUser() user: AuthContext,

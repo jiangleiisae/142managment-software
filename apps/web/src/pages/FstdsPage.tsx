@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type {
   Discrepancy,
+  EquipmentSpecificationList,
   EvaluationDueSoonItem,
   FcsCharacteristic,
   FcsFidelityLevel,
@@ -20,7 +21,8 @@ import type {
   TrainingMatrixEntry,
 } from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
-import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel } from '../api/types'
+import { personnelApi } from '../api/personnel'
+import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel, Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
@@ -53,7 +55,13 @@ interface FstdDetail extends Fstd {
   qtgDocuments?: QtgDocument[]
   qtgRuns?: QuarterlyQtgRun[]
   fcsCapabilities?: FstdFcsCapability[]
+  eslLists?: EquipmentSpecificationList[]
 }
+
+type EslEntryState = Record<FcsCharacteristic, { fidelityLevel?: FcsFidelityLevel; equipmentDescription: string; limitations: string }>
+
+const emptyEslEntryState = (): EslEntryState =>
+  Object.fromEntries(FCS_CHARACTERISTICS.map((c) => [c, { fidelityLevel: undefined, equipmentDescription: '', limitations: '' }])) as EslEntryState
 
 export function FstdsPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
@@ -79,6 +87,10 @@ export function FstdsPage() {
   const [checkTaskResult, setCheckTaskResult] = useState<TaskCapabilityResult>()
   const [trainingMatrixEntries, setTrainingMatrixEntries] = useState<TrainingMatrixEntry[]>([])
   const [trainingMatrixModalOpen, setTrainingMatrixModalOpen] = useState(false)
+  const [personnel, setPersonnel] = useState<Personnel[]>([])
+  const [eslModalFstdId, setEslModalFstdId] = useState<string>()
+  const [eslEntryState, setEslEntryState] = useState<EslEntryState>(emptyEslEntryState())
+  const [eslDeclareModalId, setEslDeclareModalId] = useState<string>()
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
@@ -91,6 +103,8 @@ export function FstdsPage() {
   const [fcsCapForm] = Form.useForm()
   const [checkTaskForm] = Form.useForm()
   const [trainingMatrixForm] = Form.useForm()
+  const [eslForm] = Form.useForm()
+  const [eslDeclareForm] = Form.useForm()
 
   const load = async () => {
     if (!selectedId) return
@@ -107,6 +121,7 @@ export function FstdsPage() {
           qtgDocuments: await fstdsApi.listQtgDocuments(f.id),
           qtgRuns: await fstdsApi.listQuarterlyQtgRuns(f.id),
           fcsCapabilities: await fstdsApi.listFcsCapabilities(f.id),
+          eslLists: await fstdsApi.listEsls(f.id),
         })),
       )
       setFstds(detailed)
@@ -125,6 +140,7 @@ export function FstdsPage() {
 
   useEffect(() => {
     fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
+    personnelApi.list().then(setPersonnel)
   }, [])
 
   const handleCreate = async () => {
@@ -278,6 +294,54 @@ export function FstdsPage() {
     fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
   }
 
+  const openEslModal = (fstd: FstdDetail) => {
+    const state = emptyEslEntryState()
+    if (fstd.qualificationBasisType === 'EASA_FCS') {
+      for (const cap of fstd.fcsCapabilities ?? []) {
+        if (!state[cap.characteristic].fidelityLevel) {
+          state[cap.characteristic] = { ...state[cap.characteristic], fidelityLevel: cap.fidelityLevel }
+        }
+      }
+    }
+    setEslEntryState(state)
+    eslForm.resetFields()
+    setEslModalFstdId(fstd.id)
+  }
+
+  const handleCreateEslRevision = async () => {
+    if (!eslModalFstdId) return
+    const values = await eslForm.validateFields()
+    const entries = FCS_CHARACTERISTICS.map((c) => ({
+      characteristic: c,
+      fidelityLevel: eslEntryState[c].fidelityLevel,
+      equipmentDescription: eslEntryState[c].equipmentDescription || undefined,
+      limitations: eslEntryState[c].limitations || undefined,
+    }))
+    await fstdsApi.createEslRevision(eslModalFstdId, {
+      revisionNumber: values.revisionNumber,
+      revisionDate: values.revisionDate.format('YYYY-MM-DD'),
+      entries,
+    })
+    message.success('ESL装备规格清单版本已登记, 旧版本已自动标记为已替代')
+    setEslModalFstdId(undefined)
+    load()
+  }
+
+  const handleDeclareEsl = async () => {
+    if (!eslDeclareModalId) return
+    const values = await eslDeclareForm.validateFields()
+    try {
+      await fstdsApi.declareEsl(eslDeclareModalId, values.personnelId)
+      message.success('ESL已声明确认')
+      setEslDeclareModalId(undefined)
+      eslDeclareForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '声明失败 (须为组织指定的合规负责人 NOMINATED_PERSON_COMPLIANCE)')
+    }
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -394,6 +458,9 @@ export function FstdsPage() {
                     <Button size="small" onClick={() => setQtgRunModalFstdId(fstd.id)}>
                       季度QTG记录
                     </Button>
+                    <Button size="small" onClick={() => openEslModal(fstd)}>
+                      ESL装备规格清单
+                    </Button>
                     {fstd.qualificationBasisType === 'EASA_FCS' && (
                       <Button size="small" onClick={() => setFcsCapModalFstdId(fstd.id)}>
                         登记FCS能力
@@ -432,6 +499,53 @@ export function FstdsPage() {
                       )}
                     />
                   )}
+                  <List
+                    header="ESL 装备规格清单 (AMC1/AMC2 ORA.FSTD.120, 存量设备BITD除外均需提供)"
+                    size="small"
+                    dataSource={fstd.eslLists ?? []}
+                    locale={{ emptyText: '尚未登记任何ESL版本' }}
+                    renderItem={(esl) => (
+                      <List.Item
+                        actions={
+                          !esl.declaredAt
+                            ? [
+                                <Button
+                                  key="declare"
+                                  size="small"
+                                  onClick={() => {
+                                    eslDeclareForm.resetFields()
+                                    setEslDeclareModalId(esl.id)
+                                  }}
+                                >
+                                  声明确认
+                                </Button>,
+                              ]
+                            : []
+                        }
+                      >
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Space wrap>
+                            <Tag color={esl.supersededAt ? 'default' : 'green'}>{esl.supersededAt ? '历史版本' : '当前版本'}</Tag>
+                            <span>修订版 {esl.revisionNumber}</span>
+                            <Tag color={esl.declaredAt ? 'green' : 'orange'}>{esl.declaredAt ? '已声明确认' : '待声明确认'}</Tag>
+                          </Space>
+                          <span style={{ color: '#888', fontSize: 12 }}>
+                            修订日期 {new Date(esl.revisionDate).toLocaleDateString()}
+                            {esl.declaredAt ? ` | 声明于 ${new Date(esl.declaredAt).toLocaleString()}` : ''}
+                          </span>
+                          <Space wrap style={{ marginTop: 4 }}>
+                            {esl.entries
+                              .filter((e) => e.fidelityLevel)
+                              .map((e) => (
+                                <Tag key={e.characteristic} color={FIDELITY_COLOR[e.fidelityLevel!]}>
+                                  {e.characteristic}: {e.fidelityLevel}
+                                </Tag>
+                              ))}
+                          </Space>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
                   <List
                     header="周期性评估记录 (标准周期12个月, BITD为3年)"
                     size="small"
@@ -846,13 +960,19 @@ export function FstdsPage() {
           </Form.Item>
         </Form>
         {checkTaskResult && (
-          <Alert
-            style={{ marginTop: 16 }}
-            type={checkTaskResult.eligible ? 'success' : 'error'}
-            showIcon
-            message={checkTaskResult.eligible ? `设备满足要求 (判定依据: ${checkTaskResult.basis})` : `设备不满足要求 (判定依据: ${checkTaskResult.basis})`}
-            description={checkTaskResult.reason}
-          />
+          <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
+            <Alert
+              type={checkTaskResult.canStartTraining ? 'success' : 'error'}
+              showIcon
+              message={`可开始训练 (T): ${checkTaskResult.canStartTraining ? '满足' : '不满足'} (判定依据: ${checkTaskResult.basis})`}
+            />
+            <Alert
+              type={checkTaskResult.canCompleteTraining ? 'success' : 'warning'}
+              showIcon
+              message={`可完成训练并计入学时 (TP): ${checkTaskResult.canCompleteTraining ? '满足' : '不满足'}`}
+              description={checkTaskResult.reason}
+            />
+          </Space>
         )}
       </Modal>
 
@@ -877,6 +997,94 @@ export function FstdsPage() {
           </Form.Item>
           <Form.Item name="thresholdTP" label="TP阈值 (完成训练)" rules={[{ required: true }]}>
             <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="登记ESL装备规格清单新版本 (AMC1/AMC2 ORA.FSTD.120)"
+        open={!!eslModalFstdId}
+        onOk={handleCreateEslRevision}
+        onCancel={() => setEslModalFstdId(undefined)}
+        width={800}
+      >
+        <Form form={eslForm} layout="vertical" initialValues={{ revisionDate: dayjs() }}>
+          <Space>
+            <Form.Item name="revisionNumber" label="修订版本号" rules={[{ required: true }]}>
+              <Input placeholder="如 R1" style={{ width: 200 }} />
+            </Form.Item>
+            <Form.Item name="revisionDate" label="修订日期" rules={[{ required: true }]}>
+              <DatePicker />
+            </Form.Item>
+          </Space>
+        </Form>
+        <Table<{ characteristic: FcsCharacteristic }>
+          rowKey="characteristic"
+          size="small"
+          pagination={false}
+          dataSource={FCS_CHARACTERISTICS.map((c) => ({ characteristic: c }))}
+          columns={[
+            { title: '特征', dataIndex: 'characteristic', width: 70, render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
+            {
+              title: '保真度 (存量设备可留空)',
+              width: 150,
+              render: (_, row) => (
+                <Select
+                  allowClear
+                  size="small"
+                  style={{ width: '100%' }}
+                  value={eslEntryState[row.characteristic].fidelityLevel}
+                  options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))}
+                  onChange={(v) =>
+                    setEslEntryState((s) => ({ ...s, [row.characteristic]: { ...s[row.characteristic], fidelityLevel: v } }))
+                  }
+                />
+              ),
+            },
+            {
+              title: '设备描述',
+              render: (_, row) => (
+                <Input
+                  size="small"
+                  value={eslEntryState[row.characteristic].equipmentDescription}
+                  onChange={(e) =>
+                    setEslEntryState((s) => ({
+                      ...s,
+                      [row.characteristic]: { ...s[row.characteristic], equipmentDescription: e.target.value },
+                    }))
+                  }
+                />
+              ),
+            },
+            {
+              title: '限制说明',
+              render: (_, row) => (
+                <Input
+                  size="small"
+                  value={eslEntryState[row.characteristic].limitations}
+                  onChange={(e) =>
+                    setEslEntryState((s) => ({ ...s, [row.characteristic]: { ...s[row.characteristic], limitations: e.target.value } }))
+                  }
+                />
+              ),
+            },
+          ]}
+        />
+      </Modal>
+
+      <Modal
+        title="声明确认ESL (须由组织指定的合规负责人 ORA.GEN.210(b) 声明)"
+        open={!!eslDeclareModalId}
+        onOk={handleDeclareEsl}
+        onCancel={() => setEslDeclareModalId(undefined)}
+      >
+        <Form form={eslDeclareForm} layout="vertical">
+          <Form.Item name="personnelId" label="声明人" rules={[{ required: true }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
+            />
           </Form.Item>
         </Form>
       </Modal>
