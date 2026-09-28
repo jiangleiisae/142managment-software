@@ -10,6 +10,7 @@ import type {
   FcsFidelityLevel,
   FstdChangeRequest,
   FstdFcsCapability,
+  PerformanceMetricsSummary,
   QtgDocument,
   QtgDocumentType,
   QuarterlyQtgIssue,
@@ -56,6 +57,7 @@ interface FstdDetail extends Fstd {
   qtgRuns?: QuarterlyQtgRun[]
   fcsCapabilities?: FstdFcsCapability[]
   eslLists?: EquipmentSpecificationList[]
+  performanceMetrics?: PerformanceMetricsSummary
 }
 
 type EslEntryState = Record<FcsCharacteristic, { fidelityLevel?: FcsFidelityLevel; equipmentDescription: string; limitations: string }>
@@ -91,6 +93,7 @@ export function FstdsPage() {
   const [eslModalFstdId, setEslModalFstdId] = useState<string>()
   const [eslEntryState, setEslEntryState] = useState<EslEntryState>(emptyEslEntryState())
   const [eslDeclareModalId, setEslDeclareModalId] = useState<string>()
+  const [perfMetricModalFstdId, setPerfMetricModalFstdId] = useState<string>()
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
@@ -105,6 +108,7 @@ export function FstdsPage() {
   const [trainingMatrixForm] = Form.useForm()
   const [eslForm] = Form.useForm()
   const [eslDeclareForm] = Form.useForm()
+  const [perfMetricForm] = Form.useForm()
 
   const load = async () => {
     if (!selectedId) return
@@ -122,6 +126,7 @@ export function FstdsPage() {
           qtgRuns: await fstdsApi.listQuarterlyQtgRuns(f.id),
           fcsCapabilities: await fstdsApi.listFcsCapabilities(f.id),
           eslLists: await fstdsApi.listEsls(f.id),
+          performanceMetrics: await fstdsApi.getPerformanceMetrics(f.id),
         })),
       )
       setFstds(detailed)
@@ -342,6 +347,21 @@ export function FstdsPage() {
     }
   }
 
+  const handleRecordPerformanceMetric = async () => {
+    if (!perfMetricModalFstdId) return
+    const values = await perfMetricForm.validateFields()
+    await fstdsApi.recordPerformanceMetric(perfMetricModalFstdId, {
+      ...values,
+      year: values.period.year(),
+      month: values.period.month() + 1,
+      period: undefined,
+    })
+    message.success('FSTD性能指标已登记 (同年月已存在记录将被更新)')
+    setPerfMetricModalFstdId(undefined)
+    perfMetricForm.resetFields()
+    load()
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -461,6 +481,15 @@ export function FstdsPage() {
                     <Button size="small" onClick={() => openEslModal(fstd)}>
                       ESL装备规格清单
                     </Button>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        perfMetricForm.resetFields()
+                        setPerfMetricModalFstdId(fstd.id)
+                      }}
+                    >
+                      性能指标
+                    </Button>
                     {fstd.qualificationBasisType === 'EASA_FCS' && (
                       <Button size="small" onClick={() => setFcsCapModalFstdId(fstd.id)}>
                         登记FCS能力
@@ -546,6 +575,52 @@ export function FstdsPage() {
                       </List.Item>
                     )}
                   />
+                  {fstd.performanceMetrics && fstd.performanceMetrics.monthly.length > 0 && (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        FSTD性能指标 (AMC1 ORA.FSTD.100(d), 近12个月汇总: 共{fstd.performanceMetrics.last12Months.monthCount}个月)
+                      </div>
+                      <Space wrap style={{ marginBottom: 8 }}>
+                        <Tag color={fstd.performanceMetrics.last12Months.availabilityPercent != null && fstd.performanceMetrics.last12Months.availabilityPercent < 90 ? 'red' : 'green'}>
+                          可用率 {fstd.performanceMetrics.last12Months.availabilityPercent?.toFixed(1) ?? '-'}%
+                        </Tag>
+                        <Tag color={fstd.performanceMetrics.last12Months.reliabilityPercent != null && fstd.performanceMetrics.last12Months.reliabilityPercent < 90 ? 'red' : 'green'}>
+                          可靠率 {fstd.performanceMetrics.last12Months.reliabilityPercent?.toFixed(1) ?? '-'}%
+                        </Tag>
+                        <Tag>计划可用 {fstd.performanceMetrics.last12Months.plannedAvailableHours}h</Tag>
+                        <Tag>排期训练 {fstd.performanceMetrics.last12Months.scheduledTrainingHours}h</Tag>
+                        <Tag>停机 {fstd.performanceMetrics.last12Months.downtimeHours}h</Tag>
+                        <Tag>损失训练时间 {fstd.performanceMetrics.last12Months.lostTrainingHours}h</Tag>
+                        <Tag>缺陷 {fstd.performanceMetrics.last12Months.discrepancyCount}次</Tag>
+                        <Tag>中断 {fstd.performanceMetrics.last12Months.interruptionCount}次</Tag>
+                      </Space>
+                      <Table
+                        size="small"
+                        rowKey="id"
+                        pagination={false}
+                        dataSource={fstd.performanceMetrics.monthly}
+                        columns={[
+                          { title: '年月', render: (_, m) => `${m.year}-${String(m.month).padStart(2, '0')}` },
+                          { title: '计划可用(h)', dataIndex: 'plannedAvailableHours' },
+                          { title: '排期训练(h)', dataIndex: 'scheduledTrainingHours' },
+                          { title: '支持时间(h)', dataIndex: 'supportHours' },
+                          { title: '设备故障(h)', dataIndex: 'fstdFailureHours' },
+                          { title: '外部因素(h)', dataIndex: 'externalFailureHours' },
+                          { title: '损失训练(h)', dataIndex: 'lostTrainingHours' },
+                          { title: '缺陷数', dataIndex: 'discrepancyCount' },
+                          { title: '中断数', dataIndex: 'interruptionCount' },
+                          {
+                            title: '可用率',
+                            render: (_, m) => (m.availabilityPercent != null ? `${m.availabilityPercent.toFixed(1)}%` : '-'),
+                          },
+                          {
+                            title: '可靠率',
+                            render: (_, m) => (m.reliabilityPercent != null ? `${m.reliabilityPercent.toFixed(1)}%` : '-'),
+                          },
+                        ]}
+                      />
+                    </div>
+                  )}
                   <List
                     header="周期性评估记录 (标准周期12个月, BITD为3年)"
                     size="small"
@@ -1086,6 +1161,64 @@ export function FstdsPage() {
               options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
             />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="登记FSTD性能指标 (AMC1 ORA.FSTD.100(d), 按月登记, 同年月重复登记将覆盖)"
+        open={!!perfMetricModalFstdId}
+        onOk={handleRecordPerformanceMetric}
+        onCancel={() => setPerfMetricModalFstdId(undefined)}
+        width={600}
+      >
+        <Form
+          form={perfMetricForm}
+          layout="vertical"
+          initialValues={{
+            period: dayjs(),
+            plannedAvailableHours: 0,
+            scheduledTrainingHours: 0,
+            supportHours: 0,
+            fstdFailureHours: 0,
+            externalFailureHours: 0,
+            lostTrainingHours: 0,
+            discrepancyCount: 0,
+            interruptionCount: 0,
+          }}
+        >
+          <Form.Item name="period" label="年月" rules={[{ required: true }]}>
+            <DatePicker picker="month" style={{ width: '100%' }} />
+          </Form.Item>
+          <Space wrap>
+            <Form.Item name="plannedAvailableHours" label="计划可用时间(h)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="scheduledTrainingHours" label="排期训练时间(h)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="supportHours" label="支持时间(h, 计划性不可用)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
+          <Space wrap>
+            <Form.Item name="fstdFailureHours" label="设备故障时间(h)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="externalFailureHours" label="外部因素损失时间(h)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="lostTrainingHours" label="损失训练时间(h)" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
+          <Space wrap>
+            <Form.Item name="discrepancyCount" label="缺陷次数" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="interruptionCount" label="中断次数" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
         </Form>
       </Modal>
     </div>

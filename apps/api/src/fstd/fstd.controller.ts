@@ -120,6 +120,34 @@ export class FstdController {
     return this.fstdService.declareEsl(eslId, user.tenantId, dto.personnelId);
   }
 
+  // ---- FSTD性能指标 (AMC1 ORA.FSTD.100(d)) ----
+
+  @Post(':id/performance-metrics')
+  recordPerformanceMetric(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      year: number;
+      month: number;
+      plannedAvailableHours: number;
+      scheduledTrainingHours: number;
+      supportHours: number;
+      fstdFailureHours: number;
+      externalFailureHours: number;
+      lostTrainingHours: number;
+      discrepancyCount: number;
+      interruptionCount: number;
+    },
+  ) {
+    return this.fstdService.recordPerformanceMetric(id, user.tenantId, dto);
+  }
+
+  @Get(':id/performance-metrics')
+  getPerformanceMetrics(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.getPerformanceMetrics(id, user.tenantId);
+  }
+
   @Post(':id/discrepancies')
   reportDiscrepancy(
     @CurrentUser() user: AuthContext,

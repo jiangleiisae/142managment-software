@@ -652,6 +652,7 @@ model Fstd {
   changeRequests  FstdChangeRequest[]
   qtgDocuments    FstdQtgDocument[]
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
+  performanceMetrics FstdPerformanceMetric[]
 
   @@unique([organizationId, deviceCode])
   @@map("fstds")
@@ -844,6 +845,29 @@ model FstdQtgQuarterlyRun {
 
   @@unique([fstdId, year, quarter])
   @@map("fstd_qtg_quarterly_runs")
+}
+
+/// FSTD性能指标 (AMC1 ORA.FSTD.100(d)): 逐月记录, 每年至少向主管机关提交一次(含月度及汇总)。
+/// 各时间字段单位为小时, 与官方原文一致。可用率/可靠率/停机时间/损失训练时间均由服务层按官方公式计算, 不落库。
+model FstdPerformanceMetric {
+  id                     String   @id @default(cuid())
+  fstdId                 String
+  year                   Int
+  month                  Int // 1-12
+  plannedAvailableHours  Float // Planned available time
+  scheduledTrainingHours Float // Scheduled training time
+  supportHours           Float // FSTD support time (计划性不可用: 停用/维护/工程/监管/构型切换等)
+  fstdFailureHours       Float // FSTD failure time (设备自身故障导致的损失时间)
+  externalFailureHours   Float // External failure time (外部因素导致的损失时间: 设施/用户/排期/环境等)
+  lostTrainingHours      Float // Lost training time: 因FSTD停机未能交付的已排期训练时间(官方未给出可推导公式, 单独上报)
+  discrepancyCount       Int // Number of FSTD discrepancies
+  interruptionCount      Int // Number of interruptions during scheduled training time
+  createdAt              DateTime @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@unique([fstdId, year, month])
+  @@map("fstd_performance_metrics")
 }
 
 /// 安全设施年检 (3.3.8, ORA.FSTD.115(b)): 急停/应急照明等, 每年至少检查一次并记录

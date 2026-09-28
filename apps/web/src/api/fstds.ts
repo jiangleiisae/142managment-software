@@ -101,6 +101,43 @@ export interface EquipmentSpecificationList {
   entries: EslFeatureEntry[]
 }
 
+export interface FstdPerformanceMetric {
+  id: string
+  fstdId: string
+  year: number
+  month: number
+  plannedAvailableHours: number
+  scheduledTrainingHours: number
+  supportHours: number
+  fstdFailureHours: number
+  externalFailureHours: number
+  lostTrainingHours: number
+  discrepancyCount: number
+  interruptionCount: number
+  downtimeHours: number
+  availabilityPercent: number | null
+  reliabilityPercent: number | null
+  createdAt: string
+}
+
+export interface PerformanceMetricsSummary {
+  monthly: FstdPerformanceMetric[]
+  last12Months: {
+    monthCount: number
+    plannedAvailableHours: number
+    scheduledTrainingHours: number
+    supportHours: number
+    fstdFailureHours: number
+    externalFailureHours: number
+    downtimeHours: number
+    lostTrainingHours: number
+    discrepancyCount: number
+    interruptionCount: number
+    availabilityPercent: number | null
+    reliabilityPercent: number | null
+  }
+}
+
 export type QtgDocumentType = 'SOC' | 'VDR' | 'MQTG'
 
 export interface QtgDocument {
@@ -249,6 +286,27 @@ export const fstdsApi = {
 
   declareEsl: (eslId: string, personnelId: string) =>
     apiClient.post<EquipmentSpecificationList>(`/fstds/esl/${eslId}/declare`, { personnelId }).then((r) => r.data),
+
+  // ---- FSTD性能指标 (AMC1 ORA.FSTD.100(d)) ----
+
+  recordPerformanceMetric: (
+    fstdId: string,
+    data: {
+      year: number
+      month: number
+      plannedAvailableHours: number
+      scheduledTrainingHours: number
+      supportHours: number
+      fstdFailureHours: number
+      externalFailureHours: number
+      lostTrainingHours: number
+      discrepancyCount: number
+      interruptionCount: number
+    },
+  ) => apiClient.post<FstdPerformanceMetric>(`/fstds/${fstdId}/performance-metrics`, data).then((r) => r.data),
+
+  getPerformanceMetrics: (fstdId: string) =>
+    apiClient.get<PerformanceMetricsSummary>(`/fstds/${fstdId}/performance-metrics`).then((r) => r.data),
 
   // ---- 3.3.4 QTG/MQTG生命周期 ----
 

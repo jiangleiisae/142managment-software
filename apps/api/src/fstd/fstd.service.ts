@@ -194,6 +194,88 @@ export class FstdService {
     });
   }
 
+  // ---- FSTD性能指标 (AMC1 ORA.FSTD.100(d)): 逐月上报, 官方公式计算可用率/可靠率 ----
+
+  async recordPerformanceMetric(
+    fstdId: string,
+    tenantId: string,
+    data: {
+      year: number;
+      month: number;
+      plannedAvailableHours: number;
+      scheduledTrainingHours: number;
+      supportHours: number;
+      fstdFailureHours: number;
+      externalFailureHours: number;
+      lostTrainingHours: number;
+      discrepancyCount: number;
+      interruptionCount: number;
+    },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    if (data.month < 1 || data.month > 12) {
+      throw new BadRequestException(`month must be 1-12, got ${data.month}`);
+    }
+    const metric = await this.prisma.fstdPerformanceMetric.upsert({
+      where: { fstdId_year_month: { fstdId, year: data.year, month: data.month } },
+      create: { fstdId, ...data },
+      update: { ...data },
+    });
+    return this.withComputedMetrics(metric);
+  }
+
+  /// AMC1 ORA.FSTD.100(d)(c): 逐月数据 + 前12个月汇总, 一次性返回供合规看板使用
+  async getPerformanceMetrics(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    const all = await this.prisma.fstdPerformanceMetric.findMany({
+      where: { fstdId },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+    });
+
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 11); // 含当月共12个月窗口
+    const cutoffYear = cutoff.getFullYear();
+    const cutoffMonth = cutoff.getMonth() + 1;
+    const recent = all.filter((m) => m.year > cutoffYear || (m.year === cutoffYear && m.month >= cutoffMonth));
+
+    const sum = (key: 'plannedAvailableHours' | 'scheduledTrainingHours' | 'supportHours' | 'fstdFailureHours' | 'externalFailureHours' | 'lostTrainingHours' | 'discrepancyCount' | 'interruptionCount') =>
+      recent.reduce((acc, m) => acc + m[key], 0);
+
+    const plannedAvailableHours = sum('plannedAvailableHours');
+    const fstdFailureHours = sum('fstdFailureHours');
+    const externalFailureHours = sum('externalFailureHours');
+    const downtimeHours = fstdFailureHours + externalFailureHours;
+
+    return {
+      monthly: all.map((m) => this.withComputedMetrics(m)),
+      last12Months: {
+        monthCount: recent.length,
+        plannedAvailableHours,
+        scheduledTrainingHours: sum('scheduledTrainingHours'),
+        supportHours: sum('supportHours'),
+        fstdFailureHours,
+        externalFailureHours,
+        downtimeHours,
+        lostTrainingHours: sum('lostTrainingHours'),
+        discrepancyCount: sum('discrepancyCount'),
+        interruptionCount: sum('interruptionCount'),
+        availabilityPercent: plannedAvailableHours > 0 ? ((plannedAvailableHours - downtimeHours) / plannedAvailableHours) * 100 : null,
+        reliabilityPercent: plannedAvailableHours > 0 ? ((plannedAvailableHours - fstdFailureHours) / plannedAvailableHours) * 100 : null,
+      },
+    };
+  }
+
+  /// 官方公式 (AMC1 ORA.FSTD.100(d)(b)(8)(9)): downtime = fstdFailure + externalFailure (无论原因);
+  /// availability% = (planned-downtime)/planned*100; reliability% = (planned-fstdFailure)/planned*100
+  private withComputedMetrics<T extends { plannedAvailableHours: number; fstdFailureHours: number; externalFailureHours: number }>(
+    m: T,
+  ) {
+    const downtimeHours = m.fstdFailureHours + m.externalFailureHours;
+    const availabilityPercent = m.plannedAvailableHours > 0 ? ((m.plannedAvailableHours - downtimeHours) / m.plannedAvailableHours) * 100 : null;
+    const reliabilityPercent = m.plannedAvailableHours > 0 ? ((m.plannedAvailableHours - m.fstdFailureHours) / m.plannedAvailableHours) * 100 : null;
+    return { ...m, downtimeHours, availabilityPercent, reliabilityPercent };
+  }
+
   // ---- 3.3.3 训练矩阵 (Part-FCL Appendix 9训练科目 x 14特征, 全局配置表, 非租户范围) ----
 
   addTrainingMatrixEntry(data: {
