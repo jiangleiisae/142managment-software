@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import { OrganizationService } from './organization.service.js';
 import { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import { UpdateOrganizationDto } from './dto/update-organization.dto.js';
@@ -8,6 +10,7 @@ import { CreateCertificateDto } from './dto/create-certificate.dto.js';
 import { CertificateStatusActionDto } from './dto/certificate-status-action.dto.js';
 
 @Controller('organizations')
+@RequirePermissions(Permission.ORGANIZATION)
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
@@ -17,6 +20,7 @@ export class OrganizationController {
   }
 
   @Get()
+  @SkipPermissionCheck() // 几乎所有模块的机构选择器都依赖此接口枚举机构列表, 不应受ORGANIZATION模块权限限制
   findAll(@CurrentUser() user: AuthContext) {
     return this.organizationService.findAll(user.tenantId);
   }

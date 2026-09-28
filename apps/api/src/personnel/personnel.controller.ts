@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { PersonnelService } from './personnel.service.js';
 
 @Controller('personnel')
+@RequirePermissions(Permission.PERSONNEL)
 export class PersonnelController {
   constructor(private readonly personnelService: PersonnelService) {}
 

@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import type { Permission } from './users'
 
 export type UserRole = 'OWNER' | 'ADMIN' | 'STAFF'
 
@@ -6,6 +7,7 @@ export interface AuthUser {
   id: string
   email: string
   role: UserRole
+  permissions: Permission[]
 }
 
 interface AuthResponse {

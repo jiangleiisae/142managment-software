@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { InfoAssetCriticality } from '@prisma/client';
+import { InfoAssetCriticality, Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { IsmsService } from './isms.service.js';
 
 @Controller('isms')
+@RequirePermissions(Permission.ISMS)
 export class IsmsController {
   constructor(private readonly ismsService: IsmsService) {}
 

@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ManagementRoleType } from '@prisma/client';
+import { ManagementRoleType, Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { ManagementSystemService } from './management-system.service.js';
 
 @Controller('management-system')
+@RequirePermissions(Permission.MANAGEMENT_SYSTEM)
 export class ManagementSystemController {
   constructor(private readonly service: ManagementSystemService) {}
 

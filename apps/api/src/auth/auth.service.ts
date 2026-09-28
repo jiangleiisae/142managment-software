@@ -40,18 +40,26 @@ export class AuthService {
       return { user, tenant };
     });
 
-    const payload: JwtPayload = { sub: user.id, tenantId: tenant.id, role: user.role, email: user.email };
-    return { accessToken: this.issueToken(payload), user: { id: user.id, email: user.email, role: user.role }, tenant };
+    const payload: JwtPayload = { sub: user.id };
+    return {
+      accessToken: this.issueToken(payload),
+      user: { id: user.id, email: user.email, role: user.role, permissions: user.permissions },
+      tenant,
+    };
   }
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) throw new UnauthorizedException('邮箱或密码错误');
+    if (!user.isActive) throw new UnauthorizedException('账户已被停用, 请联系管理员');
 
     const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatches) throw new UnauthorizedException('邮箱或密码错误');
 
-    const payload: JwtPayload = { sub: user.id, tenantId: user.tenantId, role: user.role, email: user.email };
-    return { accessToken: this.issueToken(payload), user: { id: user.id, email: user.email, role: user.role } };
+    const payload: JwtPayload = { sub: user.id };
+    return {
+      accessToken: this.issueToken(payload),
+      user: { id: user.id, email: user.email, role: user.role, permissions: user.permissions },
+    };
   }
 }

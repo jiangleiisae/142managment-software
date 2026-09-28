@@ -1,10 +1,13 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { authApi, type AuthUser } from '../api/auth'
 import { tokenStorage } from '../api/client'
+import type { Permission } from '../api/users'
 
 interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
+  isAdmin: boolean // OWNER或ADMIN: 对全部模块拥有完全访问权限, 且可管理其他账户
+  hasPermission: (permission: Permission) => boolean
   login: (email: string, password: string) => Promise<void>
   register: (tenantName: string, email: string, password: string) => Promise<void>
   logout: () => void
@@ -49,8 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const isAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
+  const hasPermission = (permission: Permission) => isAdmin || !!user?.permissions.includes(permission)
+
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, login, register, logout }),
+    () => ({ user, isAuthenticated: !!user, isAdmin, hasPermission, login, register, logout }),
     [user],
   )
 

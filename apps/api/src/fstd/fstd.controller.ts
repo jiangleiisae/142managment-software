@@ -8,15 +8,18 @@ import {
   FstdDeviceType,
   FstdQualificationBasisType,
   LegacyLevel,
+  Permission,
   QtgDocumentType,
 } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import { FstdService } from './fstd.service.js';
 import { QTG_UPLOAD_DIR, qtgFileUploadOptions } from './qtg-file-storage.js';
 
 @Controller('fstds')
+@RequirePermissions(Permission.FSTD)
 export class FstdController {
   constructor(private readonly fstdService: FstdService) {}
 
@@ -39,6 +42,7 @@ export class FstdController {
   }
 
   @Get()
+  @SkipPermissionCheck() // Kiosk缺陷报告页面需要枚举设备列表, 不应受FSTD模块权限限制
   findAll(@Query('organizationId') organizationId: string) {
     return this.fstdService.findAll(organizationId);
   }
@@ -149,6 +153,7 @@ export class FstdController {
   }
 
   @Post(':id/discrepancies')
+  @SkipPermissionCheck() // Kiosk场景: 任何在场人员都应能报告缺陷, 不受FSTD模块权限限制
   reportDiscrepancy(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,

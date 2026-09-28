@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { PartMovementType } from '@prisma/client';
+import { PartMovementType, Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { InventoryService } from './inventory.service.js';
 
 @Controller('inventory')
+@RequirePermissions(Permission.INVENTORY)
 export class InventoryController {
   constructor(private readonly service: InventoryService) {}
 

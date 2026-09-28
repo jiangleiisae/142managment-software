@@ -5,6 +5,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
+import { PermissionsGuard } from './auth/permissions.guard.js';
 import { TenantGuard } from './auth/tenant.guard.js';
 import { CourseModule } from './course/course.module.js';
 import { FstdModule } from './fstd/fstd.module.js';
@@ -17,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { StudentModule } from './student/student.module.js';
+import { UserModule } from './user/user.module.js';
 
 @Module({
   imports: [
@@ -33,13 +35,16 @@ import { StudentModule } from './student/student.module.js';
     SchedulingModule,
     RetentionModule,
     IsmsModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    // 全局认证与租户隔离: JwtAuthGuard 先跑 (验证token, @Public()例外), TenantGuard 后跑 (校验organizationId归属)
+    // 全局认证/租户隔离/模块权限校验, 按顺序执行: JwtAuthGuard(验证token, @Public()例外) ->
+    // TenantGuard(校验organizationId归属) -> PermissionsGuard(校验@RequirePermissions()所需模块权限)
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
 export class AppModule {}

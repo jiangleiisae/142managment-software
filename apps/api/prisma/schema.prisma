@@ -26,21 +26,37 @@ model Tenant {
 }
 
 enum UserRole {
-  OWNER // 租户创建者/最高权限
-  ADMIN
-  STAFF
+  OWNER // 租户创建者/最高权限, 注册时自动生成, 不可通过用户管理接口创建或编辑
+  ADMIN // 管理账户: 可管理其他账户及其模块权限, 对全部模块拥有完全访问权限
+  STAFF // 普通账户: 对各模块的访问权限由 permissions 字段逐项授予
+}
+
+/// 模块级功能权限, 仅对 STAFF 账户生效 (OWNER/ADMIN 始终拥有全部模块的完全访问权限)。
+/// 与 ManagementRoleType (航空法规意义上的"提名人员"角色) 是完全不同的概念, 互不影响。
+enum Permission {
+  ORGANIZATION // 机构与证书
+  MANAGEMENT_SYSTEM // 管理体系 SMS/QMS (含数据留存合规看板)
+  FSTD // 模拟机(FSTD)
+  INVENTORY // 备件/工具管理
+  PERSONNEL // 人员资质
+  COURSES // 课程管理
+  STUDENTS // 学员记录
+  SCHEDULING // 排班预订
+  ISMS // 信息安全 ISMS
 }
 
 /// 登录账号 (认证主体), 与 Personnel (航空业务人员档案) 是可选的一对一关联而非同一实体——
 /// 不是每个登录账号都对应一名受监管的航空人员(如纯IT管理员), 也不是每个Personnel都需要登录权限
 model User {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   tenantId     String
-  email        String   @unique
+  email        String       @unique
   passwordHash String
-  role         UserRole @default(STAFF)
-  personnelId  String?  @unique
-  createdAt    DateTime @default(now())
+  role         UserRole     @default(STAFF)
+  permissions  Permission[] // 仅STAFF账户使用, 由OWNER/ADMIN在用户管理页面逐项授予
+  isActive     Boolean      @default(true) // false=已停用, 登录态立即失效 (JwtStrategy每次请求都会重新校验)
+  personnelId  String?      @unique
+  createdAt    DateTime     @default(now())
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   personnel Personnel? @relation(fields: [personnelId], references: [id])

@@ -1,9 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
+import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { RetentionService } from './retention.service.js';
 
 @Controller('retention-policies')
+@RequirePermissions(Permission.MANAGEMENT_SYSTEM)
 export class RetentionController {
   constructor(private readonly retentionService: RetentionService) {}
 
