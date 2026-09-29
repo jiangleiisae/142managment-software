@@ -20,16 +20,25 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type {
   CalibrationDueSoonItem,
+  DemandRequestStatus,
+  FaultyPartRecord,
+  FaultyPartStatus,
   LowStockItem,
+  PartDemandRequest,
   PartMovement,
+  PartScrapRequest,
   PurchaseOrder,
+  ScrapRequestStatus,
   SparePart,
+  StocktakeSession,
   Supplier,
   Tool,
 } from '../api/inventory'
 import { inventoryApi } from '../api/inventory'
 import type { Discrepancy } from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
+import { personnelApi } from '../api/personnel'
+import type { Fstd, Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
@@ -45,6 +54,24 @@ const PO_STATUS_COLOR: Record<PurchaseOrder['status'], string> = {
   RECEIVED: 'green',
   CANCELLED: 'red',
 }
+
+const FAULTY_PART_STATUS_LABEL: Record<FaultyPartStatus, { text: string; color: string }> = {
+  PENDING_DECISION: { text: '待决定', color: 'orange' },
+  SENT_FOR_REPAIR: { text: '已送修', color: 'blue' },
+  RETURNED_TO_SUPPLIER: { text: '已退供应商', color: 'purple' },
+  REPAIRED_RETURNED_TO_STOCK: { text: '修复已入库', color: 'green' },
+  SCRAPPED: { text: '已报废', color: 'red' },
+}
+
+const SCRAP_STATUS_COLOR: Record<ScrapRequestStatus, string> = { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red' }
+const DEMAND_STATUS_COLOR: Record<DemandRequestStatus, string> = { PENDING: 'orange', CONVERTED: 'green', CANCELLED: 'default' }
+const SCRAP_REASON_OPTIONS = [
+  { value: 'DAMAGED', label: '损坏' },
+  { value: 'EXPIRED', label: '过期' },
+  { value: 'OBSOLETE', label: '淘汰停用' },
+  { value: 'LOST', label: '遗失' },
+  { value: 'OTHER', label: '其他' },
+]
 
 function SparePartsTab({ organizationId }: { organizationId: string }) {
   const [parts, setParts] = useState<SparePart[]>([])
@@ -486,6 +513,526 @@ function PurchaseOrdersTab({ organizationId }: { organizationId: string }) {
   )
 }
 
+function FaultyPartsTab({ organizationId }: { organizationId: string }) {
+  const [records, setRecords] = useState<FaultyPartRecord[]>([])
+  const [parts, setParts] = useState<SparePart[]>([])
+  const [fstds, setFstds] = useState<Fstd[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [statusModal, setStatusModal] = useState<{ record: FaultyPartRecord; target: Exclude<FaultyPartStatus, 'PENDING_DECISION'> }>()
+  const [reportForm] = Form.useForm()
+  const [statusForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listFaultyParts(organizationId).then(setRecords)
+    inventoryApi.listSpareParts(organizationId).then(setParts)
+    fstdsApi.list(organizationId).then(setFstds)
+    inventoryApi.listSuppliers(organizationId).then(setSuppliers)
+  }
+  useEffect(load, [organizationId])
+
+  const handleReport = async () => {
+    const values = await reportForm.validateFields()
+    await inventoryApi.reportFaultyPart(values)
+    message.success('故障件已登记')
+    setReportModalOpen(false)
+    reportForm.resetFields()
+    load()
+  }
+
+  const handleUpdateStatus = async () => {
+    if (!statusModal) return
+    const values = await statusForm.validateFields()
+    try {
+      await inventoryApi.updateFaultyPartStatus(statusModal.record.id, { status: statusModal.target, ...values })
+      message.success(
+        statusModal.target === 'REPAIRED_RETURNED_TO_STOCK' ? '已标记修复完成, 库存已自动增加' : '状态已更新',
+      )
+      setStatusModal(undefined)
+      statusForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setReportModalOpen(true)} disabled={parts.length === 0}>
+          登记故障件
+        </Button>
+        {parts.length === 0 && <span style={{ color: '#999' }}>需先有备件才能登记故障件</span>}
+      </Space>
+      <Table<FaultyPartRecord>
+        rowKey="id"
+        dataSource={records}
+        columns={[
+          { title: '备件', render: (_, r) => `${r.sparePart.partNumber} - ${r.sparePart.name}` },
+          { title: '拆自设备', render: (_, r) => r.removedFromFstd?.deviceCode ?? '-' },
+          { title: '数量', dataIndex: 'quantity' },
+          { title: '故障描述', dataIndex: 'faultDescription' },
+          {
+            title: '状态',
+            render: (_, r) => <Tag color={FAULTY_PART_STATUS_LABEL[r.status].color}>{FAULTY_PART_STATUS_LABEL[r.status].text}</Tag>,
+          },
+          { title: '送修/退换对象', render: (_, r) => r.supplier?.name ?? '-' },
+          {
+            title: '操作',
+            render: (_, r) =>
+              r.status === 'PENDING_DECISION' ? (
+                <Space>
+                  <Button size="small" onClick={() => setStatusModal({ record: r, target: 'SENT_FOR_REPAIR' })}>
+                    送修
+                  </Button>
+                  <Button size="small" onClick={() => setStatusModal({ record: r, target: 'RETURNED_TO_SUPPLIER' })}>
+                    退供应商
+                  </Button>
+                  <Button size="small" danger onClick={() => setStatusModal({ record: r, target: 'SCRAPPED' })}>
+                    报废
+                  </Button>
+                </Space>
+              ) : r.status === 'SENT_FOR_REPAIR' || r.status === 'RETURNED_TO_SUPPLIER' ? (
+                <Space>
+                  <Button size="small" type="primary" onClick={() => setStatusModal({ record: r, target: 'REPAIRED_RETURNED_TO_STOCK' })}>
+                    修复入库
+                  </Button>
+                  <Button size="small" danger onClick={() => setStatusModal({ record: r, target: 'SCRAPPED' })}>
+                    报废
+                  </Button>
+                </Space>
+              ) : (
+                <Tag>已完结</Tag>
+              ),
+          },
+        ]}
+      />
+
+      <Modal title="登记故障件" open={reportModalOpen} onOk={handleReport} onCancel={() => setReportModalOpen(false)}>
+        <Form form={reportForm} layout="vertical" initialValues={{ quantity: 1 }}>
+          <Form.Item name="sparePartId" label="备件" rules={[{ required: true }]}>
+            <Select options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name}` }))} />
+          </Form.Item>
+          <Form.Item name="removedFromFstdId" label="拆自设备 (可选)">
+            <Select allowClear options={fstds.map((f) => ({ value: f.id, label: f.deviceCode }))} />
+          </Form.Item>
+          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="faultDescription" label="故障描述" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={statusModal ? `${FAULTY_PART_STATUS_LABEL[statusModal.target].text}` : ''}
+        open={!!statusModal}
+        onOk={handleUpdateStatus}
+        onCancel={() => setStatusModal(undefined)}
+      >
+        <Form form={statusForm} layout="vertical">
+          {(statusModal?.target === 'SENT_FOR_REPAIR' || statusModal?.target === 'RETURNED_TO_SUPPLIER') && (
+            <Form.Item name="supplierId" label="送修/退换对象" rules={[{ required: true }]}>
+              <Select options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+            </Form.Item>
+          )}
+          <Form.Item name="resolutionNotes" label="备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function ScrapRequestsTab({ organizationId }: { organizationId: string }) {
+  const [requests, setRequests] = useState<PartScrapRequest[]>([])
+  const [parts, setParts] = useState<SparePart[]>([])
+  const [personnel, setPersonnel] = useState<Personnel[]>([])
+  const [requestModalOpen, setRequestModalOpen] = useState(false)
+  const [approveModalId, setApproveModalId] = useState<string>()
+  const [rejectModalId, setRejectModalId] = useState<string>()
+  const [requestForm] = Form.useForm()
+  const [approveForm] = Form.useForm()
+  const [rejectForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listScrapRequests(organizationId).then(setRequests)
+    inventoryApi.listSpareParts(organizationId).then(setParts)
+    personnelApi.list().then(setPersonnel)
+  }
+  useEffect(load, [organizationId])
+
+  const handleCreate = async () => {
+    const values = await requestForm.validateFields()
+    try {
+      await inventoryApi.requestScrap(values)
+      message.success('报废申请已提交, 待审批')
+      setRequestModalOpen(false)
+      requestForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleApprove = async () => {
+    if (!approveModalId) return
+    const values = await approveForm.validateFields()
+    await inventoryApi.approveScrap(approveModalId, values.approvedById)
+    message.success('报废已批准, 库存已扣减')
+    setApproveModalId(undefined)
+    approveForm.resetFields()
+    load()
+  }
+
+  const handleReject = async () => {
+    if (!rejectModalId) return
+    const values = await rejectForm.validateFields()
+    await inventoryApi.rejectScrap(rejectModalId, values.rejectedReason)
+    message.success('报废申请已驳回')
+    setRejectModalId(undefined)
+    rejectForm.resetFields()
+    load()
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setRequestModalOpen(true)} disabled={parts.length === 0}>
+          申请报废
+        </Button>
+      </Space>
+      <Table<PartScrapRequest>
+        rowKey="id"
+        dataSource={requests}
+        columns={[
+          { title: '备件', render: (_, r) => `${r.sparePart.partNumber} - ${r.sparePart.name}` },
+          { title: '数量', dataIndex: 'quantity' },
+          { title: '原因', dataIndex: 'reasonCode' },
+          { title: '状态', render: (_, r) => <Tag color={SCRAP_STATUS_COLOR[r.status]}>{r.status}</Tag> },
+          { title: '驳回理由', dataIndex: 'rejectedReason' },
+          {
+            title: '操作',
+            render: (_, r) =>
+              r.status === 'PENDING' ? (
+                <Space>
+                  <Button size="small" type="primary" onClick={() => setApproveModalId(r.id)}>
+                    批准
+                  </Button>
+                  <Button size="small" danger onClick={() => setRejectModalId(r.id)}>
+                    驳回
+                  </Button>
+                </Space>
+              ) : (
+                <Tag>已处理</Tag>
+              ),
+          },
+        ]}
+      />
+
+      <Modal title="申请报废" open={requestModalOpen} onOk={handleCreate} onCancel={() => setRequestModalOpen(false)}>
+        <Form form={requestForm} layout="vertical">
+          <Form.Item name="sparePartId" label="备件" rules={[{ required: true }]}>
+            <Select options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name} (库存${p.currentQuantity})` }))} />
+          </Form.Item>
+          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="reasonCode" label="报废原因" rules={[{ required: true }]}>
+            <Select options={SCRAP_REASON_OPTIONS} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="批准报废" open={!!approveModalId} onOk={handleApprove} onCancel={() => setApproveModalId(undefined)}>
+        <Form form={approveForm} layout="vertical">
+          <Form.Item name="approvedById" label="审批人" rules={[{ required: true }]}>
+            <Select options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="驳回报废申请" open={!!rejectModalId} onOk={handleReject} onCancel={() => setRejectModalId(undefined)}>
+        <Form form={rejectForm} layout="vertical">
+          <Form.Item name="rejectedReason" label="驳回理由">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function DemandRequestsTab({ organizationId }: { organizationId: string }) {
+  const [requests, setRequests] = useState<PartDemandRequest[]>([])
+  const [parts, setParts] = useState<SparePart[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [isCataloged, setIsCataloged] = useState(true)
+  const [convertModalId, setConvertModalId] = useState<string>()
+  const [createForm] = Form.useForm()
+  const [convertForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listDemandRequests(organizationId).then(setRequests)
+    inventoryApi.listSpareParts(organizationId).then(setParts)
+    inventoryApi.listSuppliers(organizationId).then(setSuppliers)
+  }
+  useEffect(load, [organizationId])
+
+  const handleCreate = async () => {
+    const values = await createForm.validateFields()
+    await inventoryApi.createDemandRequest({
+      organizationId,
+      ...values,
+      neededBy: values.neededBy ? values.neededBy.format('YYYY-MM-DD') : undefined,
+    })
+    message.success('需求已登记')
+    setCreateModalOpen(false)
+    createForm.resetFields()
+    load()
+  }
+
+  const handleCancel = async (id: string) => {
+    await inventoryApi.cancelDemandRequest(id)
+    message.success('需求已取消')
+    load()
+  }
+
+  const handleConvert = async () => {
+    if (!convertModalId) return
+    const values = await convertForm.validateFields()
+    try {
+      await inventoryApi.convertDemandToPurchaseOrder(convertModalId, values.supplierId)
+      message.success('已转为采购单 (草稿)')
+      setConvertModalId(undefined)
+      convertForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+          登记需求
+        </Button>
+      </Space>
+      <Table<PartDemandRequest>
+        rowKey="id"
+        dataSource={requests}
+        columns={[
+          { title: '备件', render: (_, r) => (r.sparePart ? `${r.sparePart.partNumber} - ${r.sparePart.name}` : `${r.partNumber ?? ''} ${r.name ?? ''} (尚未建档)`) },
+          { title: '数量', dataIndex: 'quantity' },
+          { title: '需要日期', render: (_, r) => (r.neededBy ? new Date(r.neededBy).toLocaleDateString() : '-') },
+          { title: '状态', render: (_, r) => <Tag color={DEMAND_STATUS_COLOR[r.status]}>{r.status}</Tag> },
+          { title: '备注', dataIndex: 'notes' },
+          {
+            title: '操作',
+            render: (_, r) =>
+              r.status === 'PENDING' ? (
+                <Space>
+                  <Button size="small" type="primary" disabled={!r.sparePart} onClick={() => setConvertModalId(r.id)}>
+                    转采购单
+                  </Button>
+                  <Button size="small" danger onClick={() => handleCancel(r.id)}>
+                    取消
+                  </Button>
+                </Space>
+              ) : (
+                <Tag>已处理</Tag>
+              ),
+          },
+        ]}
+      />
+
+      <Modal
+        title="登记需求"
+        open={createModalOpen}
+        onOk={handleCreate}
+        onCancel={() => setCreateModalOpen(false)}
+      >
+        <Form form={createForm} layout="vertical" initialValues={{ quantity: 1 }}>
+          <Space style={{ marginBottom: 8 }}>
+            <span>备件类型:</span>
+            <Select
+              value={isCataloged ? 'cataloged' : 'new'}
+              style={{ width: 200 }}
+              onChange={(v) => setIsCataloged(v === 'cataloged')}
+              options={[
+                { value: 'cataloged', label: '系统内已建档的备件' },
+                { value: 'new', label: '尚未建档的新备件' },
+              ]}
+            />
+          </Space>
+          {isCataloged ? (
+            <Form.Item name="sparePartId" label="备件" rules={[{ required: isCataloged }]}>
+              <Select options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name}` }))} />
+            </Form.Item>
+          ) : (
+            <>
+              <Form.Item name="partNumber" label="备件编号" rules={[{ required: !isCataloged }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="name" label="名称">
+                <Input />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="neededBy" label="预计需要日期">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="notes" label="备注">
+            <Input.TextArea rows={2} placeholder="如: 预计下季度大修需要" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="转为采购单" open={!!convertModalId} onOk={handleConvert} onCancel={() => setConvertModalId(undefined)}>
+        <Form form={convertForm} layout="vertical">
+          <Form.Item name="supplierId" label="供应商" rules={[{ required: true }]}>
+            <Select options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function StocktakeTab({ organizationId }: { organizationId: string }) {
+  const [sessions, setSessions] = useState<StocktakeSession[]>([])
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listStocktakeSessions(organizationId).then(setSessions)
+  }
+  useEffect(load, [organizationId])
+
+  const refreshOne = async (id: string) => {
+    const updated = await inventoryApi.getStocktakeSession(id)
+    setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)))
+  }
+
+  const handleCreate = async () => {
+    const values = await createForm.validateFields()
+    await inventoryApi.createStocktakeSession(organizationId, values.title)
+    message.success('盘点已开始, 已按当前账面库存生成快照')
+    setCreateModalOpen(false)
+    createForm.resetFields()
+    load()
+  }
+
+  const handleCount = async (itemId: string, sessionId: string, countedQuantity: number | null) => {
+    if (countedQuantity == null) return
+    await inventoryApi.recordStocktakeCount(itemId, countedQuantity)
+    refreshOne(sessionId)
+  }
+
+  const handleReconcile = async (id: string) => {
+    try {
+      await inventoryApi.reconcileStocktake(id)
+      message.success('对账完成, 差异已自动调整入库存')
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+          开始新盘点
+        </Button>
+      </Space>
+      <Table<StocktakeSession>
+        rowKey="id"
+        dataSource={sessions}
+        columns={[
+          { title: '标题', render: (_, s) => s.title ?? '(未命名)' },
+          { title: '开始时间', dataIndex: 'startedAt', render: (v: string) => new Date(v).toLocaleString() },
+          {
+            title: '状态',
+            render: (_, s) => <Tag color={s.status === 'IN_PROGRESS' ? 'orange' : 'green'}>{s.status === 'IN_PROGRESS' ? '进行中' : '已对账'}</Tag>,
+          },
+          { title: '对账时间', render: (_, s) => (s.reconciledAt ? new Date(s.reconciledAt).toLocaleString() : '-') },
+          {
+            title: '操作',
+            render: (_, s) =>
+              s.status === 'IN_PROGRESS' ? (
+                <Button size="small" type="primary" onClick={() => handleReconcile(s.id)}>
+                  完成对账
+                </Button>
+              ) : (
+                <Tag>已完成</Tag>
+              ),
+          },
+        ]}
+        expandable={{
+          expandedRowRender: (s) => (
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={s.items}
+              columns={[
+                { title: '备件', render: (_, i) => `${i.sparePart.partNumber} - ${i.sparePart.name}` },
+                { title: '账面库存', dataIndex: 'systemQuantity' },
+                {
+                  title: '实盘数',
+                  render: (_, i) =>
+                    s.status === 'IN_PROGRESS' ? (
+                      <InputNumber
+                        min={0}
+                        defaultValue={i.countedQuantity ?? undefined}
+                        onPressEnter={(e) => handleCount(i.id, s.id, Number((e.target as HTMLInputElement).value))}
+                        onBlur={(e) => handleCount(i.id, s.id, e.target.value === '' ? null : Number(e.target.value))}
+                      />
+                    ) : (
+                      (i.countedQuantity ?? '-')
+                    ),
+                },
+                {
+                  title: '差异',
+                  render: (_, i) =>
+                    i.countedQuantity == null ? (
+                      '-'
+                    ) : (
+                      <Tag color={i.countedQuantity === i.systemQuantity ? 'default' : 'red'}>
+                        {i.countedQuantity - i.systemQuantity > 0 ? '+' : ''}
+                        {i.countedQuantity - i.systemQuantity}
+                      </Tag>
+                    ),
+                },
+              ]}
+            />
+          ),
+        }}
+      />
+
+      <Modal title="开始新盘点" open={createModalOpen} onOk={handleCreate} onCancel={() => setCreateModalOpen(false)}>
+        <Form form={createForm} layout="vertical">
+          <Form.Item name="title" label="盘点标题 (可选)">
+            <Input placeholder="如: 2026年第三季度库存盘点" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
 export function InventoryPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
 
@@ -501,6 +1048,10 @@ export function InventoryPage() {
             { key: 'parts', label: '备件库存', children: <SparePartsTab organizationId={selectedId} /> },
             { key: 'tools', label: '工具校准', children: <ToolsTab organizationId={selectedId} /> },
             { key: 'po', label: '采购订单', children: <PurchaseOrdersTab organizationId={selectedId} /> },
+            { key: 'faulty', label: '故障件管理', children: <FaultyPartsTab organizationId={selectedId} /> },
+            { key: 'scrap', label: '报废管理', children: <ScrapRequestsTab organizationId={selectedId} /> },
+            { key: 'demand', label: '备件需求', children: <DemandRequestsTab organizationId={selectedId} /> },
+            { key: 'stocktake', label: '备件盘点', children: <StocktakeTab organizationId={selectedId} /> },
           ]}
         />
       )}

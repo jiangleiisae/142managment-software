@@ -179,6 +179,8 @@ model Organization {
   informationAssets    InformationAsset[]
   infoSecurityIncidents InfoSecurityIncident[]
   selfReviews          OrganisationalSelfReview[]
+  partDemandRequests   PartDemandRequest[]
+  stocktakeSessions    StocktakeSession[]
 
   @@map("organizations")
 }
@@ -694,6 +696,7 @@ model Fstd {
   qtgDocuments    FstdQtgDocument[]
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
   performanceMetrics FstdPerformanceMetric[]
+  faultyPartRecords FaultyPartRecord[]
 
   @@unique([organizationId, deviceCode])
   @@map("fstds")
@@ -958,6 +961,7 @@ model DiscrepancyLog {
 
   fstd Fstd @relation(fields: [fstdId], references: [id])
   partMovements PartMovement[]
+  faultyPartRecords FaultyPartRecord[]
 
   @@map("discrepancy_logs")
 }
@@ -988,6 +992,10 @@ model SparePart {
   organization      Organization        @relation(fields: [organizationId], references: [id])
   movements          PartMovement[]
   purchaseOrderItems PurchaseOrderItem[]
+  faultyPartRecords  FaultyPartRecord[]
+  scrapRequests      PartScrapRequest[]
+  demandRequests     PartDemandRequest[]
+  stocktakeItems     StocktakeItem[]
 
   @@unique([organizationId, partNumber])
   @@map("spare_parts")
@@ -1055,6 +1063,7 @@ model Supplier {
 
   organization    Organization     @relation(fields: [organizationId], references: [id])
   purchaseOrders  PurchaseOrder[]
+  faultyPartRecords FaultyPartRecord[]
 
   @@map("suppliers")
 }
@@ -1079,6 +1088,7 @@ model PurchaseOrder {
   organization Organization        @relation(fields: [organizationId], references: [id])
   supplier     Supplier            @relation(fields: [supplierId], references: [id])
   items        PurchaseOrderItem[]
+  demandRequests PartDemandRequest[]
 
   @@map("purchase_orders")
 }
@@ -1094,6 +1104,127 @@ model PurchaseOrderItem {
   sparePart     SparePart     @relation(fields: [sparePartId], references: [id])
 
   @@map("purchase_order_items")
+}
+
+/// 故障件管理 (吸收天津飞安实践): 从设备上拆下并确认故障的部件, 走送修/退供应商的独立流程,
+/// 区别于普通出入库(3.4.1)和借用件——故障件离开设备后的"生命周期追踪"是周转件管理的核心环节。
+enum FaultyPartStatus {
+  PENDING_DECISION // 已确认故障, 待决定送修/退供应商/报废
+  SENT_FOR_REPAIR
+  RETURNED_TO_SUPPLIER
+  REPAIRED_RETURNED_TO_STOCK // 送修返回后视为合格品重新入库(自动生成IN movement)
+  SCRAPPED
+}
+
+model FaultyPartRecord {
+  id                   String           @id @default(cuid())
+  sparePartId          String
+  removedFromFstdId    String?
+  relatedDiscrepancyId String? // 触发拆卸的缺陷记录, 形成"缺陷→拆卸故障件"追溯链
+  quantity             Int              @default(1)
+  faultDescription     String
+  status               FaultyPartStatus @default(PENDING_DECISION)
+  supplierId           String? // 送修/退换对象
+  sentAt               DateTime?
+  resolvedAt           DateTime?
+  resolutionNotes      String?
+  createdAt            DateTime         @default(now())
+
+  sparePart          SparePart       @relation(fields: [sparePartId], references: [id])
+  removedFromFstd    Fstd?           @relation(fields: [removedFromFstdId], references: [id])
+  relatedDiscrepancy DiscrepancyLog? @relation(fields: [relatedDiscrepancyId], references: [id])
+  supplier           Supplier?       @relation(fields: [supplierId], references: [id])
+
+  @@map("faulty_part_records")
+}
+
+/// 备件报废管理 (吸收天津飞安实践): 报废须走审批流程(原因码+审批人+审批时间), 不是直接把库存数字减到零
+enum ScrapRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PartScrapRequest {
+  id             String             @id @default(cuid())
+  sparePartId    String
+  quantity       Int
+  reasonCode     String // DAMAGED / EXPIRED / OBSOLETE / LOST 等, 一期简化为字符串而非配置表
+  requestedById  String?
+  status         ScrapRequestStatus @default(PENDING)
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime           @default(now())
+
+  sparePart SparePart @relation(fields: [sparePartId], references: [id])
+
+  @@map("part_scrap_requests")
+}
+
+/// 备件需求登记 (吸收天津飞安实践): 正式采购单之前的"需求登记/预测"阶段, 与已发出的PurchaseOrder是两个不同阶段
+enum DemandRequestStatus {
+  PENDING
+  CONVERTED
+  CANCELLED
+}
+
+model PartDemandRequest {
+  id              String              @id @default(cuid())
+  organizationId  String
+  sparePartId     String? // 系统内已建档的备件
+  partNumber      String? // 或尚未建档的新备件, 仅登记编号/名称用途
+  name            String?
+  quantity        Int
+  neededBy        DateTime?
+  requestedById   String?
+  status          DemandRequestStatus @default(PENDING)
+  purchaseOrderId String? // 转为采购单后回填
+  notes           String?
+  createdAt       DateTime            @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  sparePart     SparePart?     @relation(fields: [sparePartId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+
+  @@map("part_demand_requests")
+}
+
+/// 备件盘点 (吸收天津飞安实践): 周期性实物盘点, 与系统账面库存对账, 识别差异——
+/// 开始盘点时快照当前账面库存(systemQuantity), 逐项录入实盘数(countedQuantity), 对账后按差异生成调整movement
+enum StocktakeStatus {
+  IN_PROGRESS
+  RECONCILED
+}
+
+model StocktakeSession {
+  id             String          @id @default(cuid())
+  organizationId String
+  title          String?
+  status         StocktakeStatus @default(IN_PROGRESS)
+  startedAt      DateTime        @default(now())
+  reconciledAt   DateTime?
+  reconciledById String?
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  items        StocktakeItem[]
+
+  @@map("stocktake_sessions")
+}
+
+model StocktakeItem {
+  id                 String   @id @default(cuid())
+  stocktakeSessionId String
+  sparePartId        String
+  systemQuantity     Int // 开始盘点时的账面库存快照
+  countedQuantity    Int? // 实物清点结果, null表示尚未清点该项
+  notes              String?
+
+  stocktakeSession StocktakeSession @relation(fields: [stocktakeSessionId], references: [id])
+  sparePart        SparePart        @relation(fields: [sparePartId], references: [id])
+
+  @@unique([stocktakeSessionId, sparePartId])
+  @@map("stocktake_items")
 }
 
 // ============================================================
