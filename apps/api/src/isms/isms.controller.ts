@@ -66,6 +66,7 @@ export class IsmsController {
 
   @Post('incidents')
   reportIncident(
+    @CurrentUser() user: AuthContext,
     @Body()
     dto: {
       organizationId: string;
@@ -76,7 +77,7 @@ export class IsmsController {
       severity: number;
     },
   ) {
-    return this.ismsService.reportIncident(dto);
+    return this.ismsService.reportIncident(user.tenantId, dto);
   }
 
   @Get('incidents')

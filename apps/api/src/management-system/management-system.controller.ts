@@ -142,8 +142,11 @@ export class ManagementSystemController {
   // ---- 3.2.2 安全政策 (Safety Policy) ----
 
   @Post('safety-policies')
-  addSafetyPolicy(@Body() dto: { organizationId: string; version: string; policyText: string; effectiveDate: string }) {
-    return this.service.addSafetyPolicy(dto);
+  addSafetyPolicy(
+    @CurrentUser() user: AuthContext,
+    @Body() dto: { organizationId: string; version: string; policyText: string; effectiveDate: string },
+  ) {
+    return this.service.addSafetyPolicy(user.tenantId, dto);
   }
 
   @Get('safety-policies')
@@ -159,8 +162,8 @@ export class ManagementSystemController {
   // ---- 3.2.2 变更管理 MOC ----
 
   @Post('mocs')
-  createMoc(@Body() dto: { organizationId: string; changeDescription: string }) {
-    return this.service.createMoc(dto);
+  createMoc(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; changeDescription: string }) {
+    return this.service.createMoc(user.tenantId, dto);
   }
 
   @Get('mocs')
@@ -186,8 +189,11 @@ export class ManagementSystemController {
   // ---- 3.2.2 应急响应计划 ERP ----
 
   @Post('erp-plans')
-  addErpPlan(@Body() dto: { organizationId: string; version: string; planText: string; effectiveDate: string }) {
-    return this.service.addErpPlan(dto);
+  addErpPlan(
+    @CurrentUser() user: AuthContext,
+    @Body() dto: { organizationId: string; version: string; planText: string; effectiveDate: string },
+  ) {
+    return this.service.addErpPlan(user.tenantId, dto);
   }
 
   @Get('erp-plans')
@@ -271,10 +277,11 @@ export class ManagementSystemController {
 
   @Post('contracts')
   createContract(
+    @CurrentUser() user: AuthContext,
     @Body() dto: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean },
   ) {
     // organizationId 的租户归属已由全局 TenantGuard 校验
-    return this.service.createContract(dto);
+    return this.service.createContract(user.tenantId, dto);
   }
 
   @Get('contracts')

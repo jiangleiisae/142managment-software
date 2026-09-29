@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ChangeRequest, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CHANGE_TYPE_CONFIG, ENTITY_PERMISSION } from './change-type-config.js';
@@ -8,7 +9,10 @@ import { CHANGE_TYPE_CONFIG, ENTITY_PERMISSION } from './change-type-config.js';
 /// 权限校验手写在service内 (而非@RequirePermissions()), 因为同一个接口按entityType对应不同模块权限。
 @Injectable()
 export class ChangeManagementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   listChangeTypes(entityType: string) {
     const config = CHANGE_TYPE_CONFIG[entityType];
@@ -63,7 +67,7 @@ export class ChangeManagementService {
       throw new BadRequestException(`变更类型 "${config.label}" 须填写: ${missing.join(', ')}`);
     }
 
-    return this.prisma.changeRequest.create({
+    const created = await this.prisma.changeRequest.create({
       data: {
         tenantId,
         entityType: data.entityType,
@@ -75,6 +79,8 @@ export class ChangeManagementService {
         detailsJson: data.detailsJson as Prisma.InputJsonValue | undefined,
       },
     });
+    await this.auditLog.write(tenantId, 'ChangeRequest', created.id, 'create', null, created);
+    return created;
   }
 
   async list(actor: AuthContext, entityType: string, entityId: string) {
@@ -98,15 +104,19 @@ export class ChangeManagementService {
     if (cr.status !== 'DRAFT') throw new BadRequestException(`当前状态 ${cr.status} 不可提交`);
 
     const now = new Date();
+    let updated: ChangeRequest;
     if (cr.approvalType === 'NOTIFICATION_ONLY') {
-      return this.prisma.changeRequest.update({ where: { id }, data: { status: 'LOGGED', submittedAt: now } });
+      updated = await this.prisma.changeRequest.update({ where: { id }, data: { status: 'LOGGED', submittedAt: now } });
+    } else {
+      const earliestEffectiveDate = new Date(now);
+      earliestEffectiveDate.setDate(earliestEffectiveDate.getDate() + (cr.minNoticeDays ?? 0));
+      updated = await this.prisma.changeRequest.update({
+        where: { id },
+        data: { status: 'SUBMITTED', submittedAt: now, earliestEffectiveDate },
+      });
     }
-    const earliestEffectiveDate = new Date(now);
-    earliestEffectiveDate.setDate(earliestEffectiveDate.getDate() + (cr.minNoticeDays ?? 0));
-    return this.prisma.changeRequest.update({
-      where: { id },
-      data: { status: 'SUBMITTED', submittedAt: now, earliestEffectiveDate },
-    });
+    await this.auditLog.write(actor.tenantId, 'ChangeRequest', id, `status_change:${cr.status}->${updated.status}`, cr, updated);
+    return updated;
   }
 
   /// 无需事先批准类专用: LOGGED -> NOTIFIED, 立即生效 (无需等待提前通知期)
@@ -114,7 +124,9 @@ export class ChangeManagementService {
     const cr = await this.findOrThrow(actor, id);
     if (cr.approvalType !== 'NOTIFICATION_ONLY') throw new BadRequestException('仅无需事先批准类变更使用此操作');
     if (cr.status !== 'LOGGED') throw new BadRequestException(`当前状态 ${cr.status} 不可通知`);
-    return this.prisma.changeRequest.update({ where: { id }, data: { status: 'NOTIFIED', effectiveAt: new Date() } });
+    const updated = await this.prisma.changeRequest.update({ where: { id }, data: { status: 'NOTIFIED', effectiveAt: new Date() } });
+    await this.auditLog.write(actor.tenantId, 'ChangeRequest', id, 'status_change:LOGGED->NOTIFIED', cr, updated);
+    return updated;
   }
 
   async approve(actor: AuthContext, id: string) {
@@ -127,7 +139,9 @@ export class ChangeManagementService {
 
     const now = new Date();
     const effectiveAt = cr.earliestEffectiveDate && cr.earliestEffectiveDate > now ? cr.earliestEffectiveDate : now;
-    return this.prisma.changeRequest.update({ where: { id }, data: { status: 'APPROVED', effectiveAt } });
+    const updated = await this.prisma.changeRequest.update({ where: { id }, data: { status: 'APPROVED', effectiveAt } });
+    await this.auditLog.write(actor.tenantId, 'ChangeRequest', id, `status_change:${cr.status}->APPROVED`, cr, updated);
+    return updated;
   }
 
   async reject(actor: AuthContext, id: string, reply?: string) {
@@ -135,7 +149,9 @@ export class ChangeManagementService {
     if (cr.status === 'APPROVED' || cr.status === 'REJECTED' || cr.status === 'NOTIFIED') {
       throw new BadRequestException(`当前状态 ${cr.status} 不可驳回`);
     }
-    return this.prisma.changeRequest.update({ where: { id }, data: { status: 'REJECTED', authorityReply: reply } });
+    const updated = await this.prisma.changeRequest.update({ where: { id }, data: { status: 'REJECTED', authorityReply: reply } });
+    await this.auditLog.write(actor.tenantId, 'ChangeRequest', id, `status_change:${cr.status}->REJECTED`, cr, updated);
+    return updated;
   }
 
   /// 需求清单3.3.6差异化规则的可自动校验部分:

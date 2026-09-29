@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class StudentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   private async findStudentOrThrow(studentId: string, tenantId: string) {
     const student = await this.prisma.student.findUnique({
@@ -60,7 +64,9 @@ export class StudentService {
     const course = await this.prisma.course.findFirst({ where: { id: courseId, organizationId: student.organizationId } });
     if (!course) throw new NotFoundException(`Course ${courseId} not found in this organization`);
 
-    return this.prisma.enrollment.create({ data: { studentId, courseId } });
+    const enrollment = await this.prisma.enrollment.create({ data: { studentId, courseId } });
+    await this.auditLog.write(tenantId, 'Enrollment', enrollment.id, 'create', null, enrollment);
+    return enrollment;
   }
 
   private async findEnrollmentOrThrow(enrollmentId: string, tenantId: string) {
@@ -166,10 +172,12 @@ export class StudentService {
         );
       }
     }
-    return this.prisma.enrollment.update({
+    const updated = await this.prisma.enrollment.update({
       where: { id: enrollmentId },
       data: { status: 'completed', completedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'Enrollment', enrollmentId, 'status_change:active->completed', enrollment, updated);
+    return updated;
   }
 
   async withdrawEnrollment(enrollmentId: string, tenantId: string) {
@@ -177,7 +185,9 @@ export class StudentService {
     if (enrollment.status !== 'active') {
       throw new BadRequestException(`Cannot withdraw enrollment from status ${enrollment.status}`);
     }
-    return this.prisma.enrollment.update({ where: { id: enrollmentId }, data: { status: 'withdrawn' } });
+    const updated = await this.prisma.enrollment.update({ where: { id: enrollmentId }, data: { status: 'withdrawn' } });
+    await this.auditLog.write(tenantId, 'Enrollment', enrollmentId, 'status_change:active->withdrawn', enrollment, updated);
+    return updated;
   }
 
   /// 体检证即将到期/已过期的学员 (镜像 FSTD评估到期/工具校准到期 的仪表盘告警模式, 支撑ORA.ATO.145前置条件校验)

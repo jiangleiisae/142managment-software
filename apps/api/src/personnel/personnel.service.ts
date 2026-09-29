@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InstructorType } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class PersonnelService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   create(tenantId: string, data: { firstName: string; lastName: string; email?: string; phone?: string }) {
     return this.prisma.personnel.create({ data: { ...data, tenantId } });
@@ -64,10 +68,13 @@ export class PersonnelService {
   /// 3.5 教员档案 (FI/TRI/SFI/理论教员/考试员), 与Personnel一对一, 按personnelId upsert
   async setInstructorProfile(personnelId: string, tenantId: string, instructorType: InstructorType) {
     await this.findOne(personnelId, tenantId);
-    return this.prisma.instructorProfile.upsert({
+    const before = await this.prisma.instructorProfile.findUnique({ where: { personnelId } });
+    const updated = await this.prisma.instructorProfile.upsert({
       where: { personnelId },
       create: { personnelId, instructorType },
       update: { instructorType },
     });
+    await this.auditLog.write(tenantId, 'InstructorProfile', personnelId, before ? 'update' : 'create', before, updated);
+    return updated;
   }
 }

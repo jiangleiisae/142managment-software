@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BookingResourceType } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { FstdService } from '../fstd/fstd.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -8,6 +9,7 @@ export class SchedulingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fstdService: FstdService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   /// 需求清单 3.8: 排课引擎作为消费方, 校验资源在时间段内无冲突
@@ -106,16 +108,19 @@ export class SchedulingService {
     }
   }
 
-  async create(data: {
-    organizationId: string;
-    resourceType: BookingResourceType;
-    resourceId: string;
-    startAt: string;
-    endAt: string;
-    courseId?: string;
-    studentId?: string;
-    taskCode?: string;
-  }) {
+  async create(
+    tenantId: string,
+    data: {
+      organizationId: string;
+      resourceType: BookingResourceType;
+      resourceId: string;
+      startAt: string;
+      endAt: string;
+      courseId?: string;
+      studentId?: string;
+      taskCode?: string;
+    },
+  ) {
     const startAt = new Date(data.startAt);
     const endAt = new Date(data.endAt);
     if (startAt >= endAt) throw new BadRequestException('startAt must be before endAt');
@@ -124,9 +129,11 @@ export class SchedulingService {
     await this.assertResourceEligible(data);
     await this.assertNoConflict(data.resourceType, data.resourceId, startAt, endAt);
 
-    return this.prisma.booking.create({
+    const booking = await this.prisma.booking.create({
       data: { ...data, startAt, endAt },
     });
+    await this.auditLog.write(tenantId, 'Booking', booking.id, 'create', null, booking);
+    return booking;
   }
 
   findByResource(resourceType: BookingResourceType, resourceId: string, tenantId: string) {
@@ -139,6 +146,8 @@ export class SchedulingService {
   async cancel(id: string, tenantId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id }, include: { organization: true } });
     if (!booking || booking.organization.tenantId !== tenantId) throw new NotFoundException(`Booking ${id} not found`);
-    return this.prisma.booking.update({ where: { id }, data: { status: 'cancelled' } });
+    const updated = await this.prisma.booking.update({ where: { id }, data: { status: 'cancelled' } });
+    await this.auditLog.write(tenantId, 'Booking', id, 'status_change:confirmed->cancelled', booking, updated);
+    return updated;
   }
 }

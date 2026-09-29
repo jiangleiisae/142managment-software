@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InfoAssetCriticality, InfoSecurityIncidentStatus } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class IsmsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   // ---- 3.2.4 信息资产清单 ----
 
@@ -91,7 +95,9 @@ export class IsmsService {
     if (!action || action.riskAssessment.asset.organization.tenantId !== tenantId) {
       throw new NotFoundException(`Mitigation action ${id} not found`);
     }
-    return this.prisma.infoSecurityMitigationAction.update({ where: { id }, data: { status: 'closed' } });
+    const updated = await this.prisma.infoSecurityMitigationAction.update({ where: { id }, data: { status: 'closed' } });
+    await this.auditLog.write(tenantId, 'InfoSecurityMitigationAction', id, 'status_change:open->closed', action, updated);
+    return updated;
   }
 
   /// 高风险(评分>=阈值)且尚未完全缓解的信息安全风险 (含"零缓解措施"这种最紧急情况, 与SMS的listOpenHighRisks同一判定逻辑)
@@ -108,18 +114,21 @@ export class IsmsService {
 
   // ---- 3.2.4 信息安全事件响应: OPEN -> CONTAINED -> RESOLVED ----
 
-  reportIncident(data: {
-    organizationId: string;
-    discoveredAt: string;
-    incidentType: string;
-    description: string;
-    affectedAssetId?: string;
-    severity: number;
-  }) {
+  async reportIncident(
+    tenantId: string,
+    data: {
+      organizationId: string;
+      discoveredAt: string;
+      incidentType: string;
+      description: string;
+      affectedAssetId?: string;
+      severity: number;
+    },
+  ) {
     if (data.severity < 1 || data.severity > 5) {
       throw new BadRequestException('severity 必须在 1-5 之间');
     }
-    return this.prisma.infoSecurityIncident.create({
+    const incident = await this.prisma.infoSecurityIncident.create({
       data: {
         organizationId: data.organizationId,
         discoveredAt: new Date(data.discoveredAt),
@@ -129,6 +138,8 @@ export class IsmsService {
         severity: data.severity,
       },
     });
+    await this.auditLog.write(tenantId, 'InfoSecurityIncident', incident.id, 'create', null, incident);
+    return incident;
   }
 
   listIncidents(organizationId: string) {
@@ -151,10 +162,12 @@ export class IsmsService {
     if (incident.status !== InfoSecurityIncidentStatus.OPEN) {
       throw new BadRequestException(`Cannot contain incident from status ${incident.status}`);
     }
-    return this.prisma.infoSecurityIncident.update({
+    const updated = await this.prisma.infoSecurityIncident.update({
       where: { id },
       data: { status: InfoSecurityIncidentStatus.CONTAINED, responseActions, containedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'InfoSecurityIncident', id, 'status_change:open->contained', incident, updated);
+    return updated;
   }
 
   async resolveIncident(id: string, tenantId: string) {
@@ -162,10 +175,12 @@ export class IsmsService {
     if (incident.status !== InfoSecurityIncidentStatus.CONTAINED) {
       throw new BadRequestException(`Cannot resolve incident from status ${incident.status}: must be contained first`);
     }
-    return this.prisma.infoSecurityIncident.update({
+    const updated = await this.prisma.infoSecurityIncident.update({
       where: { id },
       data: { status: InfoSecurityIncidentStatus.RESOLVED, resolvedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'InfoSecurityIncident', id, 'status_change:contained->resolved', incident, updated);
+    return updated;
   }
 
   /// 全租户范围内尚未解决的事件, 按严重度降序 (仪表盘告警)

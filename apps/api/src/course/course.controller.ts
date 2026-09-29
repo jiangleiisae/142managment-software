@@ -11,8 +11,8 @@ export class CourseController {
   constructor(private readonly courseService: CourseService) {}
 
   @Post()
-  create(@Body() dto: { organizationId: string; name: string; courseType: CourseType }) {
-    return this.courseService.create(dto);
+  create(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; name: string; courseType: CourseType }) {
+    return this.courseService.create(user.tenantId, dto);
   }
 
   @Get()

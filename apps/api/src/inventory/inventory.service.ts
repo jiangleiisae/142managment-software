@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PartCategory, PartMovementType, PurchaseOrderStatus } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   // ==================== 3.4.1 备件库存 ====================
 
@@ -227,7 +231,9 @@ export class InventoryService {
   async submitPurchaseOrder(id: string, tenantId: string) {
     const po = await this.findPurchaseOrderOrThrow(id, tenantId);
     this.assertTransition(po.status, [PurchaseOrderStatus.SUBMITTED, PurchaseOrderStatus.CANCELLED], PurchaseOrderStatus.SUBMITTED);
-    return this.prisma.purchaseOrder.update({ where: { id }, data: { status: PurchaseOrderStatus.SUBMITTED } });
+    const updated = await this.prisma.purchaseOrder.update({ where: { id }, data: { status: PurchaseOrderStatus.SUBMITTED } });
+    await this.auditLog.write(tenantId, 'PurchaseOrder', id, `status_change:${po.status}->${updated.status}`, po, updated);
+    return updated;
   }
 
   async approvePurchaseOrder(id: string, tenantId: string) {
@@ -235,16 +241,20 @@ export class InventoryService {
     if (po.status !== PurchaseOrderStatus.SUBMITTED) {
       throw new BadRequestException(`Cannot approve purchase order from status ${po.status}`);
     }
-    return this.prisma.purchaseOrder.update({
+    const updated = await this.prisma.purchaseOrder.update({
       where: { id },
       data: { status: PurchaseOrderStatus.APPROVED, approvedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'PurchaseOrder', id, `status_change:${po.status}->${updated.status}`, po, updated);
+    return updated;
   }
 
   async cancelPurchaseOrder(id: string, tenantId: string) {
     const po = await this.findPurchaseOrderOrThrow(id, tenantId);
     if (po.status === PurchaseOrderStatus.RECEIVED) throw new BadRequestException('已入库的订单不能取消');
-    return this.prisma.purchaseOrder.update({ where: { id }, data: { status: PurchaseOrderStatus.CANCELLED } });
+    const updated = await this.prisma.purchaseOrder.update({ where: { id }, data: { status: PurchaseOrderStatus.CANCELLED } });
+    await this.auditLog.write(tenantId, 'PurchaseOrder', id, `status_change:${po.status}->${updated.status}`, po, updated);
+    return updated;
   }
 
   /// 到货入库: 批准后的订单一次性全部入库, 按明细逐条生成入库movement并累加库存 (与3.4.1的库存联动)
@@ -275,6 +285,8 @@ export class InventoryService {
       }),
     ]);
 
-    return this.findPurchaseOrderOrThrow(id, tenantId);
+    const updated = await this.findPurchaseOrderOrThrow(id, tenantId);
+    await this.auditLog.write(tenantId, 'PurchaseOrder', id, `status_change:${po.status}->${updated.status}`, po, updated);
+    return updated;
   }
 }

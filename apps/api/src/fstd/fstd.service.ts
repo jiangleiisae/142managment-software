@@ -8,6 +8,7 @@ import {
   QtgDocumentType,
   RetentionCategory,
 } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const FIDELITY_RANK: Record<FcsFidelityLevel, number> = { N: 0, G: 1, R: 2, S: 3 };
@@ -27,7 +28,10 @@ export interface TaskCapabilityResult {
 
 @Injectable()
 export class FstdService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   /// fstdId 路由拿不到 organizationId, 需要反查设备所属机构再校验租户 (TenantGuard 覆盖不到这类路径)
   private async findFstdOrThrow(fstdId: string, tenantId: string) {
@@ -50,21 +54,26 @@ export class FstdService {
     legacyLevel?: LegacyLevel;
     qualificationBasisType?: FstdQualificationBasisType;
   }) {
-    return this.prisma.fstd.create({
-      data: {
-        organizationId: data.organizationId,
-        deviceCode: data.deviceCode,
-        representedAircraft: data.representedAircraft,
-        deviceType: data.deviceType,
-        serialNumber: data.serialNumber,
-        location: data.location,
-        qualificationBasisType: data.qualificationBasisType ?? 'EASA_LEGACY_LEVEL',
-        ...(data.legacyLevel
-          ? { legacyLevel: { create: { level: data.legacyLevel } } }
-          : {}),
-      },
-      include: { legacyLevel: true },
-    });
+    return this.prisma.fstd
+      .create({
+        data: {
+          organizationId: data.organizationId,
+          deviceCode: data.deviceCode,
+          representedAircraft: data.representedAircraft,
+          deviceType: data.deviceType,
+          serialNumber: data.serialNumber,
+          location: data.location,
+          qualificationBasisType: data.qualificationBasisType ?? 'EASA_LEGACY_LEVEL',
+          ...(data.legacyLevel
+            ? { legacyLevel: { create: { level: data.legacyLevel } } }
+            : {}),
+        },
+        include: { legacyLevel: true, organization: true },
+      })
+      .then(async (fstd) => {
+        await this.auditLog.write(fstd.organization.tenantId, 'Fstd', fstd.id, 'create', null, fstd);
+        return fstd;
+      });
   }
 
   findAll(organizationId: string) {
@@ -114,12 +123,14 @@ export class FstdService {
       where: { fstdId, characteristic: data.characteristic, subsystem: data.subsystem ?? null },
     });
     if (existing) {
-      return this.prisma.fstdFcsCapability.update({
+      const updated = await this.prisma.fstdFcsCapability.update({
         where: { id: existing.id },
         data: { fidelityLevel: data.fidelityLevel, isAssigned: data.isAssigned ?? false },
       });
+      await this.auditLog.write(tenantId, 'FstdFcsCapability', updated.id, 'update', existing, updated);
+      return updated;
     }
-    return this.prisma.fstdFcsCapability.create({
+    const created = await this.prisma.fstdFcsCapability.create({
       data: {
         fstdId,
         characteristic: data.characteristic,
@@ -128,6 +139,8 @@ export class FstdService {
         isAssigned: data.isAssigned ?? false,
       },
     });
+    await this.auditLog.write(tenantId, 'FstdFcsCapability', created.id, 'create', null, created);
+    return created;
   }
 
   async listFcsCapabilities(fstdId: string, tenantId: string) {
@@ -148,11 +161,12 @@ export class FstdService {
     },
   ) {
     await this.findFstdOrThrow(fstdId, tenantId);
+    const superseded = await this.prisma.equipmentSpecificationList.findMany({ where: { fstdId, supersededAt: null } });
     await this.prisma.equipmentSpecificationList.updateMany({
       where: { fstdId, supersededAt: null },
       data: { supersededAt: new Date() },
     });
-    return this.prisma.equipmentSpecificationList.create({
+    const created = await this.prisma.equipmentSpecificationList.create({
       data: {
         fstdId,
         revisionNumber: data.revisionNumber,
@@ -161,6 +175,15 @@ export class FstdService {
       },
       include: { entries: true },
     });
+    await this.auditLog.write(
+      tenantId,
+      'EquipmentSpecificationList',
+      created.id,
+      superseded.length > 0 ? 'create_supersedes_previous' : 'create',
+      superseded,
+      created,
+    );
+    return created;
   }
 
   async listEsls(fstdId: string, tenantId: string) {
@@ -189,10 +212,12 @@ export class FstdService {
         `Personnel ${personnelId} does not currently hold the NOMINATED_PERSON_COMPLIANCE role for this organization`,
       );
     }
-    return this.prisma.equipmentSpecificationList.update({
+    const updated = await this.prisma.equipmentSpecificationList.update({
       where: { id: eslId },
       data: { declaredById: personnelId, declaredAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'EquipmentSpecificationList', eslId, 'declare', esl, updated);
+    return updated;
   }
 
   // ---- FSTD性能指标 (AMC1 ORA.FSTD.100(d)): 逐月上报, 官方公式计算可用率/可靠率 ----
@@ -446,7 +471,7 @@ export class FstdService {
     if (discrepancy.status !== 'open') {
       throw new BadRequestException(`Discrepancy ${discrepancyId} is already ${discrepancy.status}`);
     }
-    return this.prisma.discrepancyLog.update({
+    const updated = await this.prisma.discrepancyLog.update({
       where: { id: discrepancyId },
       data: {
         correctiveAction: data.correctiveAction,
@@ -455,6 +480,8 @@ export class FstdService {
         status: 'corrected',
       },
     });
+    await this.auditLog.write(tenantId, 'DiscrepancyLog', discrepancyId, 'status_change:open->corrected', discrepancy, updated);
+    return updated;
   }
 
   /// 故障保留分级 (吸收天津飞安实践, 类似MEL的Category体系): 允许经评估的开放缺陷正式"带病运行",
@@ -468,7 +495,7 @@ export class FstdService {
     if (discrepancy.status !== 'open') {
       throw new BadRequestException(`只能对开放中的缺陷设置保留分级, 当前状态: ${discrepancy.status}`);
     }
-    return this.prisma.discrepancyLog.update({
+    const updated = await this.prisma.discrepancyLog.update({
       where: { id: discrepancyId },
       data: {
         retentionCategory: data.category,
@@ -478,11 +505,13 @@ export class FstdService {
         retentionExpiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
       },
     });
+    await this.auditLog.write(tenantId, 'DiscrepancyLog', discrepancyId, 'set_retention', discrepancy, updated);
+    return updated;
   }
 
   async clearDiscrepancyRetention(discrepancyId: string, tenantId: string) {
-    await this.findDiscrepancyOrThrow(discrepancyId, tenantId);
-    return this.prisma.discrepancyLog.update({
+    const discrepancy = await this.findDiscrepancyOrThrow(discrepancyId, tenantId);
+    const updated = await this.prisma.discrepancyLog.update({
       where: { id: discrepancyId },
       data: {
         retentionCategory: null,
@@ -492,6 +521,8 @@ export class FstdService {
         retentionExpiresAt: null,
       },
     });
+    await this.auditLog.write(tenantId, 'DiscrepancyLog', discrepancyId, 'clear_retention', discrepancy, updated);
+    return updated;
   }
 
   // ---- 3.3.5 周期性评估: 标准周期12个月(BITD为3年), 满足条件可延长至24/36个月, 评估窗口内完成即视为按时 ----
@@ -663,11 +694,14 @@ export class FstdService {
     },
   ) {
     await this.findFstdOrThrow(fstdId, tenantId);
+    const superseded = await this.prisma.fstdQtgDocument.findMany({
+      where: { fstdId, documentType: data.documentType, supersededAt: null },
+    });
     await this.prisma.fstdQtgDocument.updateMany({
       where: { fstdId, documentType: data.documentType, supersededAt: null },
       data: { supersededAt: new Date() },
     });
-    return this.prisma.fstdQtgDocument.create({
+    const created = await this.prisma.fstdQtgDocument.create({
       data: {
         fstdId,
         documentType: data.documentType,
@@ -679,6 +713,15 @@ export class FstdService {
         fileSize: data.fileSize,
       },
     });
+    await this.auditLog.write(
+      tenantId,
+      'FstdQtgDocument',
+      created.id,
+      superseded.length > 0 ? 'create_supersedes_previous' : 'create',
+      superseded,
+      created,
+    );
+    return created;
   }
 
   async listQtgDocuments(fstdId: string, tenantId: string) {

@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CourseType, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class CourseService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   private async findCourseOrThrow(courseId: string, tenantId: string) {
     const course = await this.prisma.course.findUnique({
@@ -16,8 +20,10 @@ export class CourseService {
   }
 
   // 需求清单 3.6: 一期基础版, 不含ZFTT/MPL等特殊课程规则
-  create(data: { organizationId: string; name: string; courseType: CourseType }) {
-    return this.prisma.course.create({ data });
+  async create(tenantId: string, data: { organizationId: string; name: string; courseType: CourseType }) {
+    const course = await this.prisma.course.create({ data });
+    await this.auditLog.write(tenantId, 'Course', course.id, 'create', null, course);
+    return course;
   }
 
   findAll(organizationId: string) {
@@ -33,8 +39,10 @@ export class CourseService {
   }
 
   async approve(id: string, tenantId: string) {
-    await this.findCourseOrThrow(id, tenantId);
-    return this.prisma.course.update({ where: { id }, data: { isApproved: true, approvedAt: new Date() } });
+    const before = await this.findCourseOrThrow(id, tenantId);
+    const updated = await this.prisma.course.update({ where: { id }, data: { isApproved: true, approvedAt: new Date() } });
+    await this.auditLog.write(tenantId, 'Course', id, 'approve', before, updated);
+    return updated;
   }
 
   // ORA.ATO.125 训练大纲
@@ -44,11 +52,14 @@ export class CourseService {
     data: { summary?: string; stagesJson?: Prisma.InputJsonValue; standardTasksJson?: Prisma.InputJsonValue },
   ) {
     await this.findCourseOrThrow(courseId, tenantId);
-    return this.prisma.trainingProgramme.upsert({
+    const before = await this.prisma.trainingProgramme.findUnique({ where: { courseId } });
+    const updated = await this.prisma.trainingProgramme.upsert({
       where: { courseId },
       create: { courseId, summary: data.summary, stagesJson: data.stagesJson, standardTasksJson: data.standardTasksJson },
       update: { summary: data.summary, stagesJson: data.stagesJson, standardTasksJson: data.standardTasksJson },
     });
+    await this.auditLog.write(tenantId, 'TrainingProgramme', courseId, before ? 'update' : 'create', before, updated);
+    return updated;
   }
 
   // ---- 课程要求 <-> FSTD能力校验 (需求清单3.3.3/3.6: 课程与设备已鉴定任务清单的关联) ----

@@ -12,6 +12,7 @@ export class SchedulingController {
 
   @Post()
   create(
+    @CurrentUser() user: AuthContext,
     @Body()
     dto: {
       organizationId: string;
@@ -24,7 +25,7 @@ export class SchedulingController {
       taskCode?: string;
     },
   ) {
-    return this.schedulingService.create(dto);
+    return this.schedulingService.create(user.tenantId, dto);
   }
 
   @Get()

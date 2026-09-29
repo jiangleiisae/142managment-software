@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ManagementRoleType } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class ManagementSystemService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   // ---- 3.2.1 组织角色与任命 ----
 
@@ -35,7 +39,9 @@ export class ManagementSystemService {
     if (!assignment || assignment.organization.tenantId !== tenantId) {
       throw new NotFoundException(`Role assignment ${id} not found`);
     }
-    return this.prisma.personnelRoleAssignment.update({ where: { id }, data: { endDate: new Date() } });
+    const updated = await this.prisma.personnelRoleAssignment.update({ where: { id }, data: { endDate: new Date() } });
+    await this.auditLog.write(tenantId, 'PersonnelRoleAssignment', id, 'end', assignment, updated);
+    return updated;
   }
 
   // ---- 3.2.2 事件报告 (ORA.GEN.160), 72小时强制上报倒计时 ----
@@ -78,10 +84,12 @@ export class ManagementSystemService {
   async markOccurrenceReported(id: string, tenantId: string, reportedTo: string) {
     const report = await this.prisma.occurrenceReport.findUnique({ where: { id }, include: { organization: true } });
     if (!report || report.organization.tenantId !== tenantId) throw new NotFoundException(`Occurrence report ${id} not found`);
-    return this.prisma.occurrenceReport.update({
+    const updated = await this.prisma.occurrenceReport.update({
       where: { id },
       data: { reportedAt: new Date(), reportedTo },
     });
+    await this.auditLog.write(tenantId, 'OccurrenceReport', id, 'mark_reported', report, updated);
+    return updated;
   }
 
   // ---- 3.2.3 合规监督闭环: audit_schedule -> audit_task -> finding -> corrective_action ----
@@ -143,8 +151,10 @@ export class ManagementSystemService {
   }
 
   async completeAuditTask(id: string, tenantId: string) {
-    await this.findAuditTaskOrThrow(id, tenantId);
-    return this.prisma.auditTask.update({ where: { id }, data: { status: 'completed', performedAt: new Date() } });
+    const before = await this.findAuditTaskOrThrow(id, tenantId);
+    const updated = await this.prisma.auditTask.update({ where: { id }, data: { status: 'completed', performedAt: new Date() } });
+    await this.auditLog.write(tenantId, 'AuditTask', id, 'status_change:->completed', before, updated);
+    return updated;
   }
 
   async addFinding(auditTaskId: string, tenantId: string, data: { level: number; description: string; rootCause?: string }) {
@@ -176,7 +186,9 @@ export class ManagementSystemService {
     if (!action || action.finding.auditTask.auditSchedule.organization.tenantId !== tenantId) {
       throw new NotFoundException(`CorrectiveAction ${id} not found`);
     }
-    return this.prisma.correctiveAction.update({ where: { id }, data: { status: 'closed', closedAt: new Date() } });
+    const updated = await this.prisma.correctiveAction.update({ where: { id }, data: { status: 'closed', closedAt: new Date() } });
+    await this.auditLog.write(tenantId, 'CorrectiveAction', id, 'status_change:->closed', action, updated);
+    return updated;
   }
 
   // ---- SMS 风险管理闭环: hazard_register -> risk_assessment -> mitigation_action (ORA.GEN.200(a)(3)) ----
@@ -259,7 +271,9 @@ export class ManagementSystemService {
     if (!action || action.riskAssessment.hazard.organization.tenantId !== tenantId) {
       throw new NotFoundException(`MitigationAction ${id} not found`);
     }
-    return this.prisma.mitigationAction.update({ where: { id }, data: { status: 'closed' } });
+    const updated = await this.prisma.mitigationAction.update({ where: { id }, data: { status: 'closed' } });
+    await this.auditLog.write(tenantId, 'MitigationAction', id, 'status_change:->closed', action, updated);
+    return updated;
   }
 
   /// 高风险且尚未被完全缓解的项 (含"一条缓解措施都还没有"这种最紧急的情况), 供仪表盘/告警使用。
@@ -277,12 +291,18 @@ export class ManagementSystemService {
 
   // ---- 3.2.2 安全政策 (Safety Policy): 版本化, 须由负责人签署 ----
 
-  async addSafetyPolicy(data: { organizationId: string; version: string; policyText: string; effectiveDate: string }) {
+  async addSafetyPolicy(
+    tenantId: string,
+    data: { organizationId: string; version: string; policyText: string; effectiveDate: string },
+  ) {
+    const superseded = await this.prisma.safetyPolicy.findMany({
+      where: { organizationId: data.organizationId, supersededAt: null },
+    });
     await this.prisma.safetyPolicy.updateMany({
       where: { organizationId: data.organizationId, supersededAt: null },
       data: { supersededAt: new Date() },
     });
-    return this.prisma.safetyPolicy.create({
+    const created = await this.prisma.safetyPolicy.create({
       data: {
         organizationId: data.organizationId,
         version: data.version,
@@ -290,6 +310,15 @@ export class ManagementSystemService {
         effectiveDate: new Date(data.effectiveDate),
       },
     });
+    await this.auditLog.write(
+      tenantId,
+      'SafetyPolicy',
+      created.id,
+      superseded.length > 0 ? 'create_supersedes_previous' : 'create',
+      superseded,
+      created,
+    );
+    return created;
   }
 
   listSafetyPolicies(organizationId: string) {
@@ -313,13 +342,17 @@ export class ManagementSystemService {
         `Personnel ${personnelId} does not currently hold the ACCOUNTABLE_MANAGER role for this organization`,
       );
     }
-    return this.prisma.safetyPolicy.update({ where: { id }, data: { signedById: personnelId, signedAt: new Date() } });
+    const updated = await this.prisma.safetyPolicy.update({ where: { id }, data: { signedById: personnelId, signedAt: new Date() } });
+    await this.auditLog.write(tenantId, 'SafetyPolicy', id, 'sign', policy, updated);
+    return updated;
   }
 
   // ---- 3.2.2 变更管理 MOC: draft -> risk_assessed -> implemented -> verified ----
 
-  createMoc(data: { organizationId: string; changeDescription: string }) {
-    return this.prisma.managementOfChange.create({ data });
+  async createMoc(tenantId: string, data: { organizationId: string; changeDescription: string }) {
+    const moc = await this.prisma.managementOfChange.create({ data });
+    await this.auditLog.write(tenantId, 'ManagementOfChange', moc.id, 'create', null, moc);
+    return moc;
   }
 
   listMocs(organizationId: string) {
@@ -343,10 +376,12 @@ export class ManagementSystemService {
       throw new BadRequestException(`Cannot attach risk assessment from status ${moc.status}`);
     }
     await this.findRiskAssessmentOrThrow(riskAssessmentId, tenantId);
-    return this.prisma.managementOfChange.update({
+    const updated = await this.prisma.managementOfChange.update({
       where: { id },
       data: { riskAssessmentId, status: 'RISK_ASSESSED' },
     });
+    await this.auditLog.write(tenantId, 'ManagementOfChange', id, 'status_change:DRAFT->RISK_ASSESSED', moc, updated);
+    return updated;
   }
 
   async implementMoc(id: string, tenantId: string, implementationPlan: string) {
@@ -354,10 +389,12 @@ export class ManagementSystemService {
     if (moc.status !== 'RISK_ASSESSED') {
       throw new BadRequestException(`Cannot implement MOC from status ${moc.status}: risk assessment must be attached first`);
     }
-    return this.prisma.managementOfChange.update({
+    const updated = await this.prisma.managementOfChange.update({
       where: { id },
       data: { implementationPlan, status: 'IMPLEMENTED', implementedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'ManagementOfChange', id, 'status_change:RISK_ASSESSED->IMPLEMENTED', moc, updated);
+    return updated;
   }
 
   async verifyMoc(id: string, tenantId: string, verificationNotes: string) {
@@ -365,20 +402,28 @@ export class ManagementSystemService {
     if (moc.status !== 'IMPLEMENTED') {
       throw new BadRequestException(`Cannot verify MOC from status ${moc.status}: must be implemented first`);
     }
-    return this.prisma.managementOfChange.update({
+    const updated = await this.prisma.managementOfChange.update({
       where: { id },
       data: { verificationNotes, status: 'VERIFIED', verifiedAt: new Date() },
     });
+    await this.auditLog.write(tenantId, 'ManagementOfChange', id, 'status_change:IMPLEMENTED->VERIFIED', moc, updated);
+    return updated;
   }
 
   // ---- 3.2.2 应急响应计划 ERP: 版本化预案 + 年度演练 ----
 
-  async addErpPlan(data: { organizationId: string; version: string; planText: string; effectiveDate: string }) {
+  async addErpPlan(
+    tenantId: string,
+    data: { organizationId: string; version: string; planText: string; effectiveDate: string },
+  ) {
+    const superseded = await this.prisma.emergencyResponsePlan.findMany({
+      where: { organizationId: data.organizationId, supersededAt: null },
+    });
     await this.prisma.emergencyResponsePlan.updateMany({
       where: { organizationId: data.organizationId, supersededAt: null },
       data: { supersededAt: new Date() },
     });
-    return this.prisma.emergencyResponsePlan.create({
+    const created = await this.prisma.emergencyResponsePlan.create({
       data: {
         organizationId: data.organizationId,
         version: data.version,
@@ -386,6 +431,15 @@ export class ManagementSystemService {
         effectiveDate: new Date(data.effectiveDate),
       },
     });
+    await this.auditLog.write(
+      tenantId,
+      'EmergencyResponsePlan',
+      created.id,
+      superseded.length > 0 ? 'create_supersedes_previous' : 'create',
+      superseded,
+      created,
+    );
+    return created;
   }
 
   listErpPlans(organizationId: string) {
@@ -532,13 +586,20 @@ export class ManagementSystemService {
       include: { meeting: { include: { organization: true } } },
     });
     if (!action || action.meeting.organization.tenantId !== tenantId) throw new NotFoundException(`SRB action ${id} not found`);
-    return this.prisma.safetyReviewBoardAction.update({ where: { id }, data: { status: 'closed' } });
+    const updated = await this.prisma.safetyReviewBoardAction.update({ where: { id }, data: { status: 'closed' } });
+    await this.auditLog.write(tenantId, 'SafetyReviewBoardAction', id, 'status_change:->closed', action, updated);
+    return updated;
   }
 
   // ---- 3.2.5 承包活动管理 (Contracted Activities, ORA.GEN.205) ----
 
-  createContract(data: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean }) {
-    return this.prisma.contractRecord.create({ data });
+  async createContract(
+    tenantId: string,
+    data: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean },
+  ) {
+    const contract = await this.prisma.contractRecord.create({ data });
+    await this.auditLog.write(tenantId, 'ContractRecord', contract.id, 'create', null, contract);
+    return contract;
   }
 
   listContracts(organizationId: string) {
@@ -552,6 +613,8 @@ export class ManagementSystemService {
   ) {
     const contract = await this.prisma.contractRecord.findUnique({ where: { id }, include: { organization: true } });
     if (!contract || contract.organization.tenantId !== tenantId) throw new NotFoundException(`Contract ${id} not found`);
-    return this.prisma.contractRecord.update({ where: { id }, data });
+    const updated = await this.prisma.contractRecord.update({ where: { id }, data });
+    await this.auditLog.write(tenantId, 'ContractRecord', id, 'update', contract, updated);
+    return updated;
   }
 }

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminOnlyRoute, PermissionRoute } from './auth/PermissionRoute'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
+import { AuditLogPage } from './pages/AuditLogPage'
 import { BookingsPage } from './pages/BookingsPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
@@ -58,6 +59,7 @@ function App() {
           </Route>
           <Route element={<AdminOnlyRoute />}>
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/audit-logs" element={<AuditLogPage />} />
           </Route>
         </Route>
       </Route>

@@ -4,6 +4,7 @@ import {
   BookOutlined,
   CalendarOutlined,
   DesktopOutlined,
+  FileSearchOutlined,
   InboxOutlined,
   LockOutlined,
   LogoutOutlined,
@@ -44,6 +45,7 @@ export function AppLayout() {
 
   if (isAdmin) {
     visibleItems.push({ key: '/users', icon: <SettingOutlined />, label: '用户与权限' })
+    visibleItems.push({ key: '/audit-logs', icon: <FileSearchOutlined />, label: '审计轨迹' })
   }
 
   const handleLogout = () => {

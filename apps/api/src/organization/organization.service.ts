@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CertificateStatus, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import { UpdateOrganizationDto } from './dto/update-organization.dto.js';
@@ -30,33 +31,16 @@ export const SELF_REVIEW_CHECKLIST_ITEMS = [
 
 @Injectable()
 export class OrganizationService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  private async writeAuditLog(
-    tenantId: string,
-    entityType: string,
-    entityId: string,
-    action: string,
-    beforeJson?: unknown,
-    afterJson?: unknown,
-  ) {
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId,
-        entityType,
-        entityId,
-        action,
-        beforeJson: beforeJson as Prisma.InputJsonValue,
-        afterJson: afterJson as Prisma.InputJsonValue,
-      },
-    });
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   create(tenantId: string, dto: CreateOrganizationDto) {
     return this.prisma.organization
       .create({ data: { ...dto, tenantId } })
       .then(async (org) => {
-        await this.writeAuditLog(tenantId, 'Organization', org.id, 'create', null, org);
+        await this.auditLog.write(tenantId, 'Organization', org.id, 'create', null, org);
         return org;
       });
   }
@@ -78,7 +62,7 @@ export class OrganizationService {
   async update(id: string, tenantId: string, dto: UpdateOrganizationDto) {
     const before = await this.findOne(id, tenantId);
     const after = await this.prisma.organization.update({ where: { id }, data: dto });
-    await this.writeAuditLog(tenantId, 'Organization', id, 'update', before, after);
+    await this.auditLog.write(tenantId, 'Organization', id, 'update', before, after);
     return after;
   }
 
@@ -97,7 +81,7 @@ export class OrganizationService {
         status: CertificateStatus.ACTIVE,
       },
     });
-    await this.writeAuditLog(org.tenantId, 'OrganizationCertificate', cert.id, 'create', null, cert);
+    await this.auditLog.write(org.tenantId, 'OrganizationCertificate', cert.id, 'create', null, cert);
     return cert;
   }
 
@@ -143,7 +127,7 @@ export class OrganizationService {
       },
     });
 
-    await this.writeAuditLog(
+    await this.auditLog.write(
       tenantId,
       'OrganizationCertificate',
       certificateId,
