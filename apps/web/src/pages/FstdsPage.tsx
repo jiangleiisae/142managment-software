@@ -16,17 +16,26 @@ import type {
   QuarterlyQtgIssue,
   QuarterlyQtgRun,
   RecurrentEvaluation,
+  RetentionCategory,
   SafetyCheckDueSoonItem,
   SafetyFacilityCheck,
   TaskCapabilityResult,
   TrainingMatrixEntry,
 } from '../api/fstds'
 import { fstdsApi } from '../api/fstds'
+import type { PartMovement } from '../api/inventory'
+import { inventoryApi } from '../api/inventory'
 import { personnelApi } from '../api/personnel'
 import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel, Personnel } from '../api/types'
 import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
+
+const RETENTION_CATEGORY_LABEL: Record<RetentionCategory, { text: string; color: string }> = {
+  CATEGORY_I: { text: 'Category I (需在下次飞行前修复)', color: 'red' },
+  CATEGORY_II: { text: 'Category II (限期内修复, 可带故障运行)', color: 'orange' },
+  CATEGORY_III: { text: 'Category III (可长期保留)', color: 'gold' },
+}
 
 const DEVICE_TYPES: FstdDeviceType[] = ['FFS', 'FTD', 'FNPT', 'BITD']
 const SAFETY_CHECK_ITEMS = ['急停按钮', '应急照明', '灭火器', '舱内通讯系统']
@@ -69,6 +78,8 @@ export function FstdsPage() {
   const [extensionEligibility, setExtensionEligibility] = useState<ExtensionEligibility>()
   const [discrepancyModalFstdId, setDiscrepancyModalFstdId] = useState<string>()
   const [correctModalDiscrepancyId, setCorrectModalDiscrepancyId] = useState<string>()
+  const [retentionModalDiscrepancyId, setRetentionModalDiscrepancyId] = useState<string>()
+  const [discrepancyMovements, setDiscrepancyMovements] = useState<Record<string, PartMovement[]>>({})
   const [safetyCheckModalFstdId, setSafetyCheckModalFstdId] = useState<string>()
   const [safetyCheckItemState, setSafetyCheckItemState] = useState<Record<string, boolean>>(
     () => Object.fromEntries(SAFETY_CHECK_ITEMS.map((item) => [item, true])),
@@ -91,6 +102,7 @@ export function FstdsPage() {
   const [evalForm] = Form.useForm()
   const [discrepancyForm] = Form.useForm()
   const [correctForm] = Form.useForm()
+  const [retentionForm] = Form.useForm()
   const [safetyCheckForm] = Form.useForm()
   const [qtgDocForm] = Form.useForm()
   const [qtgRunForm] = Form.useForm()
@@ -186,6 +198,30 @@ export function FstdsPage() {
     setCorrectModalDiscrepancyId(undefined)
     correctForm.resetFields()
     load()
+  }
+
+  const handleSetRetention = async () => {
+    if (!retentionModalDiscrepancyId) return
+    const values = await retentionForm.validateFields()
+    await fstdsApi.setDiscrepancyRetention(retentionModalDiscrepancyId, {
+      ...values,
+      expiresAt: values.expiresAt ? values.expiresAt.format('YYYY-MM-DD') : undefined,
+    })
+    message.success('故障保留分级已设置, 该缺陷暂不再阻断相关科目排课')
+    setRetentionModalDiscrepancyId(undefined)
+    retentionForm.resetFields()
+    load()
+  }
+
+  const handleClearRetention = async (discrepancyId: string) => {
+    await fstdsApi.clearDiscrepancyRetention(discrepancyId)
+    message.success('故障保留分级已取消')
+    load()
+  }
+
+  const loadDiscrepancyMovements = async (discrepancyId: string) => {
+    const list = await inventoryApi.listMovementsByDiscrepancy(discrepancyId)
+    setDiscrepancyMovements((prev) => ({ ...prev, [discrepancyId]: list }))
   }
 
   const openSafetyCheckModal = (fstdId: string) => {
@@ -634,7 +670,10 @@ export function FstdsPage() {
                     size="small"
                     dataSource={fstd.discrepancies ?? []}
                     locale={{ emptyText: '暂无缺陷记录' }}
-                    renderItem={(d) => (
+                    renderItem={(d) => {
+                      const retentionExpired = d.retentionExpiresAt && new Date(d.retentionExpiresAt) < new Date()
+                      const retentionActive = !!d.retentionCategory && !retentionExpired
+                      return (
                       <List.Item
                         actions={
                           d.status === 'open'
@@ -642,8 +681,24 @@ export function FstdsPage() {
                                 <Button key="correct" size="small" onClick={() => setCorrectModalDiscrepancyId(d.id)}>
                                   标记已纠正
                                 </Button>,
+                                retentionActive ? (
+                                  <Button key="clear-retention" size="small" onClick={() => handleClearRetention(d.id)}>
+                                    取消保留分级
+                                  </Button>
+                                ) : (
+                                  <Button key="set-retention" size="small" onClick={() => setRetentionModalDiscrepancyId(d.id)}>
+                                    设置保留分级
+                                  </Button>
+                                ),
+                                <Button key="movements" size="small" onClick={() => loadDiscrepancyMovements(d.id)}>
+                                  查看关联备件领用记录
+                                </Button>,
                               ]
-                            : []
+                            : [
+                                <Button key="movements" size="small" onClick={() => loadDiscrepancyMovements(d.id)}>
+                                  查看关联备件领用记录
+                                </Button>,
+                              ]
                         }
                       >
                         <Space direction="vertical" size={0} style={{ width: '100%' }}>
@@ -654,8 +709,31 @@ export function FstdsPage() {
                             {d.isMmi && <Tag color="red">MMI</Tag>}
                             {d.severityRating != null && <Tag>严重度 {d.severityRating}/5</Tag>}
                             {d.trainingTimeLostMinutes != null && <Tag>损失培训时间 {d.trainingTimeLostMinutes}分钟</Tag>}
+                            {d.retentionCategory && (
+                              <Tag color={retentionExpired ? 'default' : RETENTION_CATEGORY_LABEL[d.retentionCategory].color}>
+                                {retentionExpired ? '保留分级已过期: ' : '保留分级: '}
+                                {RETENTION_CATEGORY_LABEL[d.retentionCategory].text}
+                                {d.retentionExpiresAt ? ` (至${new Date(d.retentionExpiresAt).toLocaleDateString()})` : ''}
+                              </Tag>
+                            )}
                             <span>{d.description}</span>
                           </Space>
+                          {d.retentionCategory && (
+                            <span style={{ color: '#888', fontSize: 12 }}>保留理由: {d.retentionJustification}</span>
+                          )}
+                          {discrepancyMovements[d.id] && (
+                            <div style={{ marginTop: 4 }}>
+                              {discrepancyMovements[d.id].length === 0 ? (
+                                <span style={{ color: '#888', fontSize: 12 }}>暂无关联的备件领用记录</span>
+                              ) : (
+                                discrepancyMovements[d.id].map((m) => (
+                                  <Tag key={m.id} color="blue">
+                                    {m.type} {m.quantity} ({new Date(m.performedAt).toLocaleDateString()})
+                                  </Tag>
+                                ))
+                              )}
+                            </div>
+                          )}
                           <span style={{ color: '#888', fontSize: 12 }}>
                             报告于 {new Date(d.reportedAt).toLocaleString()}, 修复时限:{' '}
                             {d.dueDate ? new Date(d.dueDate).toLocaleDateString() : '-'}
@@ -663,7 +741,7 @@ export function FstdsPage() {
                           </span>
                         </Space>
                       </List.Item>
-                    )}
+                    )}}
                   />
                   <List
                     header="安全设施年检记录 (3.3.8, 标准周期12个月)"
@@ -886,6 +964,33 @@ export function FstdsPage() {
         <Form form={correctForm} layout="vertical">
           <Form.Item name="correctiveAction" label="纠正措施" rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="设置故障保留分级"
+        open={!!retentionModalDiscrepancyId}
+        onOk={handleSetRetention}
+        onCancel={() => setRetentionModalDiscrepancyId(undefined)}
+      >
+        <Form form={retentionForm} layout="vertical">
+          <Form.Item name="category" label="保留分级" rules={[{ required: true }]}>
+            <Select
+              options={(Object.keys(RETENTION_CATEGORY_LABEL) as RetentionCategory[]).map((c) => ({
+                value: c,
+                label: RETENTION_CATEGORY_LABEL[c].text,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="justification" label="保留理由" rules={[{ required: true }]}>
+            <Input.TextArea rows={3} placeholder="说明该缺陷不影响本次训练科目开展的依据" />
+          </Form.Item>
+          <Form.Item name="approvedById" label="批准人" rules={[{ required: true }]}>
+            <Select options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+          <Form.Item name="expiresAt" label="有效期至 (可选, 不填则长期有效直至手动取消)">
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>

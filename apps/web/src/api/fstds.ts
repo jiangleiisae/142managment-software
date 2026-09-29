@@ -171,6 +171,8 @@ export interface QuarterlyQtgIssue {
   issueType: 'overdue' | 'burst_tested'
 }
 
+export type RetentionCategory = 'CATEGORY_I' | 'CATEGORY_II' | 'CATEGORY_III'
+
 export interface Discrepancy {
   id: string
   fstdId: string
@@ -185,6 +187,11 @@ export interface Discrepancy {
   correctedAt?: string | null
   status: 'open' | 'corrected'
   dueDate?: string | null
+  retentionCategory?: RetentionCategory | null
+  retentionJustification?: string | null
+  retentionApprovedById?: string | null
+  retentionApprovedAt?: string | null
+  retentionExpiresAt?: string | null
   fstd?: { deviceCode: string }
 }
 
@@ -252,6 +259,19 @@ export const fstdsApi = {
 
   correctDiscrepancy: (discrepancyId: string, data: { correctiveAction: string; correctedById?: string }) =>
     apiClient.post<Discrepancy>(`/fstds/discrepancies/${discrepancyId}/correct`, data).then((r) => r.data),
+
+  listOpenDiscrepanciesForOrg: (organizationId: string) =>
+    apiClient.get<Discrepancy[]>('/fstds/discrepancies/open', { params: { organizationId } }).then((r) => r.data),
+
+  // ---- 故障保留分级 (吸收天津飞安实践) ----
+
+  setDiscrepancyRetention: (
+    discrepancyId: string,
+    data: { category: RetentionCategory; justification: string; approvedById: string; expiresAt?: string },
+  ) => apiClient.post<Discrepancy>(`/fstds/discrepancies/${discrepancyId}/retention`, data).then((r) => r.data),
+
+  clearDiscrepancyRetention: (discrepancyId: string) =>
+    apiClient.post<Discrepancy>(`/fstds/discrepancies/${discrepancyId}/retention/clear`).then((r) => r.data),
 
   // ---- 3.3.8 安全设施年检 ----
 

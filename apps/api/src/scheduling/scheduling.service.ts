@@ -55,8 +55,14 @@ export class SchedulingService {
           throw new BadRequestException(`FSTD ${fstd.deviceCode} 不满足训练科目 "${data.taskCode}" 的能力要求: ${capability.reason}`);
         }
         // Training Restriction: 若该科目所需部件存在未修复的MMI缺陷, 阻止排课 (吸收FAA §60.20 Training Restriction概念)
+        // 已设置故障保留分级(吸收天津飞安实践)且尚未过期的缺陷视为已评估"带病运行", 不再阻断排课
         const blockingDiscrepancy = await this.prisma.discrepancyLog.findFirst({
-          where: { fstdId: data.resourceId, isMmi: true, status: 'open' },
+          where: {
+            fstdId: data.resourceId,
+            isMmi: true,
+            status: 'open',
+            OR: [{ retentionCategory: null }, { retentionExpiresAt: { lt: new Date() } }],
+          },
         });
         if (blockingDiscrepancy) {
           throw new BadRequestException(

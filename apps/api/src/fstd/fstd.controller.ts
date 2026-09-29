@@ -10,6 +10,7 @@ import {
   LegacyLevel,
   Permission,
   QtgDocumentType,
+  RetentionCategory,
 } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
@@ -186,6 +187,26 @@ export class FstdController {
     @Body() dto: { correctiveAction: string; correctedById?: string },
   ) {
     return this.fstdService.correctDiscrepancy(discrepancyId, user.tenantId, dto);
+  }
+
+  @Get('discrepancies/open')
+  @SkipPermissionCheck() // 主要消费方是库存页面的"关联缺陷"下拉框(需INVENTORY权限), 不应额外要求FSTD权限
+  listOpenDiscrepanciesForOrg(@CurrentUser() user: AuthContext, @Query('organizationId') organizationId: string) {
+    return this.fstdService.listOpenDiscrepanciesForOrg(organizationId, user.tenantId);
+  }
+
+  @Post('discrepancies/:discrepancyId/retention')
+  setDiscrepancyRetention(
+    @CurrentUser() user: AuthContext,
+    @Param('discrepancyId') discrepancyId: string,
+    @Body() dto: { category: RetentionCategory; justification: string; approvedById: string; expiresAt?: string },
+  ) {
+    return this.fstdService.setDiscrepancyRetention(discrepancyId, user.tenantId, dto);
+  }
+
+  @Post('discrepancies/:discrepancyId/retention/clear')
+  clearDiscrepancyRetention(@CurrentUser() user: AuthContext, @Param('discrepancyId') discrepancyId: string) {
+    return this.fstdService.clearDiscrepancyRetention(discrepancyId, user.tenantId);
   }
 
   // ---- 3.3.5 周期性评估 ----

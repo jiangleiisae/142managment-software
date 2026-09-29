@@ -28,8 +28,15 @@ import type {
   Tool,
 } from '../api/inventory'
 import { inventoryApi } from '../api/inventory'
+import type { Discrepancy } from '../api/fstds'
+import { fstdsApi } from '../api/fstds'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
+
+const PART_CATEGORY_LABEL: Record<SparePart['partCategory'], { text: string; color: string }> = {
+  CONSUMABLE: { text: '消耗件', color: 'default' },
+  ROTABLE: { text: '周转件', color: 'blue' },
+}
 
 const PO_STATUS_COLOR: Record<PurchaseOrder['status'], string> = {
   DRAFT: 'default',
@@ -43,6 +50,7 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
   const [parts, setParts] = useState<SparePart[]>([])
   const [lowStock, setLowStock] = useState<LowStockItem[]>([])
   const [movements, setMovements] = useState<Record<string, PartMovement[]>>({})
+  const [openDiscrepancies, setOpenDiscrepancies] = useState<Discrepancy[]>([])
   const [partModalOpen, setPartModalOpen] = useState(false)
   const [movementModalPartId, setMovementModalPartId] = useState<string>()
   const [partForm] = Form.useForm()
@@ -51,6 +59,7 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
   const load = () => {
     inventoryApi.listSpareParts(organizationId).then(setParts)
     inventoryApi.listLowStock().then(setLowStock)
+    fstdsApi.listOpenDiscrepanciesForOrg(organizationId).then(setOpenDiscrepancies)
   }
   useEffect(load, [organizationId])
 
@@ -108,6 +117,11 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           { title: '名称', dataIndex: 'name' },
           { title: '适用机型/设备', dataIndex: 'compatibleWith' },
           {
+            title: '分类',
+            dataIndex: 'partCategory',
+            render: (v: SparePart['partCategory']) => <Tag color={PART_CATEGORY_LABEL[v].color}>{PART_CATEGORY_LABEL[v].text}</Tag>,
+          },
+          {
             title: '库存',
             render: (_, p) => (
               <Tag color={p.currentQuantity < p.minQuantity ? 'red' : 'green'}>
@@ -135,6 +149,11 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
                 <List.Item>
                   <Tag color={m.type === 'IN' ? 'green' : m.type === 'OUT' ? 'orange' : 'default'}>{m.type}</Tag>
                   {m.quantity} {p.unit} - {m.note} ({new Date(m.performedAt).toLocaleString()})
+                  {m.relatedDiscrepancy && (
+                    <Tag color="volcano" style={{ marginLeft: 8 }}>
+                      关联缺陷: {m.relatedDiscrepancy.fstd.deviceCode} - {m.relatedDiscrepancy.description}
+                    </Tag>
+                  )}
                 </List.Item>
               )}
             />
@@ -152,6 +171,14 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           </Form.Item>
           <Form.Item name="compatibleWith" label="适用机型/设备">
             <Input placeholder="如: A320 FFS / 通用" />
+          </Form.Item>
+          <Form.Item name="partCategory" label="备件分类" initialValue="CONSUMABLE" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'CONSUMABLE', label: '消耗件 (一次性使用, 不可修复)' },
+                { value: 'ROTABLE', label: '周转件 (可修复/返厂翻修后重新使用)' },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="minQuantity" label="最低库存量" initialValue={0} rules={[{ required: true }]}>
             <InputNumber min={0} style={{ width: '100%' }} />
@@ -177,6 +204,13 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           </Form.Item>
           <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="relatedDiscrepancyId" label="关联缺陷 (可选)">
+            <Select
+              allowClear
+              placeholder="若本次领用是为了排除某个缺陷, 可关联该缺陷"
+              options={openDiscrepancies.map((d) => ({ value: d.id, label: `${d.fstd?.deviceCode ?? d.fstdId} - ${d.description}` }))}
+            />
           </Form.Item>
           <Form.Item name="note" label="备注">
             <Input placeholder="如: 用于FFS-01维修 / 采购到货" />

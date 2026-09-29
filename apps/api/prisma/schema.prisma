@@ -927,6 +927,14 @@ model FstdSafetyFacilityCheck {
   @@map("fstd_safety_facility_checks")
 }
 
+/// 故障保留分级 (吸收天津飞安实践, 类似真飞机MEL的Category体系): 允许某些缺陷经评估后正式"带病运行",
+/// 不再被3.8排班引擎的Training Restriction规则阻断, 但须有理由说明+审批人留痕, 且可设到期日到期后重新评估。
+enum RetentionCategory {
+  CATEGORY_I // 短期保留, 严重度较高, 须尽快处理
+  CATEGORY_II // 中期保留, 中等严重度
+  CATEGORY_III // 长期保留(如待下次定期鉴定处理), 严重度最低, 经评估确认不影响训练科目
+}
+
 /// 缺陷/故障处理 (吸收FAA 30天规则 + Kiosk交互模式)
 model DiscrepancyLog {
   id              String    @id @default(cuid())
@@ -942,8 +950,14 @@ model DiscrepancyLog {
   correctedAt     DateTime?
   status          String    @default("open") // open / corrected
   dueDate         DateTime? // 默认报告时间+30天 (吸收FAA §60.25规则)
+  retentionCategory      RetentionCategory?
+  retentionJustification String? // 保留理由说明
+  retentionApprovedById  String? // Personnel.id
+  retentionApprovedAt    DateTime?
+  retentionExpiresAt     DateTime? // 保留有效期, 到期需重新评估(到期后即使有分级也恢复阻断)
 
   fstd Fstd @relation(fields: [fstdId], references: [id])
+  partMovements PartMovement[]
 
   @@map("discrepancy_logs")
 }
@@ -952,12 +966,19 @@ model DiscrepancyLog {
 // 3.4 备件/工具/校准管理 (对标 Simorg Inventory & Tool)
 // ============================================================
 
+/// 备件分类 (吸收天津飞安实践, 航空维修最基础的备件分类之一)
+enum PartCategory {
+  CONSUMABLE // 消耗件: 用完即弃, 不跟踪序列号
+  ROTABLE // 周转件: 可维修, 有序列号, 全生命周期跟踪(拆下→送修→测试→复装可复用), 如伺服阀
+}
+
 model SparePart {
   id             String   @id @default(cuid())
   organizationId String
   partNumber     String
   name           String
   compatibleWith String? // 按配置树关联使用类型, 一期简化为文本描述, 如 "A320 FFS" / "通用"
+  partCategory   PartCategory @default(CONSUMABLE)
   unit           String  @default("pcs")
   minQuantity    Int     @default(0)
   currentQuantity Int    @default(0)
@@ -984,11 +1005,12 @@ model PartMovement {
   sparePartId         String
   type                PartMovementType
   quantity            Int // ADJUSTMENT 可为负数表示盘亏
-  relatedDiscrepancyId String? // 可关联到消耗该备件的缺陷维修记录 (DiscrepancyLog.id)
+  relatedDiscrepancyId String? // 可关联到消耗该备件的缺陷维修记录, 形成"缺陷→领用备件"追溯链 (吸收天津飞安实践)
   note                String?
   performedAt         DateTime         @default(now())
 
-  sparePart SparePart @relation(fields: [sparePartId], references: [id])
+  sparePart         SparePart        @relation(fields: [sparePartId], references: [id])
+  relatedDiscrepancy DiscrepancyLog? @relation(fields: [relatedDiscrepancyId], references: [id])
 
   @@map("part_movements")
 }

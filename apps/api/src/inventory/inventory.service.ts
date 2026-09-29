@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PartMovementType, PurchaseOrderStatus } from '@prisma/client';
+import { PartCategory, PartMovementType, PurchaseOrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -19,6 +19,7 @@ export class InventoryService {
     partNumber: string;
     name: string;
     compatibleWith?: string;
+    partCategory?: PartCategory;
     unit?: string;
     minQuantity?: number;
     location?: string;
@@ -32,10 +33,16 @@ export class InventoryService {
 
   async listMovements(sparePartId: string, tenantId: string) {
     await this.findSparePartOrThrow(sparePartId, tenantId);
-    return this.prisma.partMovement.findMany({ where: { sparePartId }, orderBy: { performedAt: 'desc' } });
+    return this.prisma.partMovement.findMany({
+      where: { sparePartId },
+      include: { relatedDiscrepancy: { include: { fstd: true } } },
+      orderBy: { performedAt: 'desc' },
+    });
   }
 
-  /// 出入库: IN/ADJUSTMENT(正数)增加库存, OUT/ADJUSTMENT(负数)减少库存; OUT不允许扣成负库存
+  /// 出入库: IN/ADJUSTMENT(正数)增加库存, OUT/ADJUSTMENT(负数)减少库存; OUT不允许扣成负库存。
+  /// relatedDiscrepancyId (吸收天津飞安实践): 领用备件时可关联触发本次领用的缺陷记录, 形成"缺陷→领用备件"追溯链;
+  /// 须校验该缺陷确实属于同一租户, 且实际归属的FSTD与本次出入库场景一致 (不强制同一台设备, 因备件可能跨设备通用)。
   async recordMovement(
     sparePartId: string,
     tenantId: string,
@@ -44,6 +51,16 @@ export class InventoryService {
     const part = await this.findSparePartOrThrow(sparePartId, tenantId);
     if (data.quantity <= 0 && data.type !== PartMovementType.ADJUSTMENT) {
       throw new BadRequestException('quantity 必须为正数 (ADJUSTMENT 类型除外)');
+    }
+
+    if (data.relatedDiscrepancyId) {
+      const discrepancy = await this.prisma.discrepancyLog.findUnique({
+        where: { id: data.relatedDiscrepancyId },
+        include: { fstd: { include: { organization: true } } },
+      });
+      if (!discrepancy || discrepancy.fstd.organization.tenantId !== tenantId) {
+        throw new NotFoundException(`Discrepancy ${data.relatedDiscrepancyId} not found`);
+      }
     }
 
     const delta = data.type === PartMovementType.OUT ? -Math.abs(data.quantity) : data.quantity;
@@ -61,10 +78,27 @@ export class InventoryService {
           note: data.note,
           relatedDiscrepancyId: data.relatedDiscrepancyId,
         },
+        include: { relatedDiscrepancy: { include: { fstd: true } } },
       }),
       this.prisma.sparePart.update({ where: { id: sparePartId }, data: { currentQuantity: newQuantity } }),
     ]);
     return movement;
+  }
+
+  /// 某条缺陷记录关联的所有备件领用记录 (供FSTD缺陷详情页展示"配件领用记录", 反向查询)
+  async listMovementsByDiscrepancy(discrepancyId: string, tenantId: string) {
+    const discrepancy = await this.prisma.discrepancyLog.findUnique({
+      where: { id: discrepancyId },
+      include: { fstd: { include: { organization: true } } },
+    });
+    if (!discrepancy || discrepancy.fstd.organization.tenantId !== tenantId) {
+      throw new NotFoundException(`Discrepancy ${discrepancyId} not found`);
+    }
+    return this.prisma.partMovement.findMany({
+      where: { relatedDiscrepancyId: discrepancyId },
+      include: { sparePart: true },
+      orderBy: { performedAt: 'desc' },
+    });
   }
 
   /// 低于最低库存量的备件, 供仪表盘/告警使用 (对标 Simorg "quantity alert to prevent stock-outs")

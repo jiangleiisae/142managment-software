@@ -6,6 +6,7 @@ import {
   FstdQualificationBasisType,
   LegacyLevel,
   QtgDocumentType,
+  RetentionCategory,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -416,11 +417,16 @@ export class FstdService {
     });
   }
 
-  async correctDiscrepancy(
-    discrepancyId: string,
-    tenantId: string,
-    data: { correctiveAction: string; correctedById?: string },
-  ) {
+  /// 机构范围内所有开放中的缺陷 (跨设备), 供备件出入库登记时选择"关联缺陷"下拉框使用
+  async listOpenDiscrepanciesForOrg(organizationId: string, tenantId: string) {
+    return this.prisma.discrepancyLog.findMany({
+      where: { status: 'open', fstd: { organizationId, organization: { tenantId } } },
+      include: { fstd: true },
+      orderBy: { reportedAt: 'desc' },
+    });
+  }
+
+  private async findDiscrepancyOrThrow(discrepancyId: string, tenantId: string) {
     const discrepancy = await this.prisma.discrepancyLog.findUnique({
       where: { id: discrepancyId },
       include: { fstd: { include: { organization: true } } },
@@ -428,6 +434,15 @@ export class FstdService {
     if (!discrepancy || discrepancy.fstd.organization.tenantId !== tenantId) {
       throw new NotFoundException(`Discrepancy ${discrepancyId} not found`);
     }
+    return discrepancy;
+  }
+
+  async correctDiscrepancy(
+    discrepancyId: string,
+    tenantId: string,
+    data: { correctiveAction: string; correctedById?: string },
+  ) {
+    const discrepancy = await this.findDiscrepancyOrThrow(discrepancyId, tenantId);
     if (discrepancy.status !== 'open') {
       throw new BadRequestException(`Discrepancy ${discrepancyId} is already ${discrepancy.status}`);
     }
@@ -438,6 +453,43 @@ export class FstdService {
         correctedById: data.correctedById,
         correctedAt: new Date(),
         status: 'corrected',
+      },
+    });
+  }
+
+  /// 故障保留分级 (吸收天津飞安实践, 类似MEL的Category体系): 允许经评估的开放缺陷正式"带病运行",
+  /// 设置后该缺陷不再被3.8排班引擎的Training Restriction规则阻断 (见scheduling.service.ts)。
+  async setDiscrepancyRetention(
+    discrepancyId: string,
+    tenantId: string,
+    data: { category: RetentionCategory; justification: string; approvedById: string; expiresAt?: string },
+  ) {
+    const discrepancy = await this.findDiscrepancyOrThrow(discrepancyId, tenantId);
+    if (discrepancy.status !== 'open') {
+      throw new BadRequestException(`只能对开放中的缺陷设置保留分级, 当前状态: ${discrepancy.status}`);
+    }
+    return this.prisma.discrepancyLog.update({
+      where: { id: discrepancyId },
+      data: {
+        retentionCategory: data.category,
+        retentionJustification: data.justification,
+        retentionApprovedById: data.approvedById,
+        retentionApprovedAt: new Date(),
+        retentionExpiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+      },
+    });
+  }
+
+  async clearDiscrepancyRetention(discrepancyId: string, tenantId: string) {
+    await this.findDiscrepancyOrThrow(discrepancyId, tenantId);
+    return this.prisma.discrepancyLog.update({
+      where: { id: discrepancyId },
+      data: {
+        retentionCategory: null,
+        retentionJustification: null,
+        retentionApprovedById: null,
+        retentionApprovedAt: null,
+        retentionExpiresAt: null,
       },
     });
   }

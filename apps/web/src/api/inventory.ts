@@ -2,6 +2,7 @@ import { apiClient } from './client'
 
 export type PartMovementType = 'IN' | 'OUT' | 'ADJUSTMENT'
 export type PurchaseOrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'RECEIVED' | 'CANCELLED'
+export type PartCategory = 'CONSUMABLE' | 'ROTABLE'
 
 export interface SparePart {
   id: string
@@ -9,6 +10,7 @@ export interface SparePart {
   partNumber: string
   name: string
   compatibleWith?: string | null
+  partCategory: PartCategory
   unit: string
   minQuantity: number
   currentQuantity: number
@@ -20,6 +22,8 @@ export interface PartMovement {
   type: PartMovementType
   quantity: number
   note?: string | null
+  relatedDiscrepancyId?: string | null
+  relatedDiscrepancy?: { id: string; description: string; fstd: { id: string; deviceCode: string } } | null
   performedAt: string
 }
 
@@ -70,8 +74,14 @@ export interface PurchaseOrder {
 
 export const inventoryApi = {
   // 备件
-  createSparePart: (data: { organizationId: string; partNumber: string; name: string; compatibleWith?: string; minQuantity?: number }) =>
-    apiClient.post<SparePart>('/inventory/spare-parts', data).then((r) => r.data),
+  createSparePart: (data: {
+    organizationId: string
+    partNumber: string
+    name: string
+    compatibleWith?: string
+    partCategory?: PartCategory
+    minQuantity?: number
+  }) => apiClient.post<SparePart>('/inventory/spare-parts', data).then((r) => r.data),
 
   listSpareParts: (organizationId: string) =>
     apiClient.get<SparePart[]>('/inventory/spare-parts', { params: { organizationId } }).then((r) => r.data),
@@ -81,8 +91,13 @@ export const inventoryApi = {
   listMovements: (sparePartId: string) =>
     apiClient.get<PartMovement[]>(`/inventory/spare-parts/${sparePartId}/movements`).then((r) => r.data),
 
-  recordMovement: (sparePartId: string, data: { type: PartMovementType; quantity: number; note?: string }) =>
-    apiClient.post<PartMovement>(`/inventory/spare-parts/${sparePartId}/movements`, data).then((r) => r.data),
+  recordMovement: (
+    sparePartId: string,
+    data: { type: PartMovementType; quantity: number; note?: string; relatedDiscrepancyId?: string },
+  ) => apiClient.post<PartMovement>(`/inventory/spare-parts/${sparePartId}/movements`, data).then((r) => r.data),
+
+  listMovementsByDiscrepancy: (discrepancyId: string) =>
+    apiClient.get<PartMovement[]>(`/inventory/discrepancies/${discrepancyId}/movements`).then((r) => r.data),
 
   // 工具
   createTool: (data: { organizationId: string; toolCode: string; name: string; category?: string; calibrationIntervalMonths?: number }) =>

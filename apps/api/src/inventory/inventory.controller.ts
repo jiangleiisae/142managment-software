@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { PartMovementType, Permission } from '@prisma/client';
+import { PartCategory, PartMovementType, Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
-import { RequirePermissions } from '../auth/permissions.decorator.js';
+import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import { InventoryService } from './inventory.service.js';
 
 @Controller('inventory')
@@ -20,6 +20,7 @@ export class InventoryController {
       partNumber: string;
       name: string;
       compatibleWith?: string;
+      partCategory?: PartCategory;
       unit?: string;
       minQuantity?: number;
       location?: string;
@@ -50,6 +51,12 @@ export class InventoryController {
     @Body() dto: { type: PartMovementType; quantity: number; note?: string; relatedDiscrepancyId?: string },
   ) {
     return this.service.recordMovement(id, user.tenantId, dto);
+  }
+
+  @Get('discrepancies/:id/movements')
+  @SkipPermissionCheck() // 主要消费方是FSTD缺陷详情页(需FSTD权限), 不应额外要求INVENTORY权限才能看到"配件领用记录"
+  listMovementsByDiscrepancy(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.listMovementsByDiscrepancy(id, user.tenantId);
   }
 
   // ---- 3.4.2 工具校准 ----
