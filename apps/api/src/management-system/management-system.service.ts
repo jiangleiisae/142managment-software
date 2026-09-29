@@ -534,4 +534,24 @@ export class ManagementSystemService {
     if (!action || action.meeting.organization.tenantId !== tenantId) throw new NotFoundException(`SRB action ${id} not found`);
     return this.prisma.safetyReviewBoardAction.update({ where: { id }, data: { status: 'closed' } });
   }
+
+  // ---- 3.2.5 承包活动管理 (Contracted Activities, ORA.GEN.205) ----
+
+  createContract(data: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean }) {
+    return this.prisma.contractRecord.create({ data });
+  }
+
+  listContracts(organizationId: string) {
+    return this.prisma.contractRecord.findMany({ where: { organizationId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async updateContract(
+    id: string,
+    tenantId: string,
+    data: { contractorName?: string; scope?: string; agreementRef?: string; includedInAudit?: boolean },
+  ) {
+    const contract = await this.prisma.contractRecord.findUnique({ where: { id }, include: { organization: true } });
+    if (!contract || contract.organization.tenantId !== tenantId) throw new NotFoundException(`Contract ${id} not found`);
+    return this.prisma.contractRecord.update({ where: { id }, data });
+  }
 }

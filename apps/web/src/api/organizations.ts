@@ -24,6 +24,20 @@ export interface OrgMissingSelfReview {
   year: number
 }
 
+export interface ApplicationRecord {
+  id: string
+  organizationId: string
+  isChangeApplication: boolean
+  proposedStartDate?: string | null
+  trainingSitesJson?: string[] | null
+  aircraftListJson?: string[] | null
+  fstdListJson?: string[] | null
+  courseTypesJson?: string[] | null
+  operationsManualRef?: string | null
+  trainingManualRef?: string | null
+  submittedAt: string
+}
+
 export const organizationsApi = {
   // tenantId 由后端从JWT解析, 不再由客户端传入
   list: () => apiClient.get<Organization[]>('/organizations').then((r) => r.data),
@@ -65,4 +79,23 @@ export const organizationsApi = {
 
   findOrgsMissingCurrentYearSelfReview: () =>
     apiClient.get<OrgMissingSelfReview[]>('/organizations/self-reviews/missing-current-year').then((r) => r.data),
+
+  // ---- ORA.ATO.105 申请材料 ----
+
+  createApplicationRecord: (
+    organizationId: string,
+    data: {
+      isChangeApplication?: boolean
+      proposedStartDate?: string
+      trainingSitesJson?: string[]
+      aircraftListJson?: string[]
+      fstdListJson?: string[]
+      courseTypesJson?: string[]
+      operationsManualRef?: string
+      trainingManualRef?: string
+    },
+  ) => apiClient.post<ApplicationRecord>(`/organizations/${organizationId}/application-records`, data).then((r) => r.data),
+
+  listApplicationRecords: (organizationId: string) =>
+    apiClient.get<ApplicationRecord[]>(`/organizations/${organizationId}/application-records`).then((r) => r.data),
 }

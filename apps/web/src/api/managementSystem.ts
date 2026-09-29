@@ -139,6 +139,16 @@ export interface SrbMeeting {
   actions?: SrbAction[]
 }
 
+export interface ContractRecord {
+  id: string
+  organizationId: string
+  contractorName: string
+  scope: string
+  agreementRef?: string | null
+  includedInAudit: boolean
+  createdAt: string
+}
+
 export const managementSystemApi = {
   listRoleAssignments: (organizationId: string) =>
     apiClient.get<RoleAssignment[]>('/management-system/role-assignments', { params: { organizationId } }).then((r) => r.data),
@@ -242,4 +252,15 @@ export const managementSystemApi = {
 
   closeSrbAction: (id: string) =>
     apiClient.post<SrbAction>(`/management-system/srb-actions/${id}/close`).then((r) => r.data),
+
+  // ---- 3.2.5 承包活动管理 ----
+
+  createContract: (data: { organizationId: string; contractorName: string; scope: string; agreementRef?: string }) =>
+    apiClient.post<ContractRecord>('/management-system/contracts', data).then((r) => r.data),
+
+  listContracts: (organizationId: string) =>
+    apiClient.get<ContractRecord[]>('/management-system/contracts', { params: { organizationId } }).then((r) => r.data),
+
+  updateContract: (id: string, data: { includedInAudit?: boolean }) =>
+    apiClient.post<ContractRecord>(`/management-system/contracts/${id}`, data).then((r) => r.data),
 }

@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
 import type {
+  ContractRecord,
   EmergencyResponsePlan,
   ErpDrillDueSoonItem,
   HazardRegisterEntry,
@@ -71,6 +72,7 @@ export function ManagementSystemPage() {
   const [erpDrillsDueSoon, setErpDrillsDueSoon] = useState<ErpDrillDueSoonItem[]>([])
   const [indicators, setIndicators] = useState<SafetyIndicatorWithStatus[]>([])
   const [srbMeetings, setSrbMeetings] = useState<SrbMeeting[]>([])
+  const [contracts, setContracts] = useState<ContractRecord[]>([])
 
   const [roleModalOpen, setRoleModalOpen] = useState(false)
   const [occurrenceModalOpen, setOccurrenceModalOpen] = useState(false)
@@ -89,6 +91,7 @@ export function ManagementSystemPage() {
   const [measurementModalIndicatorId, setMeasurementModalIndicatorId] = useState<string>()
   const [srbModalOpen, setSrbModalOpen] = useState(false)
   const [srbActionModalId, setSrbActionModalId] = useState<string>()
+  const [contractModalOpen, setContractModalOpen] = useState(false)
 
   const [roleForm] = Form.useForm()
   const [occurrenceForm] = Form.useForm()
@@ -107,6 +110,7 @@ export function ManagementSystemPage() {
   const [measurementForm] = Form.useForm()
   const [srbForm] = Form.useForm()
   const [srbActionForm] = Form.useForm()
+  const [contractForm] = Form.useForm()
 
   const load = () => {
     if (!selectedId) return
@@ -120,6 +124,7 @@ export function ManagementSystemPage() {
     managementSystemApi.findErpDrillsDueSoon().then(setErpDrillsDueSoon)
     managementSystemApi.listIndicatorsWithStatus(selectedId).then(setIndicators)
     managementSystemApi.listSrbMeetings(selectedId).then(setSrbMeetings)
+    managementSystemApi.listContracts(selectedId).then(setContracts)
   }
 
   useEffect(load, [selectedId])
@@ -364,6 +369,21 @@ export function ManagementSystemPage() {
   const closeSrbAction = async (id: string) => {
     await managementSystemApi.closeSrbAction(id)
     message.success('行动项已关闭')
+    load()
+  }
+
+  const handleCreateContract = async () => {
+    if (!selectedId) return
+    const values = await contractForm.validateFields()
+    await managementSystemApi.createContract({ organizationId: selectedId, ...values })
+    message.success('承包记录已创建')
+    setContractModalOpen(false)
+    contractForm.resetFields()
+    load()
+  }
+
+  const toggleContractAuditFlag = async (contract: ContractRecord) => {
+    await managementSystemApi.updateContract(contract.id, { includedInAudit: !contract.includedInAudit })
     load()
   }
 
@@ -758,6 +778,41 @@ export function ManagementSystemPage() {
               )}
             />
           </Card>
+
+          <Card
+            title="承包活动管理 Contracted Activities (3.2.5, ORA.GEN.205)"
+            extra={
+              <Button icon={<PlusOutlined />} onClick={() => setContractModalOpen(true)}>
+                新增承包记录
+              </Button>
+            }
+          >
+            <List
+              size="small"
+              dataSource={contracts}
+              locale={{ emptyText: '暂无承包记录' }}
+              renderItem={(c) => (
+                <List.Item
+                  actions={[
+                    <Button key="toggle" size="small" onClick={() => toggleContractAuditFlag(c)}>
+                      {c.includedInAudit ? '移出审计计划' : '纳入审计计划'}
+                    </Button>,
+                  ]}
+                >
+                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <span style={{ fontWeight: 600 }}>{c.contractorName}</span>
+                      <Tag color={c.includedInAudit ? 'green' : 'default'}>
+                        {c.includedInAudit ? '已纳入审计计划' : '未纳入审计计划'}
+                      </Tag>
+                    </Space>
+                    <span>{c.scope}</span>
+                    {c.agreementRef && <span style={{ color: '#888', fontSize: 12 }}>协议编号: {c.agreementRef}</span>}
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Card>
         </>
       )}
 
@@ -1036,6 +1091,25 @@ export function ManagementSystemPage() {
           </Form.Item>
           <Form.Item name="dueDate" label="计划完成日期">
             <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增承包记录 (3.2.5)"
+        open={contractModalOpen}
+        onOk={handleCreateContract}
+        onCancel={() => setContractModalOpen(false)}
+      >
+        <Form form={contractForm} layout="vertical">
+          <Form.Item name="contractorName" label="承包方名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="scope" label="承包范围" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="agreementRef" label="书面协议编号">
+            <Input />
           </Form.Item>
         </Form>
       </Modal>

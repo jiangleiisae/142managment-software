@@ -266,4 +266,28 @@ export class ManagementSystemController {
   closeSrbAction(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.service.closeSrbAction(id, user.tenantId);
   }
+
+  // ---- 3.2.5 承包活动管理 (Contracted Activities, ORA.GEN.205) ----
+
+  @Post('contracts')
+  createContract(
+    @Body() dto: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean },
+  ) {
+    // organizationId 的租户归属已由全局 TenantGuard 校验
+    return this.service.createContract(dto);
+  }
+
+  @Get('contracts')
+  listContracts(@Query('organizationId') organizationId: string) {
+    return this.service.listContracts(organizationId);
+  }
+
+  @Post('contracts/:id')
+  updateContract(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { contractorName?: string; scope?: string; agreementRef?: string; includedInAudit?: boolean },
+  ) {
+    return this.service.updateContract(id, user.tenantId, dto);
+  }
 }

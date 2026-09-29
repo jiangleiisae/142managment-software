@@ -1,9 +1,9 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Space, Switch, Table, Tag, message } from 'antd'
+import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import type { OrganisationalSelfReview } from '../api/organizations'
+import type { ApplicationRecord, OrganisationalSelfReview } from '../api/organizations'
 import { organizationsApi } from '../api/organizations'
 import type { CertificateStatus, Organization } from '../api/types'
 import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
@@ -14,6 +14,9 @@ const STATUS_COLOR: Record<CertificateStatus, string> = {
   REVOKED: 'red',
   TERMINATED: 'default',
 }
+
+/// application-records 的清单字段是宽松的Json列, 早期数据可能是对象数组而非字符串数组, 展示时兜底转成可读文本
+const describeListEntry = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v))
 
 export function OrganizationDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -27,6 +30,9 @@ export function OrganizationDetailPage() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false)
   const [reviewItemState, setReviewItemState] = useState<Record<string, { compliant: boolean; notes: string }>>({})
   const [reviewForm] = Form.useForm()
+  const [applicationRecords, setApplicationRecords] = useState<ApplicationRecord[]>([])
+  const [applicationModalOpen, setApplicationModalOpen] = useState(false)
+  const [applicationForm] = Form.useForm()
 
   const load = () => {
     if (!id) return
@@ -36,6 +42,7 @@ export function OrganizationDetailPage() {
       .then(setOrg)
       .finally(() => setLoading(false))
     organizationsApi.listSelfReviews(id).then(setSelfReviews)
+    organizationsApi.listApplicationRecords(id).then(setApplicationRecords)
   }
 
   useEffect(load, [id])
@@ -96,6 +103,19 @@ export function OrganizationDetailPage() {
   const handleNotifySelfReview = async (reviewId: string) => {
     await organizationsApi.notifySelfReview(reviewId)
     message.success('已标记为通报当局')
+    load()
+  }
+
+  const handleCreateApplicationRecord = async () => {
+    if (!id) return
+    const values = await applicationForm.validateFields()
+    await organizationsApi.createApplicationRecord(id, {
+      ...values,
+      proposedStartDate: values.proposedStartDate?.format('YYYY-MM-DD'),
+    })
+    message.success('申请材料已登记 (ORA.ATO.105)')
+    setApplicationModalOpen(false)
+    applicationForm.resetFields()
     load()
   }
 
@@ -238,6 +258,45 @@ export function OrganizationDetailPage() {
         />
       </Card>
 
+      <Card
+        title="申请材料 (ORA.ATO.105)"
+        style={{ marginTop: 16 }}
+        extra={
+          <Button icon={<PlusOutlined />} onClick={() => setApplicationModalOpen(true)}>
+            登记申请材料
+          </Button>
+        }
+      >
+        <List
+          size="small"
+          dataSource={applicationRecords}
+          locale={{ emptyText: '尚未登记任何申请材料' }}
+          renderItem={(rec) => (
+            <List.Item>
+              <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                <Space wrap>
+                  <Tag color={rec.isChangeApplication ? 'blue' : 'green'}>
+                    {rec.isChangeApplication ? '变更申请' : '首次申请'}
+                  </Tag>
+                  {rec.proposedStartDate && <span>拟运营日期: {new Date(rec.proposedStartDate).toLocaleDateString()}</span>}
+                </Space>
+                <Space wrap>
+                  {(rec.courseTypesJson ?? []).map((c, i) => (
+                    <Tag key={i}>{describeListEntry(c)}</Tag>
+                  ))}
+                </Space>
+                <span style={{ color: '#888', fontSize: 12 }}>
+                  提交于 {new Date(rec.submittedAt).toLocaleString()}
+                  {rec.trainingSitesJson?.length ? ` | 训练场地: ${rec.trainingSitesJson.map(describeListEntry).join(', ')}` : ''}
+                  {rec.aircraftListJson?.length ? ` | 航空器: ${rec.aircraftListJson.map(describeListEntry).join(', ')}` : ''}
+                  {rec.fstdListJson?.length ? ` | FSTD: ${rec.fstdListJson.map(describeListEntry).join(', ')}` : ''}
+                </span>
+              </Space>
+            </List.Item>
+          )}
+        />
+      </Card>
+
       <Modal title="新增证书" open={modalOpen} onOk={handleAddCertificate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ issuedAt: dayjs() }}>
           <Form.Item name="certificateNo" label="证书编号" rules={[{ required: true }]}>
@@ -295,6 +354,45 @@ export function OrganizationDetailPage() {
             )}
           </div>
         ))}
+      </Modal>
+
+      <Modal
+        title="登记申请材料 (ORA.ATO.105)"
+        open={applicationModalOpen}
+        onOk={handleCreateApplicationRecord}
+        onCancel={() => setApplicationModalOpen(false)}
+      >
+        <Form form={applicationForm} layout="vertical" initialValues={{ isChangeApplication: false }}>
+          <Form.Item name="isChangeApplication" label="申请类型" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: false, label: '首次申请' },
+                { value: true, label: '变更申请 (仅需提交变更相关部分)' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="proposedStartDate" label="拟运营日期">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="courseTypesJson" label="课程类型">
+            <Select mode="tags" placeholder="如 PPL, CPL" />
+          </Form.Item>
+          <Form.Item name="trainingSitesJson" label="训练场地清单">
+            <Select mode="tags" placeholder="逐个输入场地名称后回车" />
+          </Form.Item>
+          <Form.Item name="aircraftListJson" label="航空器清单">
+            <Select mode="tags" placeholder="如 A320/B-1234" />
+          </Form.Item>
+          <Form.Item name="fstdListJson" label="FSTD清单">
+            <Select mode="tags" placeholder="设备编号" />
+          </Form.Item>
+          <Form.Item name="operationsManualRef" label="运行手册引用">
+            <Input />
+          </Form.Item>
+          <Form.Item name="trainingManualRef" label="训练手册引用">
+            <Input />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )

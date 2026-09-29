@@ -57,6 +57,8 @@ export interface Fstd {
   qualifiedTasks?: { id: string; taskCode: string; taskName: string }[]
 }
 
+export type InstructorType = 'FI' | 'TRI' | 'SFI' | 'THEORETICAL' | 'EXAMINER'
+
 export interface Personnel {
   id: string
   tenantId: string
@@ -65,6 +67,7 @@ export interface Personnel {
   email?: string | null
   phone?: string | null
   qualifications?: QualificationRecord[]
+  instructorProfile?: { instructorType: InstructorType } | null
 }
 
 export interface QualificationRecord {

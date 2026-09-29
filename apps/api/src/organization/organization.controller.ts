@@ -115,4 +115,31 @@ export class OrganizationController {
   notifySelfReview(@CurrentUser() user: AuthContext, @Param('reviewId') reviewId: string) {
     return this.organizationService.notifySelfReview(reviewId, user.tenantId);
   }
+
+  // ---- ORA.ATO.105 申请材料 (首次申请 / 变更申请) ----
+
+  @Post(':id/application-records')
+  createApplicationRecord(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      isChangeApplication?: boolean;
+      proposedStartDate?: string;
+      headOfTrainingInfo?: Record<string, unknown>;
+      trainingSitesJson?: unknown;
+      aircraftListJson?: unknown;
+      fstdListJson?: unknown;
+      courseTypesJson?: unknown;
+      operationsManualRef?: string;
+      trainingManualRef?: string;
+    },
+  ) {
+    return this.organizationService.createApplicationRecord(id, user.tenantId, dto);
+  }
+
+  @Get(':id/application-records')
+  listApplicationRecords(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.organizationService.listApplicationRecords(id, user.tenantId);
+  }
 }

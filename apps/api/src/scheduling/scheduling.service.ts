@@ -77,6 +77,27 @@ export class SchedulingService {
         );
       }
     }
+
+    if (data.resourceType === 'INSTRUCTOR') {
+      const org = await this.prisma.organization.findUnique({ where: { id: data.organizationId } });
+      if (!org) throw new BadRequestException(`Organization ${data.organizationId} 不存在`);
+      const instructor = await this.prisma.personnel.findUnique({
+        where: { id: data.resourceId },
+        include: { instructorProfile: true, qualifications: true },
+      });
+      if (!instructor || instructor.tenantId !== org.tenantId) {
+        throw new BadRequestException(`Instructor ${data.resourceId} 不属于该机构`);
+      }
+      if (!instructor.instructorProfile) {
+        throw new BadRequestException(`${instructor.firstName}${instructor.lastName} 尚未登记为教员 (缺少教员档案)`);
+      }
+      const expired = instructor.qualifications.find((q) => q.validUntil && q.validUntil < new Date());
+      if (expired) {
+        throw new BadRequestException(
+          `教员 ${instructor.firstName}${instructor.lastName} 的资质 "${expired.qualificationType}" 已于 ${expired.validUntil!.toLocaleDateString()} 过期, 不能安排训练`,
+        );
+      }
+    }
   }
 
   async create(data: {

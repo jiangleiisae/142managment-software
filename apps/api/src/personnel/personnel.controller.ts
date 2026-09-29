@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { Permission } from '@prisma/client';
+import { InstructorType, Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
@@ -47,5 +47,14 @@ export class PersonnelController {
     },
   ) {
     return this.personnelService.addQualification(id, user.tenantId, dto);
+  }
+
+  @Post(':id/instructor-profile')
+  setInstructorProfile(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { instructorType: InstructorType },
+  ) {
+    return this.personnelService.setInstructorProfile(id, user.tenantId, dto.instructorType);
   }
 }

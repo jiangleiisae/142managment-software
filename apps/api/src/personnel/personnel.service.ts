@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InstructorType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -12,7 +13,7 @@ export class PersonnelService {
   findAll(tenantId: string) {
     return this.prisma.personnel.findMany({
       where: { tenantId },
-      include: { qualifications: true, roleAssignments: true },
+      include: { qualifications: true, roleAssignments: true, instructorProfile: true },
     });
   }
 
@@ -57,6 +58,16 @@ export class PersonnelService {
     return this.prisma.qualificationRecord.findMany({
       where: { validUntil: { lte: cutoff, gte: new Date() }, personnel: { tenantId } },
       include: { personnel: true },
+    });
+  }
+
+  /// 3.5 教员档案 (FI/TRI/SFI/理论教员/考试员), 与Personnel一对一, 按personnelId upsert
+  async setInstructorProfile(personnelId: string, tenantId: string, instructorType: InstructorType) {
+    await this.findOne(personnelId, tenantId);
+    return this.prisma.instructorProfile.upsert({
+      where: { personnelId },
+      create: { personnelId, instructorType },
+      update: { instructorType },
     });
   }
 }

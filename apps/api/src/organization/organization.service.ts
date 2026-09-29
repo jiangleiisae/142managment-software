@@ -233,4 +233,43 @@ export class OrganizationService {
       .filter((org) => org.selfReviews.length === 0)
       .map((org) => ({ organizationId: org.id, name: org.name, year }));
   }
+
+  // ---- ORA.ATO.105 申请材料 (首次申请 / 变更申请) ----
+
+  async createApplicationRecord(
+    organizationId: string,
+    tenantId: string,
+    data: {
+      isChangeApplication?: boolean;
+      proposedStartDate?: string;
+      headOfTrainingInfo?: Record<string, unknown>;
+      trainingSitesJson?: unknown;
+      aircraftListJson?: unknown;
+      fstdListJson?: unknown;
+      courseTypesJson?: unknown;
+      operationsManualRef?: string;
+      trainingManualRef?: string;
+    },
+  ) {
+    await this.findOne(organizationId, tenantId);
+    return this.prisma.applicationRecord.create({
+      data: {
+        organizationId,
+        isChangeApplication: data.isChangeApplication ?? false,
+        proposedStartDate: data.proposedStartDate ? new Date(data.proposedStartDate) : undefined,
+        headOfTrainingInfo: data.headOfTrainingInfo as Prisma.InputJsonValue | undefined,
+        trainingSitesJson: data.trainingSitesJson as Prisma.InputJsonValue | undefined,
+        aircraftListJson: data.aircraftListJson as Prisma.InputJsonValue | undefined,
+        fstdListJson: data.fstdListJson as Prisma.InputJsonValue | undefined,
+        courseTypesJson: data.courseTypesJson as Prisma.InputJsonValue | undefined,
+        operationsManualRef: data.operationsManualRef,
+        trainingManualRef: data.trainingManualRef,
+      },
+    });
+  }
+
+  async listApplicationRecords(organizationId: string, tenantId: string) {
+    await this.findOne(organizationId, tenantId);
+    return this.prisma.applicationRecord.findMany({ where: { organizationId }, orderBy: { submittedAt: 'desc' } });
+  }
 }

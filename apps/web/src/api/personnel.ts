@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Personnel } from './types'
+import type { InstructorType, Personnel } from './types'
 
 export const personnelApi = {
   list: () => apiClient.get<Personnel[]>('/personnel').then((r) => r.data),
@@ -11,4 +11,7 @@ export const personnelApi = {
     personnelId: string,
     data: { qualificationType: string; certificateNo?: string; validUntil?: string },
   ) => apiClient.post(`/personnel/${personnelId}/qualifications`, data).then((r) => r.data),
+
+  setInstructorProfile: (personnelId: string, instructorType: InstructorType) =>
+    apiClient.post(`/personnel/${personnelId}/instructor-profile`, { instructorType }).then((r) => r.data),
 }

@@ -554,12 +554,13 @@ model CorrectiveAction {
 }
 
 model ContractRecord {
-  id             String   @id @default(cuid())
-  organizationId String
-  contractorName String
-  scope          String
-  agreementRef   String?
-  includedInAudit Boolean @default(true)
+  id              String   @id @default(cuid())
+  organizationId  String
+  contractorName  String
+  scope           String
+  agreementRef    String?
+  includedInAudit Boolean  @default(true)
+  createdAt       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
