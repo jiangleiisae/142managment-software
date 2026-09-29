@@ -442,37 +442,83 @@ export class FstdService {
     });
   }
 
-  // ---- 3.3.5 周期性评估: 标准周期12个月(BITD为3年), 评估窗口内完成即视为按时 ----
+  // ---- 3.3.5 周期性评估: 标准周期12个月(BITD为3年), 满足条件可延长至24/36个月, 评估窗口内完成即视为按时 ----
+
+  /// 评估窗口 (3.3.5: 周期开始前60天至开始后30天完成视为按时), 基于上一次评估的到期日计算; 首次评估无从比较返回null
+  private computeIsWithinWindow(periodStart: Date, previousNextDueDate: Date | null): boolean | null {
+    if (!previousNextDueDate) return null;
+    const windowStart = new Date(previousNextDueDate);
+    windowStart.setDate(windowStart.getDate() - 60);
+    const windowEnd = new Date(previousNextDueDate);
+    windowEnd.setDate(windowEnd.getDate() + 30);
+    return periodStart >= windowStart && periodStart <= windowEnd;
+  }
 
   async recordRecurrentEvaluation(
     fstdId: string,
     tenantId: string,
-    data: { periodStart: string; periodEnd: string; evaluationType?: string; result?: string },
+    data: { periodStart: string; periodEnd: string; evaluationType?: string; extensionMonths?: number; result?: string },
   ) {
     const fstd = await this.findFstdOrThrow(fstdId, tenantId);
+    const periodStart = new Date(data.periodStart);
     const periodEnd = new Date(data.periodEnd);
+    const evaluationType = data.evaluationType ?? 'standard';
     const nextDueDate = new Date(periodEnd);
-    // BITD 标准周期3年, 其余(FFS/FTD/FNPT) 标准周期12个月 (需求清单3.3.5)
+    // BITD 标准周期3年; 满足延长条件(见checkExtensionEligibility)可延长至24/36个月; 其余标准周期12个月 (需求清单3.3.5)
     if (fstd.deviceType === 'BITD') {
       nextDueDate.setFullYear(nextDueDate.getFullYear() + 3);
+    } else if (evaluationType === 'extended') {
+      nextDueDate.setMonth(nextDueDate.getMonth() + (data.extensionMonths === 36 ? 36 : 24));
     } else {
       nextDueDate.setMonth(nextDueDate.getMonth() + 12);
     }
-    return this.prisma.fstdRecurrentEvaluation.create({
-      data: {
-        fstdId,
-        periodStart: new Date(data.periodStart),
-        periodEnd,
-        evaluationType: data.evaluationType ?? 'standard',
-        result: data.result,
-        nextDueDate,
-      },
+
+    const previous = await this.prisma.fstdRecurrentEvaluation.findFirst({ where: { fstdId }, orderBy: { periodEnd: 'desc' } });
+    const isWithinWindow = this.computeIsWithinWindow(periodStart, previous?.nextDueDate ?? null);
+
+    const evaluation = await this.prisma.fstdRecurrentEvaluation.create({
+      data: { fstdId, periodStart, periodEnd, evaluationType, result: data.result, nextDueDate },
     });
+    return { ...evaluation, isWithinWindow };
   }
 
   async listRecurrentEvaluations(fstdId: string, tenantId: string) {
     await this.findFstdOrThrow(fstdId, tenantId);
-    return this.prisma.fstdRecurrentEvaluation.findMany({ where: { fstdId }, orderBy: { periodEnd: 'desc' } });
+    const evals = await this.prisma.fstdRecurrentEvaluation.findMany({ where: { fstdId }, orderBy: { periodEnd: 'desc' } });
+    // evals按periodEnd降序排列, 故下标i+1即为上一次(更早)的评估记录
+    return evals.map((e, i) => ({
+      ...e,
+      isWithinWindow: this.computeIsWithinWindow(e.periodStart, evals[i + 1]?.nextDueDate ?? null),
+    }));
+  }
+
+  /// 延长周期资格建议 (3.3.5: 连续36个月合规记录+管理体系年度审计+指定合格人员自评, 满足可延长至24/36个月)。
+  /// 前两项可由系统核实, 第三项(指定合格人员自评)需机构在登记延长评估时人工确认, 最终是否批准延长仍由主管机关判断——
+  /// 本接口仅提供参考建议, 不做强制阻断。
+  async checkExtensionEligibility(fstdId: string, tenantId: string) {
+    const fstd = await this.findFstdOrThrow(fstdId, tenantId);
+    const recentEvals = await this.prisma.fstdRecurrentEvaluation.findMany({
+      where: { fstdId },
+      orderBy: { periodEnd: 'desc' },
+      take: 3,
+    });
+    const has36MonthsCompliantRecord = recentEvals.length === 3 && recentEvals.every((e) => e.result === 'pass');
+
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const recentAudit = await this.prisma.auditTask.findFirst({
+      where: {
+        auditSchedule: { organizationId: fstd.organizationId },
+        status: 'completed',
+        performedAt: { gte: oneYearAgo },
+      },
+    });
+
+    return {
+      has36MonthsCompliantRecord,
+      hasAnnualManagementAudit: !!recentAudit,
+      requiresManualSelfAssessmentConfirmation: true,
+    };
   }
 
   /// 找出评估窗口即将到期(或已过期)的设备, 每台设备只看最近一次评估记录 (供仪表盘/告警使用)

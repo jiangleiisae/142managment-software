@@ -38,6 +38,13 @@ export interface RecurrentEvaluation {
   evaluationType: string
   result?: string | null
   nextDueDate?: string | null
+  isWithinWindow: boolean | null
+}
+
+export interface ExtensionEligibility {
+  has36MonthsCompliantRecord: boolean
+  hasAnnualManagementAudit: boolean
+  requiresManualSelfAssessmentConfirmation: boolean
 }
 
 export interface EvaluationDueSoonItem {
@@ -340,11 +347,16 @@ export const fstdsApi = {
 
   // ---- 3.3.5 周期性评估 ----
 
-  recordRecurrentEvaluation: (fstdId: string, data: { periodStart: string; periodEnd: string; result?: string }) =>
-    apiClient.post<RecurrentEvaluation>(`/fstds/${fstdId}/recurrent-evaluations`, data).then((r) => r.data),
+  recordRecurrentEvaluation: (
+    fstdId: string,
+    data: { periodStart: string; periodEnd: string; evaluationType?: string; extensionMonths?: number; result?: string },
+  ) => apiClient.post<RecurrentEvaluation>(`/fstds/${fstdId}/recurrent-evaluations`, data).then((r) => r.data),
 
   listRecurrentEvaluations: (fstdId: string) =>
     apiClient.get<RecurrentEvaluation[]>(`/fstds/${fstdId}/recurrent-evaluations`).then((r) => r.data),
+
+  checkExtensionEligibility: (fstdId: string) =>
+    apiClient.get<ExtensionEligibility>(`/fstds/${fstdId}/recurrent-evaluations/extension-eligibility`).then((r) => r.data),
 
   listEvaluationsDueSoon: (withinDays = 60) =>
     apiClient.get<EvaluationDueSoonItem[]>('/fstds/evaluations/due-soon', { params: { withinDays } }).then((r) => r.data),

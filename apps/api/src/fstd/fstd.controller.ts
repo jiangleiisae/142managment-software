@@ -194,7 +194,7 @@ export class FstdController {
   recordRecurrentEvaluation(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
-    @Body() dto: { periodStart: string; periodEnd: string; evaluationType?: string; result?: string },
+    @Body() dto: { periodStart: string; periodEnd: string; evaluationType?: string; extensionMonths?: number; result?: string },
   ) {
     return this.fstdService.recordRecurrentEvaluation(id, user.tenantId, dto);
   }
@@ -202,6 +202,11 @@ export class FstdController {
   @Get(':id/recurrent-evaluations')
   listRecurrentEvaluations(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.fstdService.listRecurrentEvaluations(id, user.tenantId);
+  }
+
+  @Get(':id/recurrent-evaluations/extension-eligibility')
+  checkExtensionEligibility(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.checkExtensionEligibility(id, user.tenantId);
   }
 
   @Get('evaluations/due-soon')

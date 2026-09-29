@@ -6,6 +6,7 @@ import type {
   Discrepancy,
   EquipmentSpecificationList,
   EvaluationDueSoonItem,
+  ExtensionEligibility,
   FcsCharacteristic,
   FcsFidelityLevel,
   FstdFcsCapability,
@@ -65,6 +66,7 @@ export function FstdsPage() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [evalModalFstdId, setEvalModalFstdId] = useState<string>()
+  const [extensionEligibility, setExtensionEligibility] = useState<ExtensionEligibility>()
   const [discrepancyModalFstdId, setDiscrepancyModalFstdId] = useState<string>()
   const [correctModalDiscrepancyId, setCorrectModalDiscrepancyId] = useState<string>()
   const [safetyCheckModalFstdId, setSafetyCheckModalFstdId] = useState<string>()
@@ -149,12 +151,18 @@ export function FstdsPage() {
   const handleRecordEvaluation = async () => {
     if (!evalModalFstdId) return
     const values = await evalForm.validateFields()
-    await fstdsApi.recordRecurrentEvaluation(evalModalFstdId, {
+    const result = await fstdsApi.recordRecurrentEvaluation(evalModalFstdId, {
       periodStart: values.range[0].format('YYYY-MM-DD'),
       periodEnd: values.range[1].format('YYYY-MM-DD'),
       result: values.result,
+      evaluationType: values.useExtension ? 'extended' : 'standard',
+      extensionMonths: values.useExtension ? values.extensionMonths : undefined,
     })
-    message.success('周期性评估记录已保存, 下次到期日已自动计算')
+    message.success(
+      result.isWithinWindow === false
+        ? '周期性评估记录已保存, 下次到期日已自动计算 (注意: 本次评估晚于评估窗口, 不视为按时完成)'
+        : '周期性评估记录已保存, 下次到期日已自动计算',
+    )
     setEvalModalFstdId(undefined)
     evalForm.resetFields()
     load()
@@ -429,7 +437,15 @@ export function FstdsPage() {
                 title: '操作',
                 render: (_, fstd) => (
                   <Space>
-                    <Button size="small" onClick={() => setEvalModalFstdId(fstd.id)}>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        evalForm.resetFields()
+                        setExtensionEligibility(undefined)
+                        fstdsApi.checkExtensionEligibility(fstd.id).then(setExtensionEligibility)
+                        setEvalModalFstdId(fstd.id)
+                      }}
+                    >
                       记录周期评估
                     </Button>
                     <Button size="small" danger onClick={() => setDiscrepancyModalFstdId(fstd.id)}>
@@ -595,7 +611,14 @@ export function FstdsPage() {
                     renderItem={(e) => (
                       <List.Item>
                         {new Date(e.periodStart).toLocaleDateString()} ~ {new Date(e.periodEnd).toLocaleDateString()}
-                        , 结果: {e.result ?? '-'}, 下次到期:{' '}
+                        , 结果: {e.result ?? '-'}
+                        {e.evaluationType === 'extended' && <Tag color="purple" style={{ marginLeft: 8 }}>延长周期</Tag>}
+                        {e.isWithinWindow === false && (
+                          <Tag color="red" style={{ marginLeft: 8 }}>
+                            超出评估窗口
+                          </Tag>
+                        )}
+                        , 下次到期:{' '}
                         <Tag color={e.nextDueDate && new Date(e.nextDueDate) < new Date() ? 'red' : 'default'}>
                           {e.nextDueDate ? new Date(e.nextDueDate).toLocaleDateString() : '-'}
                         </Tag>
@@ -766,7 +789,11 @@ export function FstdsPage() {
         onOk={handleRecordEvaluation}
         onCancel={() => setEvalModalFstdId(undefined)}
       >
-        <Form form={evalForm} layout="vertical" initialValues={{ range: [dayjs().subtract(5, 'day'), dayjs()], result: 'pass' }}>
+        <Form
+          form={evalForm}
+          layout="vertical"
+          initialValues={{ range: [dayjs().subtract(5, 'day'), dayjs()], result: 'pass', useExtension: false, extensionMonths: 24 }}
+        >
           <Form.Item name="range" label="评估周期" rules={[{ required: true }]}>
             <DatePicker.RangePicker style={{ width: '100%' }} />
           </Form.Item>
@@ -778,6 +805,47 @@ export function FstdsPage() {
                 { value: 'fail', label: '未通过' },
               ]}
             />
+          </Form.Item>
+          <Form.Item name="useExtension" label="延长评估周期至24/36个月 (3.3.5)" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.useExtension !== cur.useExtension}>
+            {({ getFieldValue }) =>
+              getFieldValue('useExtension') && (
+                <>
+                  {extensionEligibility && (
+                    <Alert
+                      style={{ marginBottom: 12 }}
+                      type={extensionEligibility.has36MonthsCompliantRecord && extensionEligibility.hasAnnualManagementAudit ? 'success' : 'warning'}
+                      showIcon
+                      message="延长资格系统可核实项 (仅供参考, 最终由主管机关判断)"
+                      description={
+                        <>
+                          <div>{extensionEligibility.has36MonthsCompliantRecord ? '✓' : '✗'} 连续36个月合规评估记录</div>
+                          <div>{extensionEligibility.hasAnnualManagementAudit ? '✓' : '✗'} 近12个月管理体系审计</div>
+                          <div>⚠ 指定合格人员自评: 需人工确认 (见下方勾选)</div>
+                        </>
+                      }
+                    />
+                  )}
+                  <Form.Item name="extensionMonths" label="延长周期" rules={[{ required: true }]}>
+                    <Select
+                      options={[
+                        { value: 24, label: '24个月' },
+                        { value: 36, label: '36个月' },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="selfAssessmentConfirmed"
+                    valuePropName="checked"
+                    rules={[{ validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error('须确认已完成指定合格人员自评'))) }]}
+                  >
+                    <Switch checkedChildren="已完成指定合格人员自评" unCheckedChildren="尚未确认" />
+                  </Form.Item>
+                </>
+              )
+            }
           </Form.Item>
         </Form>
       </Modal>
