@@ -25,6 +25,18 @@ export class OrganizationController {
     return this.organizationService.findAll(user.tenantId);
   }
 
+  // ---- 3.2.2 非复杂机构简化路径: 年度机构自查 (GM2 ORA.GEN.200(c)), 须在 :id 路由之前注册以避免被误匹配 ----
+
+  @Get('self-review-checklist')
+  listSelfReviewChecklist() {
+    return this.organizationService.listSelfReviewChecklist();
+  }
+
+  @Get('self-reviews/missing-current-year')
+  findOrgsMissingCurrentYearSelfReview(@CurrentUser() user: AuthContext) {
+    return this.organizationService.findOrgsMissingCurrentYearSelfReview(user.tenantId);
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.organizationService.findOne(id, user.tenantId);
@@ -81,5 +93,26 @@ export class OrganizationController {
     @Body() dto: CertificateStatusActionDto,
   ) {
     return this.organizationService.terminateCertificate(certId, user.tenantId, dto.reason);
+  }
+
+  // ---- 3.2.2 非复杂机构简化路径: 年度机构自查登记 (机构范围) ----
+
+  @Post(':id/self-reviews')
+  recordSelfReview(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { year: number; reviewedAt: string; items: { item: string; compliant: boolean; notes?: string }[] },
+  ) {
+    return this.organizationService.recordSelfReview(id, user.tenantId, dto);
+  }
+
+  @Get(':id/self-reviews')
+  listSelfReviews(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.organizationService.listSelfReviews(id, user.tenantId);
+  }
+
+  @Post('self-reviews/:reviewId/notify')
+  notifySelfReview(@CurrentUser() user: AuthContext, @Param('reviewId') reviewId: string) {
+    return this.organizationService.notifySelfReview(reviewId, user.tenantId);
   }
 }

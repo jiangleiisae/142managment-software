@@ -13,6 +13,21 @@ const ALLOWED_TRANSITIONS: Record<CertificateStatus, CertificateStatus[]> = {
   TERMINATED: [],
 };
 
+/// 非复杂机构年度自查清单 (3.2.2, GM2 ORA.GEN.200(c) 列出的11项典型检查项)
+export const SELF_REVIEW_CHECKLIST_ITEMS = [
+  '批准范围合规',
+  '训练大纲/教材合规',
+  '训练设备设施',
+  '人员资质',
+  '承包方管理',
+  '安全培训沟通',
+  '管理体系文档',
+  '记录保存抽查',
+  '应急响应',
+  '内部安全报告分析',
+  '风险登记',
+];
+
 @Injectable()
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
@@ -153,5 +168,69 @@ export class OrganizationService {
 
   terminateCertificate(certificateId: string, tenantId: string, reason?: string) {
     return this.transitionCertificate(certificateId, tenantId, CertificateStatus.TERMINATED, reason, 'terminatedAt');
+  }
+
+  // ---- 3.2.2 非复杂机构简化路径: 年度机构自查 (GM2 ORA.GEN.200(c)) ----
+
+  listSelfReviewChecklist() {
+    return SELF_REVIEW_CHECKLIST_ITEMS;
+  }
+
+  /// 按 (organizationId, year) 唯一, 同年度重复登记视为更新本年度自查结果
+  async recordSelfReview(
+    organizationId: string,
+    tenantId: string,
+    data: { year: number; reviewedAt: string; items: { item: string; compliant: boolean; notes?: string }[] },
+  ) {
+    await this.findOne(organizationId, tenantId);
+    const overallResult = data.items.every((i) => i.compliant) ? 'compliant' : 'issues_found';
+    return this.prisma.organisationalSelfReview.upsert({
+      where: { organizationId_year: { organizationId, year: data.year } },
+      create: {
+        organizationId,
+        year: data.year,
+        reviewedAt: new Date(data.reviewedAt),
+        itemsJson: data.items,
+        overallResult,
+      },
+      update: {
+        reviewedAt: new Date(data.reviewedAt),
+        itemsJson: data.items,
+        overallResult,
+        notifiedAuthorityAt: null, // 结果变化后需重新通报当局
+      },
+    });
+  }
+
+  async listSelfReviews(organizationId: string, tenantId: string) {
+    await this.findOne(organizationId, tenantId);
+    return this.prisma.organisationalSelfReview.findMany({ where: { organizationId }, orderBy: { year: 'desc' } });
+  }
+
+  private async findSelfReviewOrThrow(id: string, tenantId: string) {
+    const review = await this.prisma.organisationalSelfReview.findUnique({
+      where: { id },
+      include: { organization: true },
+    });
+    if (!review || review.organization.tenantId !== tenantId) throw new NotFoundException(`Self review ${id} not found`);
+    return review;
+  }
+
+  /// 结果 (无论是否发现问题) 须及时通报当局 (需求清单3.2.2原文)
+  async notifySelfReview(id: string, tenantId: string) {
+    await this.findSelfReviewOrThrow(id, tenantId);
+    return this.prisma.organisationalSelfReview.update({ where: { id }, data: { notifiedAuthorityAt: new Date() } });
+  }
+
+  /// 合规看板: 非复杂机构中, 本日历年度尚未完成自查的机构清单 (每年至少一次)
+  async findOrgsMissingCurrentYearSelfReview(tenantId: string) {
+    const year = new Date().getFullYear();
+    const orgs = await this.prisma.organization.findMany({
+      where: { tenantId, isComplexOrg: false },
+      include: { selfReviews: { where: { year } } },
+    });
+    return orgs
+      .filter((org) => org.selfReviews.length === 0)
+      .map((org) => ({ organizationId: org.id, name: org.name, year }));
   }
 }

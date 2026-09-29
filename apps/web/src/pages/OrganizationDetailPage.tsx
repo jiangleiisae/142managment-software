@@ -1,8 +1,9 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, Card, DatePicker, Descriptions, Form, Input, Modal, Popconfirm, Space, Table, Tag, message } from 'antd'
+import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Space, Switch, Table, Tag, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import type { OrganisationalSelfReview } from '../api/organizations'
 import { organizationsApi } from '../api/organizations'
 import type { CertificateStatus, Organization } from '../api/types'
 import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
@@ -21,6 +22,11 @@ export function OrganizationDetailPage() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [form] = Form.useForm()
+  const [checklist, setChecklist] = useState<string[]>([])
+  const [selfReviews, setSelfReviews] = useState<OrganisationalSelfReview[]>([])
+  const [reviewModalOpen, setReviewModalOpen] = useState(false)
+  const [reviewItemState, setReviewItemState] = useState<Record<string, { compliant: boolean; notes: string }>>({})
+  const [reviewForm] = Form.useForm()
 
   const load = () => {
     if (!id) return
@@ -29,9 +35,13 @@ export function OrganizationDetailPage() {
       .get(id)
       .then(setOrg)
       .finally(() => setLoading(false))
+    organizationsApi.listSelfReviews(id).then(setSelfReviews)
   }
 
   useEffect(load, [id])
+  useEffect(() => {
+    organizationsApi.listSelfReviewChecklist().then(setChecklist)
+  }, [])
 
   const handleAddCertificate = async () => {
     if (!id) return
@@ -62,6 +72,31 @@ export function OrganizationDetailPage() {
       const err = e as { response?: { data?: { message?: string } } }
       message.error(err.response?.data?.message ?? '操作失败')
     }
+  }
+
+  const openReviewModal = () => {
+    setReviewItemState(Object.fromEntries(checklist.map((item) => [item, { compliant: true, notes: '' }])))
+    reviewForm.resetFields()
+    setReviewModalOpen(true)
+  }
+
+  const handleRecordSelfReview = async () => {
+    if (!id) return
+    const values = await reviewForm.validateFields()
+    await organizationsApi.recordSelfReview(id, {
+      year: values.year,
+      reviewedAt: values.reviewedAt.format('YYYY-MM-DD'),
+      items: checklist.map((item) => ({ item, ...reviewItemState[item] })),
+    })
+    message.success('年度自查已登记 (GM2 ORA.GEN.200(c)), 请及时通报当局')
+    setReviewModalOpen(false)
+    load()
+  }
+
+  const handleNotifySelfReview = async (reviewId: string) => {
+    await organizationsApi.notifySelfReview(reviewId)
+    message.success('已标记为通报当局')
+    load()
   }
 
   if (!org) return <Card loading={loading} />
@@ -141,6 +176,68 @@ export function OrganizationDetailPage() {
         {id && <ChangeRequestPanel entityType="Organization" entityId={id} />}
       </Card>
 
+      <Card
+        title="年度机构自查 (3.2.2 非复杂机构简化路径, GM2 ORA.GEN.200(c))"
+        style={{ marginTop: 16 }}
+        extra={
+          <Button icon={<PlusOutlined />} onClick={openReviewModal}>
+            登记本年度自查
+          </Button>
+        }
+      >
+        {org.isComplexOrg && (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="warning"
+            showIcon
+            message="该机构为复杂机构, 应使用完整SMS+合规监督流程 (管理体系页面); 年度自查简化路径仅适用于非复杂机构"
+          />
+        )}
+        <List
+          size="small"
+          dataSource={selfReviews}
+          locale={{ emptyText: '尚未登记任何年度自查' }}
+          renderItem={(review) => (
+            <List.Item
+              actions={
+                !review.notifiedAuthorityAt
+                  ? [
+                      <Button key="notify" size="small" onClick={() => handleNotifySelfReview(review.id)}>
+                        标记已通报当局
+                      </Button>,
+                    ]
+                  : []
+              }
+            >
+              <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                <Space wrap>
+                  <Tag>{review.year}年度</Tag>
+                  <Tag color={review.overallResult === 'compliant' ? 'green' : 'red'}>
+                    {review.overallResult === 'compliant' ? '合规' : '发现问题'}
+                  </Tag>
+                  <Tag color={review.notifiedAuthorityAt ? 'green' : 'orange'}>
+                    {review.notifiedAuthorityAt ? '已通报当局' : '待通报当局'}
+                  </Tag>
+                </Space>
+                <Space wrap>
+                  {review.itemsJson
+                    .filter((i) => !i.compliant)
+                    .map((i) => (
+                      <Tag key={i.item} color="red">
+                        {i.item}: {i.notes || '不合规'}
+                      </Tag>
+                    ))}
+                </Space>
+                <span style={{ color: '#888', fontSize: 12 }}>
+                  自查日期 {new Date(review.reviewedAt).toLocaleDateString()}
+                  {review.notifiedAuthorityAt && ` | 通报于 ${new Date(review.notifiedAuthorityAt).toLocaleString()}`}
+                </span>
+              </Space>
+            </List.Item>
+          )}
+        />
+      </Card>
+
       <Modal title="新增证书" open={modalOpen} onOk={handleAddCertificate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ issuedAt: dayjs() }}>
           <Form.Item name="certificateNo" label="证书编号" rules={[{ required: true }]}>
@@ -156,6 +253,48 @@ export function OrganizationDetailPage() {
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="登记年度机构自查 (GM2 ORA.GEN.200(c))"
+        open={reviewModalOpen}
+        onOk={handleRecordSelfReview}
+        onCancel={() => setReviewModalOpen(false)}
+        width={600}
+      >
+        <Form form={reviewForm} layout="vertical" initialValues={{ year: dayjs().year(), reviewedAt: dayjs() }}>
+          <Space>
+            <Form.Item name="year" label="年度" rules={[{ required: true }]}>
+              <InputNumber style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="reviewedAt" label="自查日期" rules={[{ required: true }]}>
+              <DatePicker />
+            </Form.Item>
+          </Space>
+        </Form>
+        {checklist.map((item) => (
+          <div key={item} style={{ marginBottom: 12 }}>
+            <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
+              <span>{item}</span>
+              <Switch
+                checked={reviewItemState[item]?.compliant ?? true}
+                checkedChildren="合规"
+                unCheckedChildren="不合规"
+                onChange={(checked) =>
+                  setReviewItemState((s) => ({ ...s, [item]: { ...s[item], compliant: checked } }))
+                }
+              />
+            </Space>
+            {!reviewItemState[item]?.compliant && (
+              <Input
+                placeholder="不合规说明"
+                value={reviewItemState[item]?.notes}
+                onChange={(e) => setReviewItemState((s) => ({ ...s, [item]: { ...s[item], notes: e.target.value } }))}
+                style={{ marginTop: 4 }}
+              />
+            )}
+          </div>
+        ))}
       </Modal>
     </div>
   )
