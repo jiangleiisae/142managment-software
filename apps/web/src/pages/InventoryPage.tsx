@@ -25,14 +25,20 @@ import type {
   FaultyPartStatus,
   LowStockItem,
   PartDemandRequest,
+  PartInspectionDueSoonItem,
+  PartInspectionRecord,
+  PartLoan,
   PartMovement,
   PartScrapRequest,
+  PartTypeConfig,
   PurchaseOrder,
   ScrapRequestStatus,
   SparePart,
   StocktakeSession,
   Supplier,
   Tool,
+  Warehouse,
+  WarehouseStock,
 } from '../api/inventory'
 import { inventoryApi } from '../api/inventory'
 import type { Discrepancy } from '../api/fstds'
@@ -41,11 +47,6 @@ import { personnelApi } from '../api/personnel'
 import type { Fstd, Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
-
-const PART_CATEGORY_LABEL: Record<SparePart['partCategory'], { text: string; color: string }> = {
-  CONSUMABLE: { text: '消耗件', color: 'default' },
-  ROTABLE: { text: '周转件', color: 'blue' },
-}
 
 const PO_STATUS_COLOR: Record<PurchaseOrder['status'], string> = {
   DRAFT: 'default',
@@ -73,11 +74,19 @@ const SCRAP_REASON_OPTIONS = [
   { value: 'OTHER', label: '其他' },
 ]
 
+const WAREHOUSE_TYPE_LABEL: Record<Warehouse['type'], string> = {
+  OWN: '自有仓库',
+  CONSIGNMENT: '寄售仓库',
+  THIRD_PARTY_MANAGED: '第三方托管仓库',
+}
+
 function SparePartsTab({ organizationId }: { organizationId: string }) {
   const [parts, setParts] = useState<SparePart[]>([])
   const [lowStock, setLowStock] = useState<LowStockItem[]>([])
   const [movements, setMovements] = useState<Record<string, PartMovement[]>>({})
   const [openDiscrepancies, setOpenDiscrepancies] = useState<Discrepancy[]>([])
+  const [typeConfigs, setTypeConfigs] = useState<PartTypeConfig[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [partModalOpen, setPartModalOpen] = useState(false)
   const [movementModalPartId, setMovementModalPartId] = useState<string>()
   const [partForm] = Form.useForm()
@@ -87,8 +96,12 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
     inventoryApi.listSpareParts(organizationId).then(setParts)
     inventoryApi.listLowStock().then(setLowStock)
     fstdsApi.listOpenDiscrepanciesForOrg(organizationId).then(setOpenDiscrepancies)
+    inventoryApi.listPartTypeConfigs(organizationId).then(setTypeConfigs)
+    inventoryApi.listWarehouses(organizationId).then(setWarehouses)
   }
   useEffect(load, [organizationId])
+
+  const categoryLabel = (code: string) => typeConfigs.find((c) => c.code === code)?.label ?? code
 
   const loadMovements = async (partId: string) => {
     const list = await inventoryApi.listMovements(partId)
@@ -146,7 +159,7 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           {
             title: '分类',
             dataIndex: 'partCategory',
-            render: (v: SparePart['partCategory']) => <Tag color={PART_CATEGORY_LABEL[v].color}>{PART_CATEGORY_LABEL[v].text}</Tag>,
+            render: (v: SparePart['partCategory']) => <Tag color={v === 'ROTABLE' ? 'blue' : 'default'}>{categoryLabel(v)}</Tag>,
           },
           {
             title: '库存',
@@ -155,6 +168,10 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
                 {p.currentQuantity} / 最低{p.minQuantity} {p.unit}
               </Tag>
             ),
+          },
+          {
+            title: '检测要求',
+            render: (_, p) => (p.requiresInspection ? <Tag color="purple">每{p.inspectionIntervalMonths}个月</Tag> : '-'),
           },
           {
             title: '操作',
@@ -176,6 +193,16 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
                 <List.Item>
                   <Tag color={m.type === 'IN' ? 'green' : m.type === 'OUT' ? 'orange' : 'default'}>{m.type}</Tag>
                   {m.quantity} {p.unit} - {m.note} ({new Date(m.performedAt).toLocaleString()})
+                  {m.warehouse && (
+                    <Tag color="geekblue" style={{ marginLeft: 8 }}>
+                      仓库: {m.warehouse.name}
+                    </Tag>
+                  )}
+                  {m.usageLocation && (
+                    <Tag color="cyan" style={{ marginLeft: 8 }}>
+                      使用位置: {m.usageLocation}
+                    </Tag>
+                  )}
                   {m.relatedDiscrepancy && (
                     <Tag color="volcano" style={{ marginLeft: 8 }}>
                       关联缺陷: {m.relatedDiscrepancy.fstd.deviceCode} - {m.relatedDiscrepancy.description}
@@ -200,15 +227,30 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
             <Input placeholder="如: A320 FFS / 通用" />
           </Form.Item>
           <Form.Item name="partCategory" label="备件分类" initialValue="CONSUMABLE" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: 'CONSUMABLE', label: '消耗件 (一次性使用, 不可修复)' },
-                { value: 'ROTABLE', label: '周转件 (可修复/返厂翻修后重新使用)' },
-              ]}
-            />
+            <Select options={typeConfigs.map((c) => ({ value: c.code, label: c.label }))} />
           </Form.Item>
           <Form.Item name="minQuantity" label="最低库存量" initialValue={0} rules={[{ required: true }]}>
             <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="requiresInspection" label="是否要求定期检测" initialValue={false}>
+            <Select
+              options={[
+                { value: false, label: '否' },
+                { value: true, label: '是 (适航性相关备件, 独立于工具校准计划)' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.requiresInspection !== cur.requiresInspection}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('requiresInspection') && (
+                <Form.Item name="inspectionIntervalMonths" label="检测间隔(月)" rules={[{ required: true }]}>
+                  <InputNumber min={1} style={{ width: '100%' }} />
+                </Form.Item>
+              )
+            }
           </Form.Item>
         </Form>
       </Modal>
@@ -231,6 +273,16 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           </Form.Item>
           <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="warehouseId" label="仓库 (可选)">
+            <Select
+              allowClear
+              placeholder="若需按仓库拆分库存, 可选择本次出入库发生的仓库"
+              options={warehouses.map((w) => ({ value: w.id, label: `${w.name} (${WAREHOUSE_TYPE_LABEL[w.type]})` }))}
+            />
+          </Form.Item>
+          <Form.Item name="usageLocation" label="使用位置 (可选, 出库时填写实际安装位置)">
+            <Input placeholder="如: FFS-01 视景系统机柜 / 工位3" />
           </Form.Item>
           <Form.Item name="relatedDiscrepancyId" label="关联缺陷 (可选)">
             <Select
@@ -1033,6 +1085,422 @@ function StocktakeTab({ organizationId }: { organizationId: string }) {
   )
 }
 
+function PartTypeConfigTab({ organizationId }: { organizationId: string }) {
+  const [configs, setConfigs] = useState<PartTypeConfig[]>([])
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [renameModal, setRenameModal] = useState<PartTypeConfig>()
+  const [createForm] = Form.useForm()
+  const [renameForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listPartTypeConfigs(organizationId).then(setConfigs)
+  }
+  useEffect(load, [organizationId])
+
+  const handleCreate = async () => {
+    const values = await createForm.validateFields()
+    try {
+      await inventoryApi.createPartTypeConfig({ organizationId, ...values })
+      message.success('分类已添加')
+      setCreateModalOpen(false)
+      createForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleRename = async () => {
+    if (!renameModal) return
+    const values = await renameForm.validateFields()
+    await inventoryApi.updatePartTypeConfigLabel(renameModal.id, values.label)
+    message.success('显示名称已更新')
+    setRenameModal(undefined)
+    load()
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await inventoryApi.deletePartTypeConfig(id)
+      message.success('分类已删除')
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+          新增分类
+        </Button>
+        <span style={{ color: '#999' }}>消耗件/周转件为内置分类, 不可删除但可改显示名称; 可自行追加其他分类</span>
+      </Space>
+      <Table<PartTypeConfig>
+        rowKey="id"
+        dataSource={configs}
+        columns={[
+          { title: '编码', dataIndex: 'code' },
+          { title: '显示名称', dataIndex: 'label' },
+          { title: '类型', render: (_, c) => (c.isBuiltIn ? <Tag color="blue">内置</Tag> : <Tag>自定义</Tag>) },
+          {
+            title: '操作',
+            render: (_, c) => (
+              <Space>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    renameForm.setFieldsValue({ label: c.label })
+                    setRenameModal(c)
+                  }}
+                >
+                  改名称
+                </Button>
+                {!c.isBuiltIn && (
+                  <Button size="small" danger onClick={() => handleDelete(c.id)}>
+                    删除
+                  </Button>
+                )}
+              </Space>
+            ),
+          },
+        ]}
+      />
+
+      <Modal title="新增分类" open={createModalOpen} onOk={handleCreate} onCancel={() => setCreateModalOpen(false)}>
+        <Form form={createForm} layout="vertical">
+          <Form.Item name="code" label="编码" rules={[{ required: true, message: '如 CONSIGNMENT_ITEM, 全大写+下划线' }]}>
+            <Input placeholder="如: CONSIGNMENT_ITEM" />
+          </Form.Item>
+          <Form.Item name="label" label="显示名称" rules={[{ required: true }]}>
+            <Input placeholder="如: 寄售件" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="修改显示名称" open={!!renameModal} onOk={handleRename} onCancel={() => setRenameModal(undefined)}>
+        <Form form={renameForm} layout="vertical">
+          <Form.Item name="label" label="显示名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function WarehousesTab({ organizationId }: { organizationId: string }) {
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [stock, setStock] = useState<Record<string, WarehouseStock[]>>({})
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listWarehouses(organizationId).then(setWarehouses)
+  }
+  useEffect(load, [organizationId])
+
+  const loadStock = async (warehouseId: string) => {
+    const list = await inventoryApi.listWarehouseStock(warehouseId)
+    setStock((prev) => ({ ...prev, [warehouseId]: list }))
+  }
+
+  const handleCreate = async () => {
+    const values = await createForm.validateFields()
+    await inventoryApi.createWarehouse({ organizationId, ...values })
+    message.success('仓库已建档')
+    setCreateModalOpen(false)
+    createForm.resetFields()
+    load()
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
+          新增仓库
+        </Button>
+      </Space>
+      <Table<Warehouse>
+        rowKey="id"
+        dataSource={warehouses}
+        columns={[
+          { title: '仓库名称', dataIndex: 'name' },
+          { title: '类型', render: (_, w) => <Tag color={w.type === 'OWN' ? 'default' : 'purple'}>{WAREHOUSE_TYPE_LABEL[w.type]}</Tag> },
+          { title: '寄售/托管方信息', dataIndex: 'externalPartyInfo' },
+        ]}
+        expandable={{
+          onExpand: (expanded, w) => expanded && loadStock(w.id),
+          expandedRowRender: (w) => (
+            <List
+              size="small"
+              dataSource={stock[w.id] ?? []}
+              locale={{ emptyText: '该仓库暂无库存记录' }}
+              renderItem={(s) => (
+                <List.Item>
+                  {s.sparePart?.partNumber} - {s.sparePart?.name}: {s.quantity} {s.sparePart?.unit}
+                </List.Item>
+              )}
+            />
+          ),
+        }}
+      />
+
+      <Modal title="新增仓库" open={createModalOpen} onOk={handleCreate} onCancel={() => setCreateModalOpen(false)}>
+        <Form form={createForm} layout="vertical" initialValues={{ type: 'OWN' }}>
+          <Form.Item name="name" label="仓库名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="type" label="类型" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'OWN', label: '自有仓库' },
+                { value: 'CONSIGNMENT', label: '寄售仓库 (备件所有权归供应商)' },
+                { value: 'THIRD_PARTY_MANAGED', label: '第三方托管仓库 (所有权归本机构, 存放于第三方)' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.type !== cur.type}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('type') !== 'OWN' && (
+                <Form.Item name="externalPartyInfo" label="对方信息 (供应商/托管方名称)">
+                  <Input />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function LoansTab({ organizationId }: { organizationId: string }) {
+  const [loans, setLoans] = useState<PartLoan[]>([])
+  const [overdue, setOverdue] = useState<PartLoan[]>([])
+  const [parts, setParts] = useState<SparePart[]>([])
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listLoans(organizationId).then(setLoans)
+    inventoryApi.findOverdueLoans().then(setOverdue)
+    inventoryApi.listSpareParts(organizationId).then(setParts)
+  }
+  useEffect(load, [organizationId])
+
+  const handleCreate = async () => {
+    const values = await createForm.validateFields()
+    try {
+      await inventoryApi.createLoan({
+        ...values,
+        dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
+      })
+      message.success('借出登记已保存, 库存已扣减')
+      setCreateModalOpen(false)
+      createForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleReturn = async (id: string) => {
+    await inventoryApi.returnLoan(id)
+    message.success('已登记归还, 库存已恢复')
+    load()
+  }
+
+  return (
+    <div>
+      {overdue.length > 0 && (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="warning"
+          showIcon
+          message={`有 ${overdue.length} 项借用件已逾期未归还`}
+          description={overdue.map((l) => `${l.sparePart.name}(借用方: ${l.borrowerInfo})`).join('、')}
+        />
+      )}
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)} disabled={parts.length === 0}>
+          登记借出
+        </Button>
+      </Space>
+      <Table<PartLoan>
+        rowKey="id"
+        dataSource={loans}
+        columns={[
+          { title: '备件', render: (_, l) => `${l.sparePart.partNumber} - ${l.sparePart.name}` },
+          { title: '数量', dataIndex: 'quantity' },
+          { title: '借用方', dataIndex: 'borrowerInfo' },
+          { title: '借出时间', dataIndex: 'loanedAt', render: (v: string) => new Date(v).toLocaleDateString() },
+          {
+            title: '应还日期',
+            render: (_, l) =>
+              l.dueDate ? (
+                <Tag color={!l.returnedAt && new Date(l.dueDate) < new Date() ? 'red' : 'default'}>
+                  {new Date(l.dueDate).toLocaleDateString()}
+                </Tag>
+              ) : (
+                '-'
+              ),
+          },
+          {
+            title: '状态',
+            render: (_, l) => (l.returnedAt ? <Tag color="green">已归还</Tag> : <Tag color="orange">借出中</Tag>),
+          },
+          {
+            title: '操作',
+            render: (_, l) =>
+              !l.returnedAt && (
+                <Button size="small" type="primary" onClick={() => handleReturn(l.id)}>
+                  登记归还
+                </Button>
+              ),
+          },
+        ]}
+      />
+
+      <Modal title="登记借出" open={createModalOpen} onOk={handleCreate} onCancel={() => setCreateModalOpen(false)}>
+        <Form form={createForm} layout="vertical" initialValues={{ quantity: 1 }}>
+          <Form.Item name="sparePartId" label="备件" rules={[{ required: true }]}>
+            <Select options={parts.map((p) => ({ value: p.id, label: `${p.partNumber} - ${p.name} (库存${p.currentQuantity})` }))} />
+          </Form.Item>
+          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="borrowerInfo" label="借用方 (人员/单位)" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="dueDate" label="应还日期">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="purposeNote" label="用途备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+function PartInspectionTab({ organizationId }: { organizationId: string }) {
+  const [parts, setParts] = useState<SparePart[]>([])
+  const [dueSoon, setDueSoon] = useState<PartInspectionDueSoonItem[]>([])
+  const [inspections, setInspections] = useState<Record<string, PartInspectionRecord[]>>({})
+  const [recordModalPartId, setRecordModalPartId] = useState<string>()
+  const [recordForm] = Form.useForm()
+
+  const load = () => {
+    inventoryApi.listSpareParts(organizationId).then((all) => setParts(all.filter((p) => p.requiresInspection)))
+    inventoryApi.findPartInspectionsDueSoon().then(setDueSoon)
+  }
+  useEffect(load, [organizationId])
+
+  const loadInspections = async (partId: string) => {
+    const list = await inventoryApi.listPartInspections(partId)
+    setInspections((prev) => ({ ...prev, [partId]: list }))
+  }
+
+  const handleRecord = async () => {
+    if (!recordModalPartId) return
+    const values = await recordForm.validateFields()
+    await inventoryApi.recordPartInspection(recordModalPartId, {
+      ...values,
+      inspectedAt: values.inspectedAt.format('YYYY-MM-DD'),
+    })
+    message.success('检测记录已保存, 下次到期日已自动计算')
+    setRecordModalPartId(undefined)
+    recordForm.resetFields()
+    load()
+    loadInspections(recordModalPartId)
+  }
+
+  return (
+    <div>
+      {dueSoon.length > 0 && (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="warning"
+          showIcon
+          message={`有 ${dueSoon.length} 项备件的检测即将到期或从未检测过`}
+          description={dueSoon.map((p) => p.name).join('、')}
+        />
+      )}
+      <Table<SparePart>
+        rowKey="id"
+        dataSource={parts}
+        locale={{ emptyText: '暂无要求定期检测的备件 (在备件库存新增/编辑时勾选"是否要求定期检测")' }}
+        columns={[
+          { title: '备件编号', dataIndex: 'partNumber' },
+          { title: '名称', dataIndex: 'name' },
+          { title: '检测间隔', render: (_, p) => `每${p.inspectionIntervalMonths}个月` },
+          {
+            title: '操作',
+            render: (_, p) => (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => {
+                  recordForm.resetFields()
+                  setRecordModalPartId(p.id)
+                }}
+              >
+                记录检测
+              </Button>
+            ),
+          },
+        ]}
+        expandable={{
+          onExpand: (expanded, p) => expanded && loadInspections(p.id),
+          expandedRowRender: (p) => (
+            <List
+              size="small"
+              dataSource={inspections[p.id] ?? []}
+              locale={{ emptyText: '尚未记录任何检测' }}
+              renderItem={(i) => (
+                <List.Item>
+                  <Tag color={i.result === 'pass' ? 'green' : 'red'}>{i.result}</Tag>
+                  检测日期 {new Date(i.inspectedAt).toLocaleDateString()}, 下次到期{' '}
+                  {i.nextDueDate ? new Date(i.nextDueDate).toLocaleDateString() : '-'}
+                  {i.notes ? ` | ${i.notes}` : ''}
+                </List.Item>
+              )}
+            />
+          ),
+        }}
+      />
+
+      <Modal title="记录检测" open={!!recordModalPartId} onOk={handleRecord} onCancel={() => setRecordModalPartId(undefined)}>
+        <Form form={recordForm} layout="vertical" initialValues={{ inspectedAt: dayjs(), result: 'pass' }}>
+          <Form.Item name="inspectedAt" label="检测日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="result" label="结果" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'pass', label: '通过' },
+                { value: 'fail', label: '未通过' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="notes" label="备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
 export function InventoryPage() {
   const { organizations, selectedId, select } = useSelectedOrganization()
 
@@ -1052,6 +1520,10 @@ export function InventoryPage() {
             { key: 'scrap', label: '报废管理', children: <ScrapRequestsTab organizationId={selectedId} /> },
             { key: 'demand', label: '备件需求', children: <DemandRequestsTab organizationId={selectedId} /> },
             { key: 'stocktake', label: '备件盘点', children: <StocktakeTab organizationId={selectedId} /> },
+            { key: 'warehouses', label: '仓库管理', children: <WarehousesTab organizationId={selectedId} /> },
+            { key: 'loans', label: '借用管理', children: <LoansTab organizationId={selectedId} /> },
+            { key: 'inspection', label: '备件检测', children: <PartInspectionTab organizationId={selectedId} /> },
+            { key: 'part-types', label: '备件信息配置', children: <PartTypeConfigTab organizationId={selectedId} /> },
           ]}
         />
       )}

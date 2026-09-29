@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { FaultyPartStatus, PartCategory, PartMovementType, Permission } from '@prisma/client';
+import { FaultyPartStatus, PartMovementType, Permission, WarehouseType } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
@@ -20,10 +20,12 @@ export class InventoryController {
       partNumber: string;
       name: string;
       compatibleWith?: string;
-      partCategory?: PartCategory;
+      partCategory?: string;
       unit?: string;
       minQuantity?: number;
       location?: string;
+      requiresInspection?: boolean;
+      inspectionIntervalMonths?: number;
     },
   ) {
     return this.service.createSparePart(dto);
@@ -48,7 +50,15 @@ export class InventoryController {
   recordMovement(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
-    @Body() dto: { type: PartMovementType; quantity: number; note?: string; relatedDiscrepancyId?: string },
+    @Body()
+    dto: {
+      type: PartMovementType;
+      quantity: number;
+      note?: string;
+      relatedDiscrepancyId?: string;
+      warehouseId?: string;
+      usageLocation?: string;
+    },
   ) {
     return this.service.recordMovement(id, user.tenantId, dto);
   }
@@ -265,5 +275,95 @@ export class InventoryController {
   @Post('stocktakes/:id/reconcile')
   reconcileStocktake(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { reconciledById?: string }) {
     return this.service.reconcileStocktake(id, user.tenantId, dto.reconciledById);
+  }
+
+  // ---- 3.4.10 备件信息配置字典表 ----
+
+  @Get('part-type-configs')
+  listPartTypeConfigs(@Query('organizationId') organizationId: string) {
+    return this.service.listPartTypeConfigs(organizationId);
+  }
+
+  @Post('part-type-configs')
+  createPartTypeConfig(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; code: string; label: string }) {
+    return this.service.createPartTypeConfig(user.tenantId, dto);
+  }
+
+  @Post('part-type-configs/:id')
+  updatePartTypeConfigLabel(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { label: string }) {
+    return this.service.updatePartTypeConfigLabel(id, user.tenantId, dto.label);
+  }
+
+  @Post('part-type-configs/:id/delete')
+  deletePartTypeConfig(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.deletePartTypeConfig(id, user.tenantId);
+  }
+
+  // ---- 3.4.3 多仓库 + 寄售/托管库房 ----
+
+  @Post('warehouses')
+  createWarehouse(@Body() dto: { organizationId: string; name: string; type?: WarehouseType; externalPartyInfo?: string }) {
+    return this.service.createWarehouse(dto);
+  }
+
+  @Get('warehouses')
+  listWarehouses(@Query('organizationId') organizationId: string) {
+    return this.service.listWarehouses(organizationId);
+  }
+
+  @Get('warehouses/:id/stock')
+  listWarehouseStock(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.listWarehouseStock(id, user.tenantId);
+  }
+
+  @Get('spare-parts/:id/warehouse-stock')
+  listWarehouseStockByPart(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.listWarehouseStockByPart(id, user.tenantId);
+  }
+
+  // ---- 3.4.5 借用件管理 ----
+
+  @Post('loans')
+  createLoan(
+    @CurrentUser() user: AuthContext,
+    @Body() dto: { sparePartId: string; quantity: number; borrowerInfo: string; purposeNote?: string; dueDate?: string },
+  ) {
+    return this.service.createLoan(user.tenantId, dto);
+  }
+
+  @Get('loans')
+  listLoans(@Query('organizationId') organizationId: string) {
+    return this.service.listLoans(organizationId);
+  }
+
+  @Get('loans/overdue')
+  findOverdueLoans(@CurrentUser() user: AuthContext) {
+    return this.service.findOverdueLoans(user.tenantId);
+  }
+
+  @Post('loans/:id/return')
+  returnLoan(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.returnLoan(id, user.tenantId);
+  }
+
+  // ---- 3.4.8 备件检测管理 ----
+
+  @Post('spare-parts/:id/inspections')
+  recordPartInspection(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body() dto: { inspectedAt: string; result?: string; inspectorId?: string; notes?: string },
+  ) {
+    return this.service.recordPartInspection(id, user.tenantId, dto);
+  }
+
+  @Get('spare-parts/:id/inspections')
+  listPartInspections(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.service.listPartInspections(id, user.tenantId);
+  }
+
+  @Get('inspections/due-soon')
+  findPartInspectionsDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.service.findPartInspectionsDueSoon(user.tenantId, Number(withinDays) || 60);
   }
 }

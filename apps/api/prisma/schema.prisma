@@ -181,6 +181,8 @@ model Organization {
   selfReviews          OrganisationalSelfReview[]
   partDemandRequests   PartDemandRequest[]
   stocktakeSessions    StocktakeSession[]
+  warehouses           Warehouse[]
+  partTypeConfigs      PartTypeConfig[]
 
   @@map("organizations")
 }
@@ -971,9 +973,21 @@ model DiscrepancyLog {
 // ============================================================
 
 /// 备件分类 (吸收天津飞安实践, 航空维修最基础的备件分类之一)
-enum PartCategory {
-  CONSUMABLE // 消耗件: 用完即弃, 不跟踪序列号
-  ROTABLE // 周转件: 可维修, 有序列号, 全生命周期跟踪(拆下→送修→测试→复装可复用), 如伺服阀
+/// 备件类型字典配置 (吸收天津飞安实践: 分类应做成机构可自维护的字典表, 而非写死的枚举)。
+/// CONSUMABLE/ROTABLE 两项内置类型(isBuiltIn=true)在机构首次访问时自动懒加载种入, 不可删除但可改label;
+/// 机构可自行追加自定义类型, SparePart.partCategory 存该表的 code (字符串, 不再是Prisma枚举)。
+model PartTypeConfig {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  label          String
+  isBuiltIn      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("part_type_configs")
 }
 
 model SparePart {
@@ -982,11 +996,13 @@ model SparePart {
   partNumber     String
   name           String
   compatibleWith String? // 按配置树关联使用类型, 一期简化为文本描述, 如 "A320 FFS" / "通用"
-  partCategory   PartCategory @default(CONSUMABLE)
+  partCategory   String  @default("CONSUMABLE") // 引用同机构 PartTypeConfig.code, 内置"CONSUMABLE"/"ROTABLE"外机构可自行扩展
   unit           String  @default("pcs")
   minQuantity    Int     @default(0)
   currentQuantity Int    @default(0)
-  location       String?
+  location       String? // 存放位置(仓库货架编号), 区别于 PartMovement.usageLocation(安装使用位置)
+  requiresInspection       Boolean @default(false) // 是否要求入库检测/定期检测 (吸收天津飞安实践: 备件检测区别于tool校准计划)
+  inspectionIntervalMonths Int? // 定期检测间隔月数, requiresInspection=true时生效
   createdAt      DateTime @default(now())
 
   organization      Organization        @relation(fields: [organizationId], references: [id])
@@ -996,9 +1012,85 @@ model SparePart {
   scrapRequests      PartScrapRequest[]
   demandRequests     PartDemandRequest[]
   stocktakeItems     StocktakeItem[]
+  warehouseStocks    WarehouseStock[]
+  loans              PartLoan[]
+  inspectionRecords  PartInspectionRecord[]
 
   @@unique([organizationId, partNumber])
   @@map("spare_parts")
+}
+
+/// 多仓库支持 (吸收天津飞安实践): 区分自有/寄售(备件所有权归供应商)/第三方托管(所有权归本机构但存放于第三方)三种类型
+enum WarehouseType {
+  OWN
+  CONSIGNMENT
+  THIRD_PARTY_MANAGED
+}
+
+model Warehouse {
+  id                String        @id @default(cuid())
+  organizationId    String
+  name              String
+  type              WarehouseType @default(OWN)
+  externalPartyInfo String? // 寄售/托管场景下的对方(供应商/托管方)信息
+  createdAt         DateTime      @default(now())
+
+  organization  Organization     @relation(fields: [organizationId], references: [id])
+  stockBalances WarehouseStock[]
+  movements     PartMovement[]
+
+  @@unique([organizationId, name])
+  @@map("warehouses")
+}
+
+/// 备件按仓库拆分的库存余额明细; SparePart.currentQuantity 仍是权威总量(所有仓库汇总), 未指定仓库的出入库不影响此表
+model WarehouseStock {
+  id          String @id @default(cuid())
+  warehouseId String
+  sparePartId String
+  quantity    Int    @default(0)
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  sparePart SparePart @relation(fields: [sparePartId], references: [id])
+
+  @@unique([warehouseId, sparePartId])
+  @@map("warehouse_stocks")
+}
+
+/// 借用件管理 (吸收天津飞安实践): 对外借出是需跟踪归还的正式库存动作, 独立于普通领用消耗
+model PartLoan {
+  id               String    @id @default(cuid())
+  sparePartId      String
+  quantity         Int
+  borrowerInfo     String // 借用方信息(人员/单位)
+  purposeNote      String?
+  loanedAt         DateTime  @default(now())
+  dueDate          DateTime?
+  returnedAt       DateTime?
+  loanMovementId   String?   @unique // 借出时自动生成的OUT movement
+  returnMovementId String?   @unique // 归还时自动生成的IN movement
+
+  sparePart      SparePart     @relation(fields: [sparePartId], references: [id])
+  loanMovement   PartMovement? @relation("LoanMovement", fields: [loanMovementId], references: [id])
+  returnMovement PartMovement? @relation("ReturnMovement", fields: [returnMovementId], references: [id])
+
+  @@map("part_loans")
+}
+
+/// 备件本身的入库检测/定期检测记录 (吸收天津飞安实践: 区别于Tool的校准计划, 适航性相关备件需独立检验记录)
+model PartInspectionRecord {
+  id          String    @id @default(cuid())
+  sparePartId String
+  inspectedAt DateTime
+  result      String    @default("pass")
+  inspectorId String?
+  nextDueDate DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  sparePart SparePart @relation(fields: [sparePartId], references: [id])
+
+  @@map("part_inspection_records")
 }
 
 enum PartMovementType {
@@ -1014,11 +1106,16 @@ model PartMovement {
   type                PartMovementType
   quantity            Int // ADJUSTMENT 可为负数表示盘亏
   relatedDiscrepancyId String? // 可关联到消耗该备件的缺陷维修记录, 形成"缺陷→领用备件"追溯链 (吸收天津飞安实践)
+  warehouseId         String? // 发生本次出入库的仓库(可选); 提供时同步更新该仓库的WarehouseStock明细
+  usageLocation       String? // 安装使用位置(如"FFS-01视景系统机柜"), 区别于SparePart.location(存放位置/货架编号)
   note                String?
   performedAt         DateTime         @default(now())
 
   sparePart         SparePart        @relation(fields: [sparePartId], references: [id])
   relatedDiscrepancy DiscrepancyLog? @relation(fields: [relatedDiscrepancyId], references: [id])
+  warehouse         Warehouse?       @relation(fields: [warehouseId], references: [id])
+  loanFor           PartLoan?        @relation("LoanMovement")
+  returnFor         PartLoan?        @relation("ReturnMovement")
 
   @@map("part_movements")
 }

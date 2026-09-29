@@ -2,7 +2,8 @@ import { apiClient } from './client'
 
 export type PartMovementType = 'IN' | 'OUT' | 'ADJUSTMENT'
 export type PurchaseOrderStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'RECEIVED' | 'CANCELLED'
-export type PartCategory = 'CONSUMABLE' | 'ROTABLE'
+/// 不再是固定枚举: 内置"CONSUMABLE"/"ROTABLE"外, 机构可通过 PartTypeConfig 字典自行扩展 (吸收天津飞安实践)
+export type PartCategory = string
 
 export interface SparePart {
   id: string
@@ -15,6 +16,8 @@ export interface SparePart {
   minQuantity: number
   currentQuantity: number
   location?: string | null
+  requiresInspection: boolean
+  inspectionIntervalMonths?: number | null
 }
 
 export interface PartMovement {
@@ -24,7 +27,62 @@ export interface PartMovement {
   note?: string | null
   relatedDiscrepancyId?: string | null
   relatedDiscrepancy?: { id: string; description: string; fstd: { id: string; deviceCode: string } } | null
+  warehouseId?: string | null
+  warehouse?: { id: string; name: string } | null
+  usageLocation?: string | null
   performedAt: string
+}
+
+export interface PartTypeConfig {
+  id: string
+  code: string
+  label: string
+  isBuiltIn: boolean
+}
+
+export type WarehouseType = 'OWN' | 'CONSIGNMENT' | 'THIRD_PARTY_MANAGED'
+
+export interface Warehouse {
+  id: string
+  name: string
+  type: WarehouseType
+  externalPartyInfo?: string | null
+}
+
+export interface WarehouseStock {
+  id: string
+  warehouseId: string
+  sparePartId: string
+  quantity: number
+  warehouse?: Warehouse
+  sparePart?: SparePart
+}
+
+export interface PartLoan {
+  id: string
+  sparePart: SparePart
+  quantity: number
+  borrowerInfo: string
+  purposeNote?: string | null
+  loanedAt: string
+  dueDate?: string | null
+  returnedAt?: string | null
+}
+
+export interface PartInspectionRecord {
+  id: string
+  inspectedAt: string
+  result: string
+  inspectorId?: string | null
+  nextDueDate?: string | null
+  notes?: string | null
+}
+
+export interface PartInspectionDueSoonItem {
+  sparePartId: string
+  partNumber: string
+  name: string
+  nextDueDate?: string | null
 }
 
 export interface LowStockItem {
@@ -144,6 +202,8 @@ export const inventoryApi = {
     compatibleWith?: string
     partCategory?: PartCategory
     minQuantity?: number
+    requiresInspection?: boolean
+    inspectionIntervalMonths?: number
   }) => apiClient.post<SparePart>('/inventory/spare-parts', data).then((r) => r.data),
 
   listSpareParts: (organizationId: string) =>
@@ -156,7 +216,14 @@ export const inventoryApi = {
 
   recordMovement: (
     sparePartId: string,
-    data: { type: PartMovementType; quantity: number; note?: string; relatedDiscrepancyId?: string },
+    data: {
+      type: PartMovementType
+      quantity: number
+      note?: string
+      relatedDiscrepancyId?: string
+      warehouseId?: string
+      usageLocation?: string
+    },
   ) => apiClient.post<PartMovement>(`/inventory/spare-parts/${sparePartId}/movements`, data).then((r) => r.data),
 
   listMovementsByDiscrepancy: (discrepancyId: string) =>
@@ -260,4 +327,54 @@ export const inventoryApi = {
 
   reconcileStocktake: (id: string, reconciledById?: string) =>
     apiClient.post<StocktakeSession>(`/inventory/stocktakes/${id}/reconcile`, { reconciledById }).then((r) => r.data),
+
+  // 备件信息配置字典
+  listPartTypeConfigs: (organizationId: string) =>
+    apiClient.get<PartTypeConfig[]>('/inventory/part-type-configs', { params: { organizationId } }).then((r) => r.data),
+
+  createPartTypeConfig: (data: { organizationId: string; code: string; label: string }) =>
+    apiClient.post<PartTypeConfig>('/inventory/part-type-configs', data).then((r) => r.data),
+
+  updatePartTypeConfigLabel: (id: string, label: string) =>
+    apiClient.post<PartTypeConfig>(`/inventory/part-type-configs/${id}`, { label }).then((r) => r.data),
+
+  deletePartTypeConfig: (id: string) =>
+    apiClient.post<{ success: boolean }>(`/inventory/part-type-configs/${id}/delete`).then((r) => r.data),
+
+  // 多仓库
+  createWarehouse: (data: { organizationId: string; name: string; type?: WarehouseType; externalPartyInfo?: string }) =>
+    apiClient.post<Warehouse>('/inventory/warehouses', data).then((r) => r.data),
+
+  listWarehouses: (organizationId: string) =>
+    apiClient.get<Warehouse[]>('/inventory/warehouses', { params: { organizationId } }).then((r) => r.data),
+
+  listWarehouseStock: (warehouseId: string) =>
+    apiClient.get<WarehouseStock[]>(`/inventory/warehouses/${warehouseId}/stock`).then((r) => r.data),
+
+  listWarehouseStockByPart: (sparePartId: string) =>
+    apiClient.get<WarehouseStock[]>(`/inventory/spare-parts/${sparePartId}/warehouse-stock`).then((r) => r.data),
+
+  // 借用件管理
+  createLoan: (data: { sparePartId: string; quantity: number; borrowerInfo: string; purposeNote?: string; dueDate?: string }) =>
+    apiClient.post<PartLoan>('/inventory/loans', data).then((r) => r.data),
+
+  listLoans: (organizationId: string) => apiClient.get<PartLoan[]>('/inventory/loans', { params: { organizationId } }).then((r) => r.data),
+
+  findOverdueLoans: () => apiClient.get<PartLoan[]>('/inventory/loans/overdue').then((r) => r.data),
+
+  returnLoan: (id: string) => apiClient.post<PartLoan>(`/inventory/loans/${id}/return`).then((r) => r.data),
+
+  // 备件检测管理
+  recordPartInspection: (
+    sparePartId: string,
+    data: { inspectedAt: string; result?: string; inspectorId?: string; notes?: string },
+  ) => apiClient.post<PartInspectionRecord>(`/inventory/spare-parts/${sparePartId}/inspections`, data).then((r) => r.data),
+
+  listPartInspections: (sparePartId: string) =>
+    apiClient.get<PartInspectionRecord[]>(`/inventory/spare-parts/${sparePartId}/inspections`).then((r) => r.data),
+
+  findPartInspectionsDueSoon: (withinDays = 60) =>
+    apiClient
+      .get<PartInspectionDueSoonItem[]>('/inventory/inspections/due-soon', { params: { withinDays } })
+      .then((r) => r.data),
 }

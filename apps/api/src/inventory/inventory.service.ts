@@ -2,10 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   DemandRequestStatus,
   FaultyPartStatus,
-  PartCategory,
   PartMovementType,
+  Prisma,
   PurchaseOrderStatus,
   ScrapRequestStatus,
+  WarehouseType,
 } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -25,17 +26,24 @@ export class InventoryService {
     return part;
   }
 
-  createSparePart(data: {
+  async createSparePart(data: {
     organizationId: string;
     partNumber: string;
     name: string;
     compatibleWith?: string;
-    partCategory?: PartCategory;
+    partCategory?: string;
     unit?: string;
     minQuantity?: number;
     location?: string;
+    requiresInspection?: boolean;
+    inspectionIntervalMonths?: number;
   }) {
-    return this.prisma.sparePart.create({ data });
+    const configs = await this.listPartTypeConfigs(data.organizationId);
+    const partCategory = data.partCategory ?? 'CONSUMABLE';
+    if (!configs.some((c) => c.code === partCategory)) {
+      throw new BadRequestException(`未知的备件分类 "${partCategory}", 请先在备件信息配置中添加该分类`);
+    }
+    return this.prisma.sparePart.create({ data: { ...data, partCategory } });
   }
 
   listSpareParts(organizationId: string) {
@@ -57,7 +65,14 @@ export class InventoryService {
   async recordMovement(
     sparePartId: string,
     tenantId: string,
-    data: { type: PartMovementType; quantity: number; note?: string; relatedDiscrepancyId?: string },
+    data: {
+      type: PartMovementType;
+      quantity: number;
+      note?: string;
+      relatedDiscrepancyId?: string;
+      warehouseId?: string;
+      usageLocation?: string;
+    },
   ) {
     const part = await this.findSparePartOrThrow(sparePartId, tenantId);
     if (data.quantity <= 0 && data.type !== PartMovementType.ADJUSTMENT) {
@@ -74,13 +89,20 @@ export class InventoryService {
       }
     }
 
+    if (data.warehouseId) {
+      const warehouse = await this.findWarehouseOrThrow(data.warehouseId, tenantId);
+      if (warehouse.organizationId !== part.organizationId) {
+        throw new BadRequestException(`Warehouse ${data.warehouseId} 不属于该备件所在机构`);
+      }
+    }
+
     const delta = data.type === PartMovementType.OUT ? -Math.abs(data.quantity) : data.quantity;
     const newQuantity = part.currentQuantity + delta;
     if (newQuantity < 0) {
       throw new BadRequestException(`库存不足: 当前 ${part.currentQuantity}, 无法出库 ${Math.abs(delta)}`);
     }
 
-    const [movement] = await this.prisma.$transaction([
+    const ops: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.partMovement.create({
         data: {
           sparePartId,
@@ -88,12 +110,24 @@ export class InventoryService {
           quantity: data.quantity,
           note: data.note,
           relatedDiscrepancyId: data.relatedDiscrepancyId,
+          warehouseId: data.warehouseId,
+          usageLocation: data.usageLocation,
         },
-        include: { relatedDiscrepancy: { include: { fstd: true } } },
+        include: { relatedDiscrepancy: { include: { fstd: true } }, warehouse: true },
       }),
       this.prisma.sparePart.update({ where: { id: sparePartId }, data: { currentQuantity: newQuantity } }),
-    ]);
-    return movement;
+    ];
+    if (data.warehouseId) {
+      ops.push(
+        this.prisma.warehouseStock.upsert({
+          where: { warehouseId_sparePartId: { warehouseId: data.warehouseId, sparePartId } },
+          create: { warehouseId: data.warehouseId, sparePartId, quantity: delta },
+          update: { quantity: { increment: delta } },
+        }),
+      );
+    }
+    const results = await this.prisma.$transaction(ops);
+    return results[0] as Prisma.PartMovementGetPayload<{ include: { relatedDiscrepancy: { include: { fstd: true } }; warehouse: true } }>;
   }
 
   /// 某条缺陷记录关联的所有备件领用记录 (供FSTD缺陷详情页展示"配件领用记录", 反向查询)
@@ -632,5 +666,214 @@ export class InventoryService {
     const updated = await this.findStocktakeSessionOrThrow(id, tenantId);
     await this.auditLog.write(tenantId, 'StocktakeSession', id, 'reconcile', session, updated);
     return updated;
+  }
+
+  // ==================== 3.4.10 备件信息配置字典表 (吸收天津飞安实践) ====================
+
+  private readonly BUILT_IN_PART_TYPES = [
+    { code: 'CONSUMABLE', label: '消耗件' },
+    { code: 'ROTABLE', label: '周转件' },
+  ];
+
+  /// 内置的消耗件/周转件类型在机构首次访问时懒加载种入, 避免额外的组织创建钩子/数据迁移
+  async listPartTypeConfigs(organizationId: string) {
+    const existing = await this.prisma.partTypeConfig.findMany({ where: { organizationId }, orderBy: { createdAt: 'asc' } });
+    if (existing.length > 0) return existing;
+    await this.prisma.partTypeConfig.createMany({
+      data: this.BUILT_IN_PART_TYPES.map((t) => ({ organizationId, code: t.code, label: t.label, isBuiltIn: true })),
+    });
+    return this.prisma.partTypeConfig.findMany({ where: { organizationId }, orderBy: { createdAt: 'asc' } });
+  }
+
+  async createPartTypeConfig(tenantId: string, data: { organizationId: string; code: string; label: string }) {
+    await this.listPartTypeConfigs(data.organizationId); // 确保内置类型已种入, 避免自定义类型先于内置类型出现在字典里
+    const config = await this.prisma.partTypeConfig.create({
+      data: { organizationId: data.organizationId, code: data.code, label: data.label, isBuiltIn: false },
+    });
+    await this.auditLog.write(tenantId, 'PartTypeConfig', config.id, 'create', null, config);
+    return config;
+  }
+
+  private async findPartTypeConfigOrThrow(id: string, tenantId: string) {
+    const config = await this.prisma.partTypeConfig.findUnique({ where: { id }, include: { organization: true } });
+    if (!config || config.organization.tenantId !== tenantId) throw new NotFoundException(`PartTypeConfig ${id} not found`);
+    return config;
+  }
+
+  async updatePartTypeConfigLabel(id: string, tenantId: string, label: string) {
+    const config = await this.findPartTypeConfigOrThrow(id, tenantId);
+    const updated = await this.prisma.partTypeConfig.update({ where: { id }, data: { label } });
+    await this.auditLog.write(tenantId, 'PartTypeConfig', id, 'update', config, updated);
+    return updated;
+  }
+
+  /// 内置类型(isBuiltIn=true)不可删除(可改label); 仍被备件引用的分类也不可删除
+  async deletePartTypeConfig(id: string, tenantId: string) {
+    const config = await this.findPartTypeConfigOrThrow(id, tenantId);
+    if (config.isBuiltIn) throw new BadRequestException('内置分类不可删除, 如需调整可编辑显示名称');
+    const inUse = await this.prisma.sparePart.count({
+      where: { organizationId: config.organizationId, partCategory: config.code },
+    });
+    if (inUse > 0) throw new BadRequestException(`仍有 ${inUse} 项备件使用该分类, 不能删除`);
+    await this.prisma.partTypeConfig.delete({ where: { id } });
+    await this.auditLog.write(tenantId, 'PartTypeConfig', id, 'delete', config, null);
+    return { success: true };
+  }
+
+  // ==================== 3.4.3 多仓库 + 寄售/托管库房 (吸收天津飞安实践) ====================
+
+  createWarehouse(data: { organizationId: string; name: string; type?: WarehouseType; externalPartyInfo?: string }) {
+    return this.prisma.warehouse.create({ data });
+  }
+
+  listWarehouses(organizationId: string) {
+    return this.prisma.warehouse.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+  }
+
+  private async findWarehouseOrThrow(id: string, tenantId: string) {
+    const warehouse = await this.prisma.warehouse.findUnique({ where: { id }, include: { organization: true } });
+    if (!warehouse || warehouse.organization.tenantId !== tenantId) throw new NotFoundException(`Warehouse ${id} not found`);
+    return warehouse;
+  }
+
+  /// 某仓库内各备件的库存余额明细 (WarehouseStock是拆分视图, SparePart.currentQuantity仍是权威总量)
+  async listWarehouseStock(warehouseId: string, tenantId: string) {
+    await this.findWarehouseOrThrow(warehouseId, tenantId);
+    return this.prisma.warehouseStock.findMany({ where: { warehouseId }, include: { sparePart: true } });
+  }
+
+  /// 某备件按仓库拆分的库存分布 (供备件详情展示"分布在哪些仓库")
+  async listWarehouseStockByPart(sparePartId: string, tenantId: string) {
+    await this.findSparePartOrThrow(sparePartId, tenantId);
+    return this.prisma.warehouseStock.findMany({ where: { sparePartId }, include: { warehouse: true } });
+  }
+
+  // ==================== 3.4.5 借用件管理 (吸收天津飞安实践) ====================
+
+  /// 借出是需跟踪归还的正式库存动作: 立即生成OUT movement扣减库存, 与普通领用消耗(out_purpose)独立建表而非加状态维度
+  async createLoan(
+    tenantId: string,
+    data: { sparePartId: string; quantity: number; borrowerInfo: string; purposeNote?: string; dueDate?: string },
+  ) {
+    const part = await this.findSparePartOrThrow(data.sparePartId, tenantId);
+    if (data.quantity <= 0) throw new BadRequestException('quantity 必须为正数');
+    if (data.quantity > part.currentQuantity) {
+      throw new BadRequestException(`库存不足: 当前 ${part.currentQuantity}, 无法借出 ${data.quantity}`);
+    }
+
+    const [movement] = await this.prisma.$transaction([
+      this.prisma.partMovement.create({
+        data: {
+          sparePartId: data.sparePartId,
+          type: PartMovementType.OUT,
+          quantity: data.quantity,
+          note: `借用出库 (借用方: ${data.borrowerInfo})`,
+        },
+      }),
+      this.prisma.sparePart.update({ where: { id: data.sparePartId }, data: { currentQuantity: { decrement: data.quantity } } }),
+    ]);
+    const loan = await this.prisma.partLoan.create({
+      data: {
+        sparePartId: data.sparePartId,
+        quantity: data.quantity,
+        borrowerInfo: data.borrowerInfo,
+        purposeNote: data.purposeNote,
+        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        loanMovementId: movement.id,
+      },
+      include: { sparePart: true },
+    });
+    await this.auditLog.write(tenantId, 'PartLoan', loan.id, 'create', null, loan);
+    return loan;
+  }
+
+  listLoans(organizationId: string) {
+    return this.prisma.partLoan.findMany({
+      where: { sparePart: { organizationId } },
+      include: { sparePart: true },
+      orderBy: { loanedAt: 'desc' },
+    });
+  }
+
+  private async findLoanOrThrow(id: string, tenantId: string) {
+    const loan = await this.prisma.partLoan.findUnique({
+      where: { id },
+      include: { sparePart: { include: { organization: true } } },
+    });
+    if (!loan || loan.sparePart.organization.tenantId !== tenantId) throw new NotFoundException(`PartLoan ${id} not found`);
+    return loan;
+  }
+
+  async returnLoan(id: string, tenantId: string) {
+    const loan = await this.findLoanOrThrow(id, tenantId);
+    if (loan.returnedAt) throw new BadRequestException('该借用记录已归还');
+
+    const [movement] = await this.prisma.$transaction([
+      this.prisma.partMovement.create({
+        data: { sparePartId: loan.sparePartId, type: PartMovementType.IN, quantity: loan.quantity, note: `借用归还 (PartLoan ${id})` },
+      }),
+      this.prisma.sparePart.update({ where: { id: loan.sparePartId }, data: { currentQuantity: { increment: loan.quantity } } }),
+    ]);
+    const updated = await this.prisma.partLoan.update({
+      where: { id },
+      data: { returnedAt: new Date(), returnMovementId: movement.id },
+      include: { sparePart: true },
+    });
+    await this.auditLog.write(tenantId, 'PartLoan', id, 'return', loan, updated);
+    return updated;
+  }
+
+  /// 已逾期未归还的借用件 (镜像其余到期类告警的统一模式)
+  async findOverdueLoans(tenantId: string) {
+    return this.prisma.partLoan.findMany({
+      where: { returnedAt: null, dueDate: { lt: new Date() }, sparePart: { organization: { tenantId } } },
+      include: { sparePart: true },
+      orderBy: { dueDate: 'asc' },
+    });
+  }
+
+  // ==================== 3.4.8 备件检测管理 (吸收天津飞安实践) ====================
+
+  async recordPartInspection(
+    sparePartId: string,
+    tenantId: string,
+    data: { inspectedAt: string; result?: string; inspectorId?: string; notes?: string },
+  ) {
+    const part = await this.findSparePartOrThrow(sparePartId, tenantId);
+    const inspectedAt = new Date(data.inspectedAt);
+    let nextDueDate: Date | undefined;
+    if (part.requiresInspection && part.inspectionIntervalMonths) {
+      nextDueDate = new Date(inspectedAt);
+      nextDueDate.setMonth(nextDueDate.getMonth() + part.inspectionIntervalMonths);
+    }
+    return this.prisma.partInspectionRecord.create({
+      data: { sparePartId, inspectedAt, result: data.result ?? 'pass', inspectorId: data.inspectorId, notes: data.notes, nextDueDate },
+    });
+  }
+
+  async listPartInspections(sparePartId: string, tenantId: string) {
+    await this.findSparePartOrThrow(sparePartId, tenantId);
+    return this.prisma.partInspectionRecord.findMany({ where: { sparePartId }, orderBy: { inspectedAt: 'desc' } });
+  }
+
+  /// 要求定期检测(requiresInspection=true)且即将到期/已过期/从未检测过的备件 (镜像 Tool 校准到期检查的模式)
+  async findPartInspectionsDueSoon(tenantId: string, withinDays = 60) {
+    const parts = await this.prisma.sparePart.findMany({
+      where: { organization: { tenantId }, requiresInspection: true },
+      include: { inspectionRecords: { orderBy: { inspectedAt: 'desc' }, take: 1 } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return parts
+      .filter((p) => {
+        const latest = p.inspectionRecords[0];
+        return !latest || (latest.nextDueDate && latest.nextDueDate <= cutoff);
+      })
+      .map((p) => ({
+        sparePartId: p.id,
+        partNumber: p.partNumber,
+        name: p.name,
+        nextDueDate: p.inspectionRecords[0]?.nextDueDate ?? null,
+      }));
   }
 }
