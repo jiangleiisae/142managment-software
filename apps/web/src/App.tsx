@@ -6,6 +6,7 @@ import { AuditLogPage } from './pages/AuditLogPage'
 import { BookingsPage } from './pages/BookingsPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
+import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { IsmsPage } from './pages/IsmsPage'
 import { KioskPage } from './pages/KioskPage'
@@ -57,6 +58,8 @@ function App() {
           <Route element={<PermissionRoute permission="ISMS" />}>
             <Route path="/isms" element={<IsmsPage />} />
           </Route>
+          {/* 帮助页面向所有登录账户开放, 不受模块权限限制 */}
+          <Route path="/help" element={<HelpPage />} />
           <Route element={<AdminOnlyRoute />}>
             <Route path="/users" element={<UsersPage />} />
             <Route path="/audit-logs" element={<AuditLogPage />} />

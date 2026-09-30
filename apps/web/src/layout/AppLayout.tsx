@@ -8,6 +8,7 @@ import {
   InboxOutlined,
   LockOutlined,
   LogoutOutlined,
+  QuestionCircleOutlined,
   RocketOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -83,6 +84,12 @@ export function AppLayout() {
           </Typography.Text>
           <Space size="large">
             <NotificationBell />
+            <Button
+              type="text"
+              icon={<QuestionCircleOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate('/help')}
+              aria-label="使用说明"
+            />
             <Typography.Text type="secondary">
               {user?.email} ({user?.role})
             </Typography.Text>
