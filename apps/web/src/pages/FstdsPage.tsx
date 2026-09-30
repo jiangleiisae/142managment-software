@@ -1,4 +1,4 @@
-import { DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload, message } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -11,6 +11,10 @@ import type {
   FcsFidelityLevel,
   FstdFcsCapability,
   PerformanceMetricsSummary,
+  PmChecklistTemplate,
+  PmCheckLevel,
+  PmTask,
+  PmTaskDueSoonItem,
   QtgDocument,
   QtgDocumentType,
   QuarterlyQtgIssue,
@@ -37,6 +41,19 @@ const RETENTION_CATEGORY_LABEL: Record<RetentionCategory, { text: string; color:
   CATEGORY_III: { text: 'Category III (可长期保留)', color: 'gold' },
 }
 
+const PM_CHECK_LEVELS: PmCheckLevel[] = ['WEEKLY', 'MONTHLY', 'SEMI_ANNUAL', 'ANNUAL']
+const PM_CHECK_LEVEL_LABEL: Record<PmCheckLevel, string> = {
+  WEEKLY: '周检',
+  MONTHLY: '月检',
+  SEMI_ANNUAL: '半年检',
+  ANNUAL: '年检',
+}
+const PM_TASK_STATUS_LABEL: Record<PmTask['status'], { text: string; color: string }> = {
+  PENDING_REVIEW: { text: '待审核', color: 'orange' },
+  APPROVED: { text: '审核通过', color: 'green' },
+  REJECTED: { text: '审核不通过', color: 'red' },
+}
+
 const DEVICE_TYPES: FstdDeviceType[] = ['FFS', 'FTD', 'FNPT', 'BITD']
 const SAFETY_CHECK_ITEMS = ['急停按钮', '应急照明', '灭火器', '舱内通讯系统']
 const QTG_DOCUMENT_TYPES: QtgDocumentType[] = ['SOC', 'VDR', 'MQTG']
@@ -59,6 +76,7 @@ interface FstdDetail extends Fstd {
   fcsCapabilities?: FstdFcsCapability[]
   eslLists?: EquipmentSpecificationList[]
   performanceMetrics?: PerformanceMetricsSummary
+  pmTasks?: PmTask[]
 }
 
 type EslEntryState = Record<FcsCharacteristic, { fidelityLevel?: FcsFidelityLevel; equipmentDescription: string; limitations: string }>
@@ -97,6 +115,12 @@ export function FstdsPage() {
   const [eslEntryState, setEslEntryState] = useState<EslEntryState>(emptyEslEntryState())
   const [eslDeclareModalId, setEslDeclareModalId] = useState<string>()
   const [perfMetricModalFstdId, setPerfMetricModalFstdId] = useState<string>()
+  const [pmTemplates, setPmTemplates] = useState<PmChecklistTemplate[]>([])
+  const [pmDueSoon, setPmDueSoon] = useState<PmTaskDueSoonItem[]>([])
+  const [pmTemplateModalOpen, setPmTemplateModalOpen] = useState(false)
+  const [pmTaskModalFstdId, setPmTaskModalFstdId] = useState<string>()
+  const [pmTaskLevel, setPmTaskLevel] = useState<PmCheckLevel>()
+  const [pmReviewModal, setPmReviewModal] = useState<PmTask>()
 
   const [form] = Form.useForm()
   const [evalForm] = Form.useForm()
@@ -112,6 +136,9 @@ export function FstdsPage() {
   const [eslForm] = Form.useForm()
   const [eslDeclareForm] = Form.useForm()
   const [perfMetricForm] = Form.useForm()
+  const [pmTemplateForm] = Form.useForm()
+  const [pmTaskForm] = Form.useForm()
+  const [pmReviewForm] = Form.useForm()
 
   const load = async () => {
     if (!selectedId) return
@@ -129,6 +156,7 @@ export function FstdsPage() {
           fcsCapabilities: await fstdsApi.listFcsCapabilities(f.id),
           eslLists: await fstdsApi.listEsls(f.id),
           performanceMetrics: await fstdsApi.getPerformanceMetrics(f.id),
+          pmTasks: await fstdsApi.listPmTasks(f.id),
         })),
       )
       setFstds(detailed)
@@ -139,6 +167,8 @@ export function FstdsPage() {
     fstdsApi.findOverdueDiscrepancies().then(setOverdueDiscrepancies)
     fstdsApi.findSafetyChecksDueSoon().then(setSafetyCheckDueSoon)
     fstdsApi.findQuarterlyQtgIssues().then(setQtgIssues)
+    fstdsApi.listPmChecklistTemplates(selectedId).then(setPmTemplates)
+    fstdsApi.findPmTasksDueSoon().then(setPmDueSoon)
   }
 
   useEffect(() => {
@@ -312,6 +342,58 @@ export function FstdsPage() {
     fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
   }
 
+  const handleSetPmTemplate = async () => {
+    if (!selectedId) return
+    const values = await pmTemplateForm.validateFields()
+    const itemsJson = (values.items as { item: string }[]).filter((i) => i?.item)
+    await fstdsApi.setPmChecklistTemplate({ organizationId: selectedId, level: values.level, itemsJson })
+    message.success('检查单模板已保存')
+    setPmTemplateModalOpen(false)
+    pmTemplateForm.resetFields()
+    load()
+  }
+
+  const openPmTaskModal = (fstdId: string) => {
+    pmTaskForm.resetFields()
+    setPmTaskLevel(undefined)
+    setPmTaskModalFstdId(fstdId)
+  }
+
+  const handleCreatePmTask = async () => {
+    if (!pmTaskModalFstdId) return
+    const values = await pmTaskForm.validateFields()
+    try {
+      await fstdsApi.createPmTask(pmTaskModalFstdId, {
+        level: values.level,
+        taskDate: values.taskDate.format('YYYY-MM-DD'),
+        performedById: values.performedById,
+        responsibleIds: values.responsibleIds ?? [],
+        itemResultsJson: (values.items as { item: string; passed: boolean; notes?: string }[]) ?? [],
+      })
+      message.success('PM任务已登记, 待审核')
+      setPmTaskModalFstdId(undefined)
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
+  const handleReviewPmTask = async (approve: boolean) => {
+    if (!pmReviewModal) return
+    const values = await pmReviewForm.validateFields()
+    try {
+      await fstdsApi.reviewPmTask(pmReviewModal.id, { approve, reviewedById: values.reviewedById, reviewNotes: values.reviewNotes })
+      message.success(approve ? '已审核通过' : '已标记为审核不通过')
+      setPmReviewModal(undefined)
+      pmReviewForm.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '操作失败')
+    }
+  }
+
   const openEslModal = (fstd: FstdDetail) => {
     const state = emptyEslEntryState()
     if (fstd.qualificationBasisType === 'EASA_FCS') {
@@ -406,6 +488,43 @@ export function FstdsPage() {
         <Empty description="请先创建并选择一个机构" />
       ) : (
         <>
+          <div style={{ marginBottom: 16 }}>
+            <Space style={{ marginBottom: 8 }}>
+              <span style={{ fontWeight: 600 }}>常规维护(PM)检查单模板 (3.3.10, AMC1 ORA.FSTD.105(a)(1), 机构范围配置)</span>
+              <Button
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  pmTemplateForm.resetFields()
+                  setPmTemplateModalOpen(true)
+                }}
+              >
+                配置模板
+              </Button>
+            </Space>
+            <Table<PmChecklistTemplate>
+              rowKey="id"
+              size="small"
+              dataSource={pmTemplates}
+              pagination={false}
+              locale={{ emptyText: '尚未配置任何层级的检查单模板' }}
+              columns={[
+                { title: '层级', dataIndex: 'level', render: (v: PmCheckLevel) => <Tag>{PM_CHECK_LEVEL_LABEL[v]}</Tag> },
+                { title: '检查项', render: (_, t) => t.itemsJson.map((i) => i.item).join('、') },
+                { title: '更新时间', dataIndex: 'updatedAt', render: (v: string) => new Date(v).toLocaleString() },
+              ]}
+            />
+          </div>
+
+          {pmDueSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={`有 ${pmDueSoon.length} 项常规维护(PM)任务即将到期或从未执行过 (3.3.10)`}
+              description={pmDueSoon.map((d) => `${d.deviceCode}(${PM_CHECK_LEVEL_LABEL[d.level]})`).join('、')}
+            />
+          )}
           {dueSoon.length > 0 && (
             <Alert
               style={{ marginBottom: 16 }}
@@ -744,6 +863,59 @@ export function FstdsPage() {
                     )}}
                   />
                   <List
+                    header={
+                      <Space>
+                        常规维护(PM)记录 (3.3.10, 执行→审核两阶段签署)
+                        <Button size="small" onClick={() => openPmTaskModal(fstd.id)} disabled={pmTemplates.length === 0}>
+                          登记PM任务
+                        </Button>
+                      </Space>
+                    }
+                    size="small"
+                    dataSource={fstd.pmTasks ?? []}
+                    locale={{ emptyText: pmTemplates.length === 0 ? '请先在上方配置检查单模板' : '尚未登记任何PM任务' }}
+                    renderItem={(t) => (
+                      <List.Item
+                        actions={
+                          t.status === 'PENDING_REVIEW'
+                            ? [
+                                <Button
+                                  key="review"
+                                  size="small"
+                                  type="primary"
+                                  onClick={() => {
+                                    pmReviewForm.resetFields()
+                                    setPmReviewModal(t)
+                                  }}
+                                >
+                                  审核
+                                </Button>,
+                              ]
+                            : []
+                        }
+                      >
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Space wrap>
+                            <Tag>{PM_CHECK_LEVEL_LABEL[t.level]}</Tag>
+                            <Tag color={PM_TASK_STATUS_LABEL[t.status].color}>{PM_TASK_STATUS_LABEL[t.status].text}</Tag>
+                            {t.itemResultsJson
+                              .filter((i) => !i.passed)
+                              .map((i, idx) => (
+                                <Tag key={idx} color="red">
+                                  {i.item}: {i.notes || '不合格'}
+                                </Tag>
+                              ))}
+                          </Space>
+                          <span style={{ color: '#888', fontSize: 12 }}>
+                            任务日期 {new Date(t.taskDate).toLocaleDateString()}
+                            {t.reviewedAt ? ` | 审核于 ${new Date(t.reviewedAt).toLocaleString()}` : ''}
+                            {t.reviewNotes ? ` | 审核意见: ${t.reviewNotes}` : ''}
+                          </span>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                  <List
                     header="安全设施年检记录 (3.3.8, 标准周期12个月)"
                     size="small"
                     dataSource={fstd.safetyChecks ?? []}
@@ -991,6 +1163,116 @@ export function FstdsPage() {
           </Form.Item>
           <Form.Item name="expiresAt" label="有效期至 (可选, 不填则长期有效直至手动取消)">
             <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="配置常规维护(PM)检查单模板"
+        open={pmTemplateModalOpen}
+        onOk={handleSetPmTemplate}
+        onCancel={() => setPmTemplateModalOpen(false)}
+        width={600}
+      >
+        <Form form={pmTemplateForm} layout="vertical">
+          <Form.Item name="level" label="层级" rules={[{ required: true }]}>
+            <Select options={PM_CHECK_LEVELS.map((l) => ({ value: l, label: PM_CHECK_LEVEL_LABEL[l] }))} />
+          </Form.Item>
+          <Form.List name="items" initialValue={[{ item: '' }]}>
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((field) => (
+                  <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                    <Form.Item name={[field.name, 'item']} rules={[{ required: true, message: '检查项内容' }]}>
+                      <Input placeholder="如: 检查刹车片磨损" style={{ width: 400 }} />
+                    </Form.Item>
+                    <DeleteOutlined onClick={() => remove(field.name)} />
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>
+                  添加检查项
+                </Button>
+              </>
+            )}
+          </Form.List>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="登记PM任务"
+        open={!!pmTaskModalFstdId}
+        onOk={handleCreatePmTask}
+        onCancel={() => setPmTaskModalFstdId(undefined)}
+        width={600}
+      >
+        <Form form={pmTaskForm} layout="vertical" initialValues={{ taskDate: dayjs() }}>
+          <Form.Item name="level" label="层级" rules={[{ required: true }]}>
+            <Select
+              options={pmTemplates.map((t) => ({ value: t.level, label: PM_CHECK_LEVEL_LABEL[t.level] }))}
+              onChange={(level: PmCheckLevel) => {
+                setPmTaskLevel(level)
+                const template = pmTemplates.find((t) => t.level === level)
+                pmTaskForm.setFieldsValue({
+                  items: (template?.itemsJson ?? []).map((i) => ({ item: i.item, passed: true, notes: '' })),
+                })
+              }}
+            />
+          </Form.Item>
+          <Form.Item name="taskDate" label="任务日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="performedById" label="执行人">
+            <Select allowClear options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+          <Form.Item name="responsibleIds" label="责任人 (可多选)">
+            <Select mode="multiple" options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+          {pmTaskLevel && (
+            <Form.List name="items">
+              {(fields) => (
+                <>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }} wrap>
+                      <Form.Item noStyle shouldUpdate>
+                        {({ getFieldValue }) => <span>{getFieldValue(['items', field.name, 'item'])}</span>}
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'passed']} valuePropName="checked" noStyle>
+                        <Switch checkedChildren="合格" unCheckedChildren="不合格" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'notes']} noStyle>
+                        <Input placeholder="备注(不合格时说明情况)" style={{ width: 220 }} />
+                      </Form.Item>
+                    </Space>
+                  ))}
+                </>
+              )}
+            </Form.List>
+          )}
+        </Form>
+      </Modal>
+
+      <Modal
+        title="审核PM任务"
+        open={!!pmReviewModal}
+        onCancel={() => setPmReviewModal(undefined)}
+        footer={
+          <Space>
+            <Button onClick={() => setPmReviewModal(undefined)}>Cancel</Button>
+            <Button danger onClick={() => handleReviewPmTask(false)}>
+              审核不通过
+            </Button>
+            <Button type="primary" onClick={() => handleReviewPmTask(true)}>
+              审核通过
+            </Button>
+          </Space>
+        }
+      >
+        <Form form={pmReviewForm} layout="vertical">
+          <Form.Item name="reviewedById" label="审核人 (须与执行人不同)" rules={[{ required: true }]}>
+            <Select options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+          <Form.Item name="reviewNotes" label="审核意见">
+            <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>

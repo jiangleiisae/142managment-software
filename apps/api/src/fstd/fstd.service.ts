@@ -5,6 +5,8 @@ import {
   FstdDeviceType,
   FstdQualificationBasisType,
   LegacyLevel,
+  PmCheckLevel,
+  PmTaskStatus,
   QtgDocumentType,
   RetentionCategory,
 } from '@prisma/client';
@@ -823,4 +825,140 @@ export class FstdService {
   }
 
   // 3.3.6 变更管理已迁移至通用 /change-requests 接口 (entityType=Fstd), 见 change-management 模块
+
+  // ==================== 3.3.10 常规维护(PM)排期 (吸收天津飞安实践) ====================
+  // 独立于3.3.4 QTG(按季度滚动)和3.3.5周期性评估(按年/三年)的第三套周期性机制,
+  // 服务于机构内部更高频的日常维护节奏, 与3.3.7缺陷处理共享"设备技术记录"入口。
+
+  private computePmNextDueDate(level: PmCheckLevel, from: Date): Date {
+    const next = new Date(from);
+    switch (level) {
+      case PmCheckLevel.WEEKLY:
+        next.setDate(next.getDate() + 7);
+        break;
+      case PmCheckLevel.MONTHLY:
+        next.setMonth(next.getMonth() + 1);
+        break;
+      case PmCheckLevel.SEMI_ANNUAL:
+        next.setMonth(next.getMonth() + 6);
+        break;
+      case PmCheckLevel.ANNUAL:
+        next.setMonth(next.getMonth() + 12);
+        break;
+    }
+    return next;
+  }
+
+  /// 每层级对应一套可配置检查单模板(而非硬编码检查项), 每机构每层级一套, 按level upsert
+  async setPmChecklistTemplate(organizationId: string, tenantId: string, data: { level: PmCheckLevel; itemsJson: { item: string }[] }) {
+    const before = await this.prisma.pmChecklistTemplate.findUnique({
+      where: { organizationId_level: { organizationId, level: data.level } },
+    });
+    const template = await this.prisma.pmChecklistTemplate.upsert({
+      where: { organizationId_level: { organizationId, level: data.level } },
+      create: { organizationId, level: data.level, itemsJson: data.itemsJson },
+      update: { itemsJson: data.itemsJson },
+    });
+    await this.auditLog.write(tenantId, 'PmChecklistTemplate', template.id, before ? 'update' : 'create', before, template);
+    return template;
+  }
+
+  listPmChecklistTemplates(organizationId: string) {
+    return this.prisma.pmChecklistTemplate.findMany({ where: { organizationId }, orderBy: { level: 'asc' } });
+  }
+
+  /// 执行阶段: 执行人逐项登记检查结果, 进入PENDING_REVIEW等待审核 (须已为该层级配置检查单模板)
+  async createPmTask(
+    fstdId: string,
+    tenantId: string,
+    data: {
+      level: PmCheckLevel;
+      taskDate: string;
+      performedById?: string;
+      responsibleIds?: string[];
+      itemResultsJson: { item: string; passed: boolean; notes?: string }[];
+    },
+  ) {
+    const fstd = await this.findFstdOrThrow(fstdId, tenantId);
+    const template = await this.prisma.pmChecklistTemplate.findUnique({
+      where: { organizationId_level: { organizationId: fstd.organizationId, level: data.level } },
+    });
+    if (!template) {
+      throw new BadRequestException(`该机构尚未配置 ${data.level} 层级的检查单模板, 请先配置后再登记任务`);
+    }
+    const task = await this.prisma.pmTask.create({
+      data: {
+        fstdId,
+        checklistTemplateId: template.id,
+        level: data.level,
+        taskDate: new Date(data.taskDate),
+        performedById: data.performedById,
+        responsibleIds: data.responsibleIds ?? [],
+        itemResultsJson: data.itemResultsJson,
+      },
+    });
+    await this.auditLog.write(tenantId, 'PmTask', task.id, 'create', null, task);
+    return task;
+  }
+
+  async listPmTasks(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.pmTask.findMany({ where: { fstdId }, orderBy: { taskDate: 'desc' } });
+  }
+
+  private async findPmTaskOrThrow(id: string, tenantId: string) {
+    const task = await this.prisma.pmTask.findUnique({ where: { id }, include: { fstd: { include: { organization: true } } } });
+    if (!task || task.fstd.organization.tenantId !== tenantId) throw new NotFoundException(`PmTask ${id} not found`);
+    return task;
+  }
+
+  /// 审核阶段: 审核人须与执行人不同, 形成有效的交叉核查留痕而非自我签署
+  async reviewPmTask(id: string, tenantId: string, data: { approve: boolean; reviewedById: string; reviewNotes?: string }) {
+    const task = await this.findPmTaskOrThrow(id, tenantId);
+    if (task.status !== PmTaskStatus.PENDING_REVIEW) {
+      throw new BadRequestException(`Cannot review PM task from status ${task.status}`);
+    }
+    if (task.performedById && data.reviewedById === task.performedById) {
+      throw new BadRequestException('审核人须与执行人不同, 不能自己审核自己执行的任务');
+    }
+    const updated = await this.prisma.pmTask.update({
+      where: { id },
+      data: {
+        status: data.approve ? PmTaskStatus.APPROVED : PmTaskStatus.REJECTED,
+        reviewedById: data.reviewedById,
+        reviewedAt: new Date(),
+        reviewNotes: data.reviewNotes,
+      },
+    });
+    await this.auditLog.write(tenantId, 'PmTask', id, `status_change:PENDING_REVIEW->${updated.status}`, task, updated);
+    return updated;
+  }
+
+  /// 各(设备,层级)下次到期日 = 最近一次审核通过(APPROVED)任务的日期 + 该层级间隔; 仅统计已配置模板的层级,
+  /// 未配置模板的层级说明机构未启用该频率, 不纳入告警避免噪音。
+  async findPmTasksDueSoon(tenantId: string, withinDays = 60) {
+    const templates = await this.prisma.pmChecklistTemplate.findMany({ where: { organization: { tenantId } } });
+    const configuredLevels = new Set(templates.map((t) => `${t.organizationId}:${t.level}`));
+
+    const fstds = await this.prisma.fstd.findMany({
+      where: { organization: { tenantId } },
+      include: { pmTasks: { where: { status: PmTaskStatus.APPROVED }, orderBy: { taskDate: 'desc' } } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+
+    const levels = Object.values(PmCheckLevel);
+    const results: { fstdId: string; deviceCode: string; level: PmCheckLevel; nextDueDate: Date | null }[] = [];
+    for (const fstd of fstds) {
+      for (const level of levels) {
+        if (!configuredLevels.has(`${fstd.organizationId}:${level}`)) continue;
+        const latest = fstd.pmTasks.find((t) => t.level === level);
+        const nextDueDate = latest ? this.computePmNextDueDate(level, latest.taskDate) : null;
+        if (!latest || (nextDueDate && nextDueDate <= cutoff)) {
+          results.push({ fstdId: fstd.id, deviceCode: fstd.deviceCode, level, nextDueDate });
+        }
+      }
+    }
+    return results;
+  }
 }

@@ -183,6 +183,7 @@ model Organization {
   stocktakeSessions    StocktakeSession[]
   warehouses           Warehouse[]
   partTypeConfigs      PartTypeConfig[]
+  pmChecklistTemplates PmChecklistTemplate[]
 
   @@map("organizations")
 }
@@ -699,6 +700,7 @@ model Fstd {
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
   performanceMetrics FstdPerformanceMetric[]
   faultyPartRecords FaultyPartRecord[]
+  pmTasks         PmTask[]
 
   @@unique([organizationId, deviceCode])
   @@map("fstds")
@@ -930,6 +932,59 @@ model FstdSafetyFacilityCheck {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_safety_facility_checks")
+}
+
+/// 3.3.10 常规维护(PM)排期: 独立于3.3.4 QTG(按季度滚动)和3.3.5周期性评估(按年/三年)的第三套周期性机制,
+/// 服务于机构内部更高频的日常维护节奏, 与3.3.7缺陷处理共享"设备技术记录"入口 (吸收天津飞安实践)。
+enum PmCheckLevel {
+  WEEKLY
+  MONTHLY
+  SEMI_ANNUAL
+  ANNUAL
+}
+
+/// 每层级对应一套可配置检查单模板 (而非硬编码检查项), 每机构每层级一套
+model PmChecklistTemplate {
+  id             String       @id @default(cuid())
+  organizationId String
+  level          PmCheckLevel
+  itemsJson      Json // [{ item: "检查刹车片磨损" }, ...] 机构可自行配置的检查项列表
+  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  tasks        PmTask[]
+
+  @@unique([organizationId, level])
+  @@map("pm_checklist_templates")
+}
+
+enum PmTaskStatus {
+  PENDING_REVIEW // 执行人已完成登记, 待审核
+  APPROVED
+  REJECTED
+}
+
+/// 执行→审核两阶段签署: 执行人登记逐项检查结果(PENDING_REVIEW), 须由另一人审核通过(APPROVED)才形成有效留痕
+model PmTask {
+  id                  String       @id @default(cuid())
+  fstdId              String
+  checklistTemplateId String
+  level               PmCheckLevel // 冗余存一份, 防止模板后续变更影响历史记录判读
+  taskDate            DateTime
+  performedById       String? // 执行人 Personnel.id
+  responsibleIds      String[] // 责任人(可多人) Personnel.id[]
+  itemResultsJson     Json // [{ item: "检查刹车片磨损", passed: true, notes: string }, ...]
+  status              PmTaskStatus @default(PENDING_REVIEW)
+  reviewedById        String? // 审核人, 须与执行人不同
+  reviewedAt          DateTime?
+  reviewNotes         String?
+  createdAt           DateTime     @default(now())
+
+  fstd     Fstd                @relation(fields: [fstdId], references: [id])
+  template PmChecklistTemplate @relation(fields: [checklistTemplateId], references: [id])
+
+  @@map("pm_tasks")
 }
 
 /// 故障保留分级 (吸收天津飞安实践, 类似真飞机MEL的Category体系): 允许某些缺陷经评估后正式"带病运行",

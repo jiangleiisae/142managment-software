@@ -9,6 +9,7 @@ import {
   FstdQualificationBasisType,
   LegacyLevel,
   Permission,
+  PmCheckLevel,
   QtgDocumentType,
   RetentionCategory,
 } from '@prisma/client';
@@ -61,6 +62,35 @@ export class FstdController {
   @Get('training-matrix-entries')
   listTrainingMatrixEntries(@Query('taskCode') taskCode?: string) {
     return this.fstdService.listTrainingMatrixEntries(taskCode);
+  }
+
+  // ---- 3.3.10 常规维护(PM)检查单模板 (机构级全局配置, 同样须在 :id 路由之前注册) ----
+
+  @Post('pm-checklist-templates')
+  setPmChecklistTemplate(
+    @CurrentUser() user: AuthContext,
+    @Body() dto: { organizationId: string; level: PmCheckLevel; itemsJson: { item: string }[] },
+  ) {
+    return this.fstdService.setPmChecklistTemplate(dto.organizationId, user.tenantId, dto);
+  }
+
+  @Get('pm-checklist-templates')
+  listPmChecklistTemplates(@Query('organizationId') organizationId: string) {
+    return this.fstdService.listPmChecklistTemplates(organizationId);
+  }
+
+  @Get('pm-tasks/due-soon')
+  findPmTasksDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.fstdService.findPmTasksDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
+  @Post('pm-tasks/:taskId/review')
+  reviewPmTask(
+    @CurrentUser() user: AuthContext,
+    @Param('taskId') taskId: string,
+    @Body() dto: { approve: boolean; reviewedById: string; reviewNotes?: string },
+  ) {
+    return this.fstdService.reviewPmTask(taskId, user.tenantId, dto);
   }
 
   @Get(':id')
@@ -317,4 +347,27 @@ export class FstdController {
   }
 
   // 3.3.6 变更管理已迁移至通用 /change-requests 接口 (entityType=Fstd), 见 change-management 模块
+
+  // ---- 3.3.10 常规维护(PM)排期: 设备维度的任务登记, 检查单模板/审核/到期告警见上方 :id 路由之前的注册区 ----
+
+  @Post(':id/pm-tasks')
+  createPmTask(
+    @CurrentUser() user: AuthContext,
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      level: PmCheckLevel;
+      taskDate: string;
+      performedById?: string;
+      responsibleIds?: string[];
+      itemResultsJson: { item: string; passed: boolean; notes?: string }[];
+    },
+  ) {
+    return this.fstdService.createPmTask(id, user.tenantId, dto);
+  }
+
+  @Get(':id/pm-tasks')
+  listPmTasks(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listPmTasks(id, user.tenantId);
+  }
 }

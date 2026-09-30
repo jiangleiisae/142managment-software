@@ -195,6 +195,39 @@ export interface Discrepancy {
   fstd?: { deviceCode: string }
 }
 
+export type PmCheckLevel = 'WEEKLY' | 'MONTHLY' | 'SEMI_ANNUAL' | 'ANNUAL'
+
+export interface PmChecklistTemplate {
+  id: string
+  level: PmCheckLevel
+  itemsJson: { item: string }[]
+  updatedAt: string
+}
+
+export type PmTaskStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'
+
+export interface PmTask {
+  id: string
+  fstdId: string
+  level: PmCheckLevel
+  taskDate: string
+  performedById?: string | null
+  responsibleIds: string[]
+  itemResultsJson: { item: string; passed: boolean; notes?: string }[]
+  status: PmTaskStatus
+  reviewedById?: string | null
+  reviewedAt?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+}
+
+export interface PmTaskDueSoonItem {
+  fstdId: string
+  deviceCode: string
+  level: PmCheckLevel
+  nextDueDate?: string | null
+}
+
 export const fstdsApi = {
   list: (organizationId: string) => apiClient.get<Fstd[]>('/fstds', { params: { organizationId } }).then((r) => r.data),
 
@@ -382,4 +415,31 @@ export const fstdsApi = {
     apiClient.get<EvaluationDueSoonItem[]>('/fstds/evaluations/due-soon', { params: { withinDays } }).then((r) => r.data),
 
   // 3.3.6 变更管理已迁移至通用 changeRequestsApi (entityType='Fstd'), 见 api/changeRequests.ts
+
+  // ---- 3.3.10 常规维护(PM)排期 ----
+
+  setPmChecklistTemplate: (data: { organizationId: string; level: PmCheckLevel; itemsJson: { item: string }[] }) =>
+    apiClient.post<PmChecklistTemplate>('/fstds/pm-checklist-templates', data).then((r) => r.data),
+
+  listPmChecklistTemplates: (organizationId: string) =>
+    apiClient.get<PmChecklistTemplate[]>('/fstds/pm-checklist-templates', { params: { organizationId } }).then((r) => r.data),
+
+  createPmTask: (
+    fstdId: string,
+    data: {
+      level: PmCheckLevel
+      taskDate: string
+      performedById?: string
+      responsibleIds?: string[]
+      itemResultsJson: { item: string; passed: boolean; notes?: string }[]
+    },
+  ) => apiClient.post<PmTask>(`/fstds/${fstdId}/pm-tasks`, data).then((r) => r.data),
+
+  listPmTasks: (fstdId: string) => apiClient.get<PmTask[]>(`/fstds/${fstdId}/pm-tasks`).then((r) => r.data),
+
+  reviewPmTask: (taskId: string, data: { approve: boolean; reviewedById: string; reviewNotes?: string }) =>
+    apiClient.post<PmTask>(`/fstds/pm-tasks/${taskId}/review`, data).then((r) => r.data),
+
+  findPmTasksDueSoon: (withinDays = 60) =>
+    apiClient.get<PmTaskDueSoonItem[]>('/fstds/pm-tasks/due-soon', { params: { withinDays } }).then((r) => r.data),
 }
