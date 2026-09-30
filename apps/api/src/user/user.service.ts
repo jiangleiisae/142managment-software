@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
+import { LinkPersonnelDto } from './dto/link-personnel.dto.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -99,5 +100,37 @@ export class UserService {
     // 不记录密码哈希本身, 仅记录"密码已被重置"这一事实, 供事后追溯是谁在什么时间重置了哪个账户的密码
     await this.auditLog.write(actor.tenantId, 'User', targetId, 'reset_password');
     return { success: true };
+  }
+
+  /// 把登录账户关联到人员档案(Personnel), 使站内通知等以Personnel为收件人的功能能真正送达。
+  /// 与 update()/resetPassword() 不同, 这里不限制OWNER/ADMIN目标账户 - 关联人员档案是纯元数据,
+  /// 不涉及角色/权限提升, 没有必要套用那两处为防止账户间提权而设的限制。
+  async linkPersonnel(actor: AuthContext, targetId: string, dto: LinkPersonnelDto) {
+    this.assertIsAdmin(actor);
+    const target = await this.findTargetOrThrow(actor, targetId);
+
+    const personnel = await this.prisma.personnel.findUnique({ where: { id: dto.personnelId } });
+    if (!personnel || personnel.tenantId !== actor.tenantId) {
+      throw new NotFoundException(`Personnel ${dto.personnelId} not found`);
+    }
+    const alreadyLinked = await this.prisma.user.findUnique({ where: { personnelId: dto.personnelId } });
+    if (alreadyLinked && alreadyLinked.id !== targetId) {
+      throw new ConflictException(`该人员档案已关联到另一个账户 (${alreadyLinked.email})`);
+    }
+
+    const user = await this.prisma.user.update({ where: { id: targetId }, data: { personnelId: dto.personnelId } });
+    const safeUser = this.toSafeUser(user);
+    await this.auditLog.write(actor.tenantId, 'User', targetId, 'link_personnel', this.toSafeUser(target), safeUser);
+    return safeUser;
+  }
+
+  async unlinkPersonnel(actor: AuthContext, targetId: string) {
+    this.assertIsAdmin(actor);
+    const target = await this.findTargetOrThrow(actor, targetId);
+
+    const user = await this.prisma.user.update({ where: { id: targetId }, data: { personnelId: null } });
+    const safeUser = this.toSafeUser(user);
+    await this.auditLog.write(actor.tenantId, 'User', targetId, 'unlink_personnel', this.toSafeUser(target), safeUser);
+    return safeUser;
   }
 }

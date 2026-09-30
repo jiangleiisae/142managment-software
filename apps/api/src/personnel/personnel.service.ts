@@ -19,14 +19,14 @@ export class PersonnelService {
   findAll(tenantId: string) {
     return this.prisma.personnel.findMany({
       where: { tenantId },
-      include: { qualifications: true, roleAssignments: true, instructorProfile: true },
+      include: { qualifications: true, roleAssignments: true, instructorProfile: true, user: { select: { id: true, email: true } } },
     });
   }
 
   async findOne(id: string, tenantId: string) {
     const person = await this.prisma.personnel.findUnique({
       where: { id },
-      include: { qualifications: true, roleAssignments: true, instructorProfile: true },
+      include: { qualifications: true, roleAssignments: true, instructorProfile: true, user: { select: { id: true, email: true } } },
     });
     if (!person || person.tenantId !== tenantId) throw new NotFoundException(`Personnel ${id} not found`);
     return person;

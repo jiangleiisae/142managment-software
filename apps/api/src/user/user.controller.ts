@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
+import { LinkPersonnelDto } from './dto/link-personnel.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { UserService } from './user.service.js';
@@ -30,5 +31,15 @@ export class UserController {
   @Post(':id/reset-password')
   resetPassword(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ResetPasswordDto) {
     return this.userService.resetPassword(user, id, dto);
+  }
+
+  @Post(':id/link-personnel')
+  linkPersonnel(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: LinkPersonnelDto) {
+    return this.userService.linkPersonnel(user, id, dto);
+  }
+
+  @Post(':id/unlink-personnel')
+  unlinkPersonnel(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.userService.unlinkPersonnel(user, id);
   }
 }

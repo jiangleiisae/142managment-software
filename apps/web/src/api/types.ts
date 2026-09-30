@@ -68,6 +68,7 @@ export interface Personnel {
   phone?: string | null
   qualifications?: QualificationRecord[]
   instructorProfile?: { instructorType: InstructorType } | null
+  user?: { id: string; email: string } | null
 }
 
 export interface QualificationRecord {

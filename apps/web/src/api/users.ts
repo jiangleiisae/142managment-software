@@ -18,6 +18,7 @@ export interface ManagedUser {
   role: UserRole
   permissions: Permission[]
   isActive: boolean
+  personnelId?: string | null
   createdAt: string
 }
 
@@ -32,4 +33,9 @@ export const usersApi = {
 
   resetPassword: (id: string, newPassword: string) =>
     apiClient.post<{ success: boolean }>(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data),
+
+  linkPersonnel: (id: string, personnelId: string) =>
+    apiClient.post<ManagedUser>(`/users/${id}/link-personnel`, { personnelId }).then((r) => r.data),
+
+  unlinkPersonnel: (id: string) => apiClient.post<ManagedUser>(`/users/${id}/unlink-personnel`).then((r) => r.data),
 }

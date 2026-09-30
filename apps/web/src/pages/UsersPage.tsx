@@ -2,6 +2,8 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { personnelApi } from '../api/personnel'
+import type { Personnel } from '../api/types'
 import type { ManagedUser, Permission } from '../api/users'
 import { usersApi } from '../api/users'
 
@@ -24,14 +26,17 @@ export function UsersPage() {
   const isOwner = currentUser?.role === 'OWNER'
 
   const [users, setUsers] = useState<ManagedUser[]>([])
+  const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [loading, setLoading] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editUserId, setEditUserId] = useState<string>()
   const [resetPwdUserId, setResetPwdUserId] = useState<string>()
+  const [linkPersonnelUserId, setLinkPersonnelUserId] = useState<string>()
 
   const [createForm] = Form.useForm()
   const [editForm] = Form.useForm()
   const [resetPwdForm] = Form.useForm()
+  const [linkPersonnelForm] = Form.useForm()
 
   const load = async () => {
     setLoading(true)
@@ -44,6 +49,7 @@ export function UsersPage() {
 
   useEffect(() => {
     load()
+    personnelApi.list().then(setPersonnel)
   }, [])
 
   const handleCreate = async () => {
@@ -77,6 +83,33 @@ export function UsersPage() {
       const err = e as { response?: { data?: { message?: string } } }
       message.error(err.response?.data?.message ?? '更新失败')
     }
+  }
+
+  const openLinkPersonnelModal = (u: ManagedUser) => {
+    linkPersonnelForm.setFieldsValue({ personnelId: u.personnelId ?? undefined })
+    setLinkPersonnelUserId(u.id)
+  }
+
+  const handleLinkPersonnel = async () => {
+    if (!linkPersonnelUserId) return
+    const values = await linkPersonnelForm.validateFields()
+    try {
+      await usersApi.linkPersonnel(linkPersonnelUserId, values.personnelId)
+      message.success('已关联人员档案')
+      setLinkPersonnelUserId(undefined)
+      load()
+      personnelApi.list().then(setPersonnel)
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '关联失败')
+    }
+  }
+
+  const handleUnlinkPersonnel = async (userId: string) => {
+    await usersApi.unlinkPersonnel(userId)
+    message.success('已解除关联')
+    load()
+    personnelApi.list().then(setPersonnel)
   }
 
   const handleResetPassword = async () => {
@@ -134,28 +167,45 @@ export function UsersPage() {
             dataIndex: 'isActive',
             render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? '启用' : '已停用'}</Tag>,
           },
+          {
+            title: '关联人员档案',
+            dataIndex: 'personnelId',
+            render: (personnelId: string | null | undefined) => {
+              const linked = personnel.find((p) => p.id === personnelId)
+              return linked ? <Tag color="blue">{`${linked.lastName}${linked.firstName}`}</Tag> : <Tag>未关联</Tag>
+            },
+          },
           { title: '创建时间', dataIndex: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
           {
             title: '操作',
-            render: (_, u) =>
-              canManage(u) ? (
-                <Space>
-                  <Button size="small" onClick={() => openEditModal(u)}>
-                    编辑权限
+            render: (_, u) => (
+              <Space>
+                {canManage(u) && (
+                  <>
+                    <Button size="small" onClick={() => openEditModal(u)}>
+                      编辑权限
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        resetPwdForm.resetFields()
+                        setResetPwdUserId(u.id)
+                      }}
+                    >
+                      重置密码
+                    </Button>
+                  </>
+                )}
+                <Button size="small" onClick={() => openLinkPersonnelModal(u)}>
+                  {u.personnelId ? '更换关联' : '关联人员'}
+                </Button>
+                {u.personnelId && (
+                  <Button size="small" danger onClick={() => handleUnlinkPersonnel(u.id)}>
+                    解除关联
                   </Button>
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      resetPwdForm.resetFields()
-                      setResetPwdUserId(u.id)
-                    }}
-                  >
-                    重置密码
-                  </Button>
-                </Space>
-              ) : (
-                <Tag>不可编辑</Tag>
-              ),
+                )}
+              </Space>
+            ),
           },
         ]}
       />
@@ -235,6 +285,28 @@ export function UsersPage() {
         <Form form={resetPwdForm} layout="vertical">
           <Form.Item name="newPassword" label="新密码" rules={[{ required: true, min: 8, message: '密码至少8位' }]}>
             <Input.Password />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="关联人员档案"
+        open={!!linkPersonnelUserId}
+        onOk={handleLinkPersonnel}
+        onCancel={() => setLinkPersonnelUserId(undefined)}
+      >
+        <Form form={linkPersonnelForm} layout="vertical">
+          <Form.Item name="personnelId" label="人员档案" rules={[{ required: true, message: '请选择人员档案' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择要关联的人员档案 (已被其他账户关联的不可选)"
+              options={personnel.map((p) => ({
+                value: p.id,
+                label: `${p.lastName}${p.firstName}`,
+                disabled: !!p.user && p.user.id !== linkPersonnelUserId,
+              }))}
+            />
           </Form.Item>
         </Form>
       </Modal>
