@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { SchedulingService } from './scheduling.service.js';
+import { CreateBookingDto } from './dto/create-booking.dto.js';
 
 @Controller('bookings')
 @RequirePermissions(Permission.SCHEDULING)
@@ -11,20 +12,7 @@ export class SchedulingController {
   constructor(private readonly schedulingService: SchedulingService) {}
 
   @Post()
-  create(
-    @CurrentUser() user: AuthContext,
-    @Body()
-    dto: {
-      organizationId: string;
-      resourceType: BookingResourceType;
-      resourceId: string;
-      startAt: string;
-      endAt: string;
-      courseId?: string;
-      studentId?: string;
-      taskCode?: string;
-    },
-  ) {
+  create(@CurrentUser() user: AuthContext, @Body() dto: CreateBookingDto) {
     return this.schedulingService.create(user.tenantId, dto);
   }
 

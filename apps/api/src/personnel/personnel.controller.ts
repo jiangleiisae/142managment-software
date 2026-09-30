@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { InstructorType, Permission } from '@prisma/client';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { PersonnelService } from './personnel.service.js';
+import { AddQualificationDto } from './dto/add-qualification.dto.js';
+import { CreatePersonnelDto } from './dto/create-personnel.dto.js';
+import { SetInstructorProfileDto } from './dto/set-instructor-profile.dto.js';
 
 @Controller('personnel')
 @RequirePermissions(Permission.PERSONNEL)
@@ -11,10 +14,7 @@ export class PersonnelController {
   constructor(private readonly personnelService: PersonnelService) {}
 
   @Post()
-  create(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { firstName: string; lastName: string; email?: string; phone?: string },
-  ) {
+  create(@CurrentUser() user: AuthContext, @Body() dto: CreatePersonnelDto) {
     return this.personnelService.create(user.tenantId, dto);
   }
 
@@ -34,27 +34,12 @@ export class PersonnelController {
   }
 
   @Post(':id/qualifications')
-  addQualification(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      qualificationType: string;
-      certificateNo?: string;
-      issuingAuthority?: string;
-      validFrom?: string;
-      validUntil?: string;
-    },
-  ) {
+  addQualification(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddQualificationDto) {
     return this.personnelService.addQualification(id, user.tenantId, dto);
   }
 
   @Post(':id/instructor-profile')
-  setInstructorProfile(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { instructorType: InstructorType },
-  ) {
+  setInstructorProfile(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: SetInstructorProfileDto) {
     return this.personnelService.setInstructorProfile(id, user.tenantId, dto.instructorType);
   }
 }

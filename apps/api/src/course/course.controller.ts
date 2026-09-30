@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { CourseType, Permission, Prisma } from '@prisma/client';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { CourseService } from './course.service.js';
+import { AddCourseRequirementDto } from './dto/add-course-requirement.dto.js';
+import { CreateCourseDto } from './dto/create-course.dto.js';
+import { SetTrainingProgrammeDto } from './dto/set-training-programme.dto.js';
 
 @Controller('courses')
 @RequirePermissions(Permission.COURSES)
@@ -11,7 +14,7 @@ export class CourseController {
   constructor(private readonly courseService: CourseService) {}
 
   @Post()
-  create(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; name: string; courseType: CourseType }) {
+  create(@CurrentUser() user: AuthContext, @Body() dto: CreateCourseDto) {
     return this.courseService.create(user.tenantId, dto);
   }
 
@@ -31,20 +34,12 @@ export class CourseController {
   }
 
   @Post(':id/training-programme')
-  setTrainingProgramme(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { summary?: string; stagesJson?: Prisma.InputJsonValue; standardTasksJson?: Prisma.InputJsonValue },
-  ) {
+  setTrainingProgramme(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: SetTrainingProgrammeDto) {
     return this.courseService.setTrainingProgramme(id, user.tenantId, dto);
   }
 
   @Post(':id/requirements')
-  addRequirement(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { taskCode: string; taskName: string; minHours?: number },
-  ) {
+  addRequirement(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddCourseRequirementDto) {
     return this.courseService.addRequirement(id, user.tenantId, dto);
   }
 

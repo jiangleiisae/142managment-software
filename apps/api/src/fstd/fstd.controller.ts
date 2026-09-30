@@ -2,21 +2,28 @@ import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  FcsCharacteristic,
-  FcsFidelityLevel,
-  FstdDeviceType,
-  FstdQualificationBasisType,
-  LegacyLevel,
-  Permission,
-  PmCheckLevel,
-  QtgDocumentType,
-  RetentionCategory,
-} from '@prisma/client';
+import { Permission } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
+import { AddQtgDocumentDto } from './dto/add-qtg-document.dto.js';
+import { AddQualifiedTaskDto } from './dto/add-qualified-task.dto.js';
+import { AddTrainingMatrixEntryDto } from './dto/add-training-matrix-entry.dto.js';
+import { CorrectDiscrepancyDto } from './dto/correct-discrepancy.dto.js';
+import { CreateEslRevisionDto } from './dto/create-esl-revision.dto.js';
+import { CreateFstdDto } from './dto/create-fstd.dto.js';
+import { CreatePmTaskDto } from './dto/create-pm-task.dto.js';
+import { DeclareEslDto } from './dto/declare-esl.dto.js';
+import { RecordPerformanceMetricDto } from './dto/record-performance-metric.dto.js';
+import { RecordQuarterlyQtgRunDto } from './dto/record-quarterly-qtg-run.dto.js';
+import { RecordRecurrentEvaluationDto } from './dto/record-recurrent-evaluation.dto.js';
+import { RecordSafetyFacilityCheckDto } from './dto/record-safety-facility-check.dto.js';
+import { ReportDiscrepancyDto } from './dto/report-discrepancy.dto.js';
+import { ReviewPmTaskDto } from './dto/review-pm-task.dto.js';
+import { SetDiscrepancyRetentionDto } from './dto/set-discrepancy-retention.dto.js';
+import { SetFcsCapabilityDto } from './dto/set-fcs-capability.dto.js';
+import { SetPmChecklistTemplateDto } from './dto/set-pm-checklist-template.dto.js';
 import { FstdService } from './fstd.service.js';
 import { QTG_UPLOAD_DIR, qtgFileUploadOptions } from './qtg-file-storage.js';
 
@@ -26,19 +33,7 @@ export class FstdController {
   constructor(private readonly fstdService: FstdService) {}
 
   @Post()
-  create(
-    @Body()
-    dto: {
-      organizationId: string;
-      deviceCode: string;
-      representedAircraft: string;
-      deviceType: FstdDeviceType;
-      serialNumber?: string;
-      location?: string;
-      legacyLevel?: LegacyLevel;
-      qualificationBasisType?: FstdQualificationBasisType;
-    },
-  ) {
+  create(@Body() dto: CreateFstdDto) {
     // organizationId 的租户归属已由全局 TenantGuard 校验
     return this.fstdService.create(dto);
   }
@@ -52,10 +47,7 @@ export class FstdController {
   // ---- 3.3.3 训练矩阵 (全局配置表, 必须在 :id 路由之前注册以避免被误匹配) ----
 
   @Post('training-matrix-entries')
-  addTrainingMatrixEntry(
-    @Body()
-    dto: { taskCode: string; taskName: string; characteristic: FcsCharacteristic; thresholdT: FcsFidelityLevel; thresholdTP: FcsFidelityLevel },
-  ) {
+  addTrainingMatrixEntry(@Body() dto: AddTrainingMatrixEntryDto) {
     return this.fstdService.addTrainingMatrixEntry(dto);
   }
 
@@ -67,10 +59,7 @@ export class FstdController {
   // ---- 3.3.10 常规维护(PM)检查单模板 (机构级全局配置, 同样须在 :id 路由之前注册) ----
 
   @Post('pm-checklist-templates')
-  setPmChecklistTemplate(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { organizationId: string; level: PmCheckLevel; itemsJson: { item: string }[] },
-  ) {
+  setPmChecklistTemplate(@CurrentUser() user: AuthContext, @Body() dto: SetPmChecklistTemplateDto) {
     return this.fstdService.setPmChecklistTemplate(dto.organizationId, user.tenantId, dto);
   }
 
@@ -85,11 +74,7 @@ export class FstdController {
   }
 
   @Post('pm-tasks/:taskId/review')
-  reviewPmTask(
-    @CurrentUser() user: AuthContext,
-    @Param('taskId') taskId: string,
-    @Body() dto: { approve: boolean; reviewedById: string; reviewNotes?: string },
-  ) {
+  reviewPmTask(@CurrentUser() user: AuthContext, @Param('taskId') taskId: string, @Body() dto: ReviewPmTaskDto) {
     return this.fstdService.reviewPmTask(taskId, user.tenantId, dto);
   }
 
@@ -99,11 +84,7 @@ export class FstdController {
   }
 
   @Post(':id/qualified-tasks')
-  addQualifiedTask(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { taskCode: string; taskName: string; requiresSpecialAuth?: boolean },
-  ) {
+  addQualifiedTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddQualifiedTaskDto) {
     return this.fstdService.addQualifiedTask(id, user.tenantId, dto);
   }
 
@@ -115,12 +96,7 @@ export class FstdController {
   // ---- 3.3.2 FCS能力矩阵 ----
 
   @Post(':id/fcs-capabilities')
-  setFcsCapability(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: { characteristic: FcsCharacteristic; fidelityLevel: FcsFidelityLevel; subsystem?: string; isAssigned?: boolean },
-  ) {
+  setFcsCapability(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: SetFcsCapabilityDto) {
     return this.fstdService.setFcsCapability(id, user.tenantId, dto);
   }
 
@@ -132,16 +108,7 @@ export class FstdController {
   // ---- 装备规格清单 ESL ----
 
   @Post(':id/esl')
-  createEslRevision(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      revisionNumber: string;
-      revisionDate: string;
-      entries: { characteristic: FcsCharacteristic; fidelityLevel?: FcsFidelityLevel; equipmentDescription?: string; limitations?: string }[];
-    },
-  ) {
+  createEslRevision(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: CreateEslRevisionDto) {
     return this.fstdService.createEslRevision(id, user.tenantId, dto);
   }
 
@@ -151,30 +118,14 @@ export class FstdController {
   }
 
   @Post('esl/:eslId/declare')
-  declareEsl(@CurrentUser() user: AuthContext, @Param('eslId') eslId: string, @Body() dto: { personnelId: string }) {
+  declareEsl(@CurrentUser() user: AuthContext, @Param('eslId') eslId: string, @Body() dto: DeclareEslDto) {
     return this.fstdService.declareEsl(eslId, user.tenantId, dto.personnelId);
   }
 
   // ---- FSTD性能指标 (AMC1 ORA.FSTD.100(d)) ----
 
   @Post(':id/performance-metrics')
-  recordPerformanceMetric(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      year: number;
-      month: number;
-      plannedAvailableHours: number;
-      scheduledTrainingHours: number;
-      supportHours: number;
-      fstdFailureHours: number;
-      externalFailureHours: number;
-      lostTrainingHours: number;
-      discrepancyCount: number;
-      interruptionCount: number;
-    },
-  ) {
+  recordPerformanceMetric(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordPerformanceMetricDto) {
     return this.fstdService.recordPerformanceMetric(id, user.tenantId, dto);
   }
 
@@ -185,18 +136,7 @@ export class FstdController {
 
   @Post(':id/discrepancies')
   @SkipPermissionCheck() // Kiosk场景: 任何在场人员都应能报告缺陷, 不受FSTD模块权限限制
-  reportDiscrepancy(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      description: string;
-      isMmi?: boolean;
-      reportedById?: string;
-      severityRating?: number;
-      trainingTimeLostMinutes?: number;
-    },
-  ) {
+  reportDiscrepancy(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ReportDiscrepancyDto) {
     return this.fstdService.reportDiscrepancy(id, user.tenantId, dto);
   }
 
@@ -214,7 +154,7 @@ export class FstdController {
   correctDiscrepancy(
     @CurrentUser() user: AuthContext,
     @Param('discrepancyId') discrepancyId: string,
-    @Body() dto: { correctiveAction: string; correctedById?: string },
+    @Body() dto: CorrectDiscrepancyDto,
   ) {
     return this.fstdService.correctDiscrepancy(discrepancyId, user.tenantId, dto);
   }
@@ -229,7 +169,7 @@ export class FstdController {
   setDiscrepancyRetention(
     @CurrentUser() user: AuthContext,
     @Param('discrepancyId') discrepancyId: string,
-    @Body() dto: { category: RetentionCategory; justification: string; approvedById: string; expiresAt?: string },
+    @Body() dto: SetDiscrepancyRetentionDto,
   ) {
     return this.fstdService.setDiscrepancyRetention(discrepancyId, user.tenantId, dto);
   }
@@ -242,11 +182,7 @@ export class FstdController {
   // ---- 3.3.5 周期性评估 ----
 
   @Post(':id/recurrent-evaluations')
-  recordRecurrentEvaluation(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { periodStart: string; periodEnd: string; evaluationType?: string; extensionMonths?: number; result?: string },
-  ) {
+  recordRecurrentEvaluation(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordRecurrentEvaluationDto) {
     return this.fstdService.recordRecurrentEvaluation(id, user.tenantId, dto);
   }
 
@@ -268,12 +204,7 @@ export class FstdController {
   // ---- 3.3.8 安全设施年检 ----
 
   @Post(':id/safety-facility-checks')
-  recordSafetyFacilityCheck(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: { checkedAt: string; checkedById?: string; items: { item: string; passed: boolean; notes?: string }[] },
-  ) {
+  recordSafetyFacilityCheck(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordSafetyFacilityCheckDto) {
     return this.fstdService.recordSafetyFacilityCheck(id, user.tenantId, dto);
   }
 
@@ -294,7 +225,7 @@ export class FstdController {
   addQtgDocument(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
-    @Body() dto: { documentType: QtgDocumentType; version: string; effectiveDate: string; pointerUrl?: string },
+    @Body() dto: AddQtgDocumentDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.fstdService.addQtgDocument(id, user.tenantId, {
@@ -328,11 +259,7 @@ export class FstdController {
   // ---- 3.3.4 年度QTG按季度滚动运行 ----
 
   @Post(':id/qtg-quarterly-runs')
-  recordQuarterlyQtgRun(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { year: number; quarter: number; completedAt?: string; result?: string; notes?: string },
-  ) {
+  recordQuarterlyQtgRun(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordQuarterlyQtgRunDto) {
     return this.fstdService.recordQuarterlyQtgRun(id, user.tenantId, dto);
   }
 
@@ -351,18 +278,7 @@ export class FstdController {
   // ---- 3.3.10 常规维护(PM)排期: 设备维度的任务登记, 检查单模板/审核/到期告警见上方 :id 路由之前的注册区 ----
 
   @Post(':id/pm-tasks')
-  createPmTask(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      level: PmCheckLevel;
-      taskDate: string;
-      performedById?: string;
-      responsibleIds?: string[];
-      itemResultsJson: { item: string; passed: boolean; notes?: string }[];
-    },
-  ) {
+  createPmTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: CreatePmTaskDto) {
     return this.fstdService.createPmTask(id, user.tenantId, dto);
   }
 

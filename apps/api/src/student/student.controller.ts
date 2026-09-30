@@ -4,6 +4,9 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { StudentService } from './student.service.js';
+import { AddTrainingRecordDto } from './dto/add-training-record.dto.js';
+import { CreateStudentDto } from './dto/create-student.dto.js';
+import { EnrollStudentDto } from './dto/enroll-student.dto.js';
 
 @Controller('students')
 @RequirePermissions(Permission.STUDENTS)
@@ -11,10 +14,7 @@ export class StudentController {
   constructor(private readonly studentService: StudentService) {}
 
   @Post()
-  create(
-    @Body()
-    dto: { organizationId: string; firstName: string; lastName: string; licenceNo?: string; medicalCertExpiry?: string },
-  ) {
+  create(@Body() dto: CreateStudentDto) {
     return this.studentService.create(dto);
   }
 
@@ -34,7 +34,7 @@ export class StudentController {
   }
 
   @Post(':id/enroll')
-  enroll(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { courseId: string }) {
+  enroll(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: EnrollStudentDto) {
     return this.studentService.enroll(id, user.tenantId, dto.courseId);
   }
 
@@ -42,15 +42,7 @@ export class StudentController {
   addTrainingRecord(
     @CurrentUser() user: AuthContext,
     @Param('enrollmentId') enrollmentId: string,
-    @Body()
-    dto: {
-      sessionDate: string;
-      subject: string;
-      progressNotes?: string;
-      testScore?: string;
-      assessedById?: string;
-      courseRequirementId?: string;
-    },
+    @Body() dto: AddTrainingRecordDto,
   ) {
     return this.studentService.addTrainingRecord(enrollmentId, user.tenantId, dto);
   }

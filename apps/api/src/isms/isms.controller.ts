@@ -1,9 +1,14 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { InfoAssetCriticality, Permission } from '@prisma/client';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { IsmsService } from './isms.service.js';
+import { AddMitigationActionDto } from './dto/add-mitigation-action.dto.js';
+import { AssessInfoSecurityRiskDto } from './dto/assess-info-security-risk.dto.js';
+import { ContainIncidentDto } from './dto/contain-incident.dto.js';
+import { CreateInfoAssetDto } from './dto/create-info-asset.dto.js';
+import { ReportIncidentDto } from './dto/report-incident.dto.js';
 
 @Controller('isms')
 @RequirePermissions(Permission.ISMS)
@@ -13,17 +18,7 @@ export class IsmsController {
   // ---- 信息资产清单 ----
 
   @Post('assets')
-  createAsset(
-    @Body()
-    dto: {
-      organizationId: string;
-      name: string;
-      category: string;
-      criticality?: InfoAssetCriticality;
-      ownerPersonnelId?: string;
-      description?: string;
-    },
-  ) {
+  createAsset(@Body() dto: CreateInfoAssetDto) {
     return this.ismsService.createAsset(dto);
   }
 
@@ -35,20 +30,12 @@ export class IsmsController {
   // ---- 信息安全风险评估 ----
 
   @Post('assets/:id/risk-assessments')
-  assessRisk(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { likelihoodLevel: number; impactLevel: number; existingControls?: string; residualRiskLevel?: number },
-  ) {
+  assessRisk(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AssessInfoSecurityRiskDto) {
     return this.ismsService.assessRisk(id, user.tenantId, dto);
   }
 
   @Post('risk-assessments/:id/mitigation-actions')
-  addMitigationAction(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { description: string; responsiblePersonnelId?: string; dueDate?: string },
-  ) {
+  addMitigationAction(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddMitigationActionDto) {
     return this.ismsService.addMitigationAction(id, user.tenantId, dto);
   }
 
@@ -65,18 +52,7 @@ export class IsmsController {
   // ---- 信息安全事件响应 ----
 
   @Post('incidents')
-  reportIncident(
-    @CurrentUser() user: AuthContext,
-    @Body()
-    dto: {
-      organizationId: string;
-      discoveredAt: string;
-      incidentType: string;
-      description: string;
-      affectedAssetId?: string;
-      severity: number;
-    },
-  ) {
+  reportIncident(@CurrentUser() user: AuthContext, @Body() dto: ReportIncidentDto) {
     return this.ismsService.reportIncident(user.tenantId, dto);
   }
 
@@ -91,7 +67,7 @@ export class IsmsController {
   }
 
   @Post('incidents/:id/contain')
-  containIncident(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { responseActions: string }) {
+  containIncident(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ContainIncidentDto) {
     return this.ismsService.containIncident(id, user.tenantId, dto.responseActions);
   }
 
