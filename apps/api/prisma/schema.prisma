@@ -21,6 +21,7 @@ model Tenant {
 
   organizations Organization[]
   users         User[]
+  notifications Notification[]
 
   @@map("tenants")
 }
@@ -58,10 +59,32 @@ model User {
   personnelId  String?      @unique
   createdAt    DateTime     @default(now())
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  personnel Personnel? @relation(fields: [personnelId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  personnel     Personnel?     @relation(fields: [personnelId], references: [id])
+  notifications Notification[]
 
   @@map("users")
+}
+
+/// 站内通知: recipientUserId 为空代表该条目仅用于去重标记(对应人员没有登录账户, 只走短信/无法送达)。
+/// 同一 (entityType, entityId) 只应生成一次通知(由调用方在创建前检查), 避免每次定时任务运行都重复提醒。
+model Notification {
+  id              String    @id @default(cuid())
+  tenantId        String
+  recipientUserId String?
+  title           String
+  message         String
+  entityType      String?
+  entityId        String?
+  readAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  tenant        Tenant @relation(fields: [tenantId], references: [id])
+  recipientUser User?  @relation(fields: [recipientUserId], references: [id])
+
+  @@index([tenantId, recipientUserId, readAt])
+  @@index([entityType, entityId])
+  @@map("notifications")
 }
 
 /// 通用审计轨迹, 覆盖所有需要"可追溯/防篡改"的实体变更 (ORA.GEN.220)

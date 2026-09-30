@@ -64,11 +64,37 @@ S3_SECRET_ACCESS_KEY=...
 S3_FORCE_PATH_STYLE=true       # 自建 MinIO / 部分非AWS的S3兼容服务需要; AWS S3/R2留空
 ```
 
-代码用的是标准 S3 协议 (`@aws-sdk/client-s3`), 已验证兼容 AWS S3 和 MinIO (S3兼容自建对象存储), 理论上同样适用于阿里云/腾讯云 OSS 的 S3 兼容模式和 Cloudflare R2 (通过 `S3_ENDPOINT` 指向对应服务)。切换存储后端不会丢失已有的数据库记录, 但**已经存在本地磁盘里的旧文件不会自动搬到新存储**, 需要手动迁移 (把 `api_uploads` volume 里的文件按原文件名上传到新bucket, 数据库里的 `pointerUrl` 字段存的就是文件名/key)。
+代码用的是标准 S3 协议 (`@aws-sdk/client-s3`), 已用 localstack (开源S3兼容模拟器) 验证过真实的上传/下载/列举全流程, 理论上同样适用于 AWS S3、阿里云/腾讯云 OSS 的 S3 兼容模式、Cloudflare R2、自建 MinIO 等任何标准 S3 协议的服务 (通过 `S3_ENDPOINT` 指向对应服务)。切换存储后端不会丢失已有的数据库记录, 但**已经存在本地磁盘里的旧文件不会自动搬到新存储**, 需要手动迁移 (把 `api_uploads` volume 里的文件按原文件名上传到新bucket, 数据库里的 `pointerUrl` 字段存的就是文件名/key)。
 
 `docker compose up -d --build` 后重启 `api` 服务 (`docker compose restart api`) 即可生效。
 
+## 通知: 站内通知 + 短信
+
+系统事件(目前是"强制事件报告超72小时未上报", 见 ORA.GEN.160)会触发通知, 每小时自动扫描一次
+(`@nestjs/schedule` 定时任务), 也可以用 `POST /notifications/check-overdue-occurrence-reports`
+(仅 OWNER/ADMIN) 手动立即触发一次, 不必等下一次整点。同一条记录只会通知一次, 不会每小时重复打扰。
+
+- **站内通知**: 默认开启, 无需配置。通知会送到该机构"安全经理(SAFETY_MANAGER)"角色任命对应的登录
+  账户收件箱 (`GET /notifications`)。**已知缺口**: 系统目前没有公开 API 把登录账户(User)关联到人员
+  档案(Personnel)——`User.personnelId` 字段存在但暂无端点可写，需要直接操作数据库或等后续补上关联
+  入口，否则人员即便有登录账户也收不到站内通知。
+- **短信通知**: 默认 `SMS_PROVIDER=log`, 只把短信内容打到后端日志里, 不真实发送(开发/测试环境不需要
+  短信账号)。要真实发送, 设置:
+  ```bash
+  SMS_PROVIDER=aliyun
+  ALIYUN_ACCESS_KEY_ID=...
+  ALIYUN_ACCESS_KEY_SECRET=...
+  ALIYUN_SMS_SIGN_NAME=...        # 须提前在阿里云控制台报备审核通过的签名
+  ALIYUN_SMS_TEMPLATE_CODE=...    # 须提前报备审核通过的短信模板
+  ALIYUN_SMS_TEMPLATE_PARAM_KEY=content  # 模板里承载消息正文的变量名, 按实际模板调整
+  ```
+  **未做过真实发送验证** —— 没有真实阿里云账号和已报备模板可供联调, 代码是对照官方 SDK 文档实现的,
+  上线前务必用真实账号跑一次确认签名/模板参数无误。
+
+要把"到期提醒"机制接入其他场景(PM任务、ERP演练、QTG季度运行、资质到期等), 照搬
+`src/notifications/occurrence-report-alert.service.ts` 的模式: 定时扫描 + `NotificationService.notify()`
++ `findExistingNotification()` 去重即可, 目前只落地了事件报告这一个场景。
+
 ## 已知限制 (尚未处理的部署相关事项)
 
-- 告警目前是"拉取式" (前端主动查询到期项), 没有邮件/短信/站内推送通知。
 - `docker-compose.yml` 未包含 Redis, 因为当前代码还没有实际使用它 (`.env` 里的 `REDIS_URL` 是预留位)。

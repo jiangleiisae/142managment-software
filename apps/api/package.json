@@ -23,6 +23,9 @@
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
   },
   "dependencies": {
+    "@alicloud/dysmsapi20170525": "^4.6.0",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/tea-util": "^1.4.11",
     "@aws-sdk/client-s3": "^3.1143.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^4.0.0",
@@ -31,6 +34,7 @@
     "@nestjs/mapped-types": "^12.0.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/schedule": "^12.0.2",
     "@nestjs/throttler": "^6.7.1",
     "@prisma/client": "^6.5.0",
     "bcrypt": "^5.1.1",

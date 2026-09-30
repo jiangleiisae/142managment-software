@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -15,6 +16,7 @@ import { FstdModule } from './fstd/fstd.module.js';
 import { IsmsModule } from './isms/isms.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { ManagementSystemModule } from './management-system/management-system.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { OrganizationModule } from './organization/organization.module.js';
 import { PersonnelModule } from './personnel/personnel.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -28,6 +30,7 @@ import { UserModule } from './user/user.module.js';
     ConfigModule.forRoot({ isGlobal: true }),
     // 默认限流: 每IP每分钟100次请求; 登录/注册等易受暴力破解攻击的路由通过 @Throttle() 单独设更严格的限制。
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditLogModule,
     AuthModule,
@@ -43,6 +46,7 @@ import { UserModule } from './user/user.module.js';
     IsmsModule,
     UserModule,
     ChangeManagementModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [
