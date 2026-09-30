@@ -1,10 +1,9 @@
-import { createReadStream } from 'node:fs';
-import { join } from 'node:path';
-import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Permission } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator.js';
+import { FILE_STORAGE, type FileStorage } from '../storage/file-storage.interface.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import { AddQtgDocumentDto } from './dto/add-qtg-document.dto.js';
@@ -25,12 +24,15 @@ import { SetDiscrepancyRetentionDto } from './dto/set-discrepancy-retention.dto.
 import { SetFcsCapabilityDto } from './dto/set-fcs-capability.dto.js';
 import { SetPmChecklistTemplateDto } from './dto/set-pm-checklist-template.dto.js';
 import { FstdService } from './fstd.service.js';
-import { QTG_UPLOAD_DIR, qtgFileUploadOptions } from './qtg-file-storage.js';
+import { qtgFileUploadOptions } from './qtg-file-storage.js';
 
 @Controller('fstds')
 @RequirePermissions(Permission.FSTD)
 export class FstdController {
-  constructor(private readonly fstdService: FstdService) {}
+  constructor(
+    private readonly fstdService: FstdService,
+    @Inject(FILE_STORAGE) private readonly fileStorage: FileStorage,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateFstdDto) {
@@ -222,15 +224,18 @@ export class FstdController {
 
   @Post(':id/qtg-documents')
   @UseInterceptors(FileInterceptor('file', qtgFileUploadOptions))
-  addQtgDocument(
+  async addQtgDocument(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
     @Body() dto: AddQtgDocumentDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    const storedFileName = file
+      ? await this.fileStorage.save(file.buffer, { originalName: file.originalname, mimeType: file.mimetype })
+      : undefined;
     return this.fstdService.addQtgDocument(id, user.tenantId, {
       ...dto,
-      storedFileName: file?.filename,
+      storedFileName,
       originalFileName: file?.originalname,
       mimeType: file?.mimetype,
       fileSize: file?.size,
@@ -253,7 +258,7 @@ export class FstdController {
       'Content-Type': doc.mimeType ?? 'application/octet-stream',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.originalFileName!)}`,
     });
-    return new StreamableFile(createReadStream(join(QTG_UPLOAD_DIR, doc.pointerUrl!)));
+    return new StreamableFile(await this.fileStorage.getStream(doc.pointerUrl!));
   }
 
   // ---- 3.3.4 年度QTG按季度滚动运行 ----

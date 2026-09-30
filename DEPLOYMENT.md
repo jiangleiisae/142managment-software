@@ -49,8 +49,26 @@ docker compose up -d --build
 
 见 [.env.example](.env.example)。后端还支持但通常不需要覆盖的变量 (有开发环境默认值), 详见 [apps/api/README.md](apps/api/README.md) 和 [apps/api/.env.test](apps/api/.env.test) (测试专用, 已 gitignore)。
 
+## 文件存储: 本地磁盘 vs 对象存储
+
+上传的文件 (目前是 QTG/MQTG 文档) 默认存本地磁盘 (`STORAGE_DRIVER=local`, 落在 `api_uploads` volume 里)。
+单机部署没问题; 要横向扩展成多个 `api` 实例, 或不想依赖本地磁盘持久化, 在 `.env` 里切到对象存储:
+
+```bash
+STORAGE_DRIVER=s3
+S3_BUCKET=your-bucket-name
+S3_REGION=auto                 # AWS S3 用具体 region (如 us-east-1), R2 用 "auto"
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com  # AWS S3 留空即可
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+S3_FORCE_PATH_STYLE=true       # 自建 MinIO / 部分非AWS的S3兼容服务需要; AWS S3/R2留空
+```
+
+代码用的是标准 S3 协议 (`@aws-sdk/client-s3`), 已验证兼容 AWS S3 和 MinIO (S3兼容自建对象存储), 理论上同样适用于阿里云/腾讯云 OSS 的 S3 兼容模式和 Cloudflare R2 (通过 `S3_ENDPOINT` 指向对应服务)。切换存储后端不会丢失已有的数据库记录, 但**已经存在本地磁盘里的旧文件不会自动搬到新存储**, 需要手动迁移 (把 `api_uploads` volume 里的文件按原文件名上传到新bucket, 数据库里的 `pointerUrl` 字段存的就是文件名/key)。
+
+`docker compose up -d --build` 后重启 `api` 服务 (`docker compose restart api`) 即可生效。
+
 ## 已知限制 (尚未处理的部署相关事项)
 
-- 文件上传 (QTG/MQTG 文档等) 目前落地本地磁盘 (`api_uploads` volume), 尚未接入对象存储 (S3/OSS)。单机部署没问题, 多实例横向扩展前需要先迁移存储层。
 - 告警目前是"拉取式" (前端主动查询到期项), 没有邮件/短信/站内推送通知。
 - `docker-compose.yml` 未包含 Redis, 因为当前代码还没有实际使用它 (`.env` 里的 `REDIS_URL` 是预留位)。
