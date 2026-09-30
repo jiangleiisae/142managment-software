@@ -1,6 +1,7 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Alert,
+  App,
   Button,
   DatePicker,
   Empty,
@@ -14,7 +15,6 @@ import {
   Tabs,
   Table,
   Tag,
-  message,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -81,6 +81,7 @@ const WAREHOUSE_TYPE_LABEL: Record<Warehouse['type'], string> = {
 }
 
 function SparePartsTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [parts, setParts] = useState<SparePart[]>([])
   const [lowStock, setLowStock] = useState<LowStockItem[]>([])
   const [movements, setMovements] = useState<Record<string, PartMovement[]>>({})
@@ -301,6 +302,7 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
 }
 
 function ToolsTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [tools, setTools] = useState<Tool[]>([])
   const [dueSoon, setDueSoon] = useState<CalibrationDueSoonItem[]>([])
   const [toolModalOpen, setToolModalOpen] = useState(false)
@@ -416,6 +418,7 @@ function ToolsTab({ organizationId }: { organizationId: string }) {
 }
 
 function PurchaseOrdersTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [parts, setParts] = useState<SparePart[]>([])
@@ -566,6 +569,7 @@ function PurchaseOrdersTab({ organizationId }: { organizationId: string }) {
 }
 
 function FaultyPartsTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [records, setRecords] = useState<FaultyPartRecord[]>([])
   const [parts, setParts] = useState<SparePart[]>([])
   const [fstds, setFstds] = useState<Fstd[]>([])
@@ -700,6 +704,7 @@ function FaultyPartsTab({ organizationId }: { organizationId: string }) {
 }
 
 function ScrapRequestsTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [requests, setRequests] = useState<PartScrapRequest[]>([])
   const [parts, setParts] = useState<SparePart[]>([])
   const [personnel, setPersonnel] = useState<Personnel[]>([])
@@ -820,6 +825,7 @@ function ScrapRequestsTab({ organizationId }: { organizationId: string }) {
 }
 
 function DemandRequestsTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [requests, setRequests] = useState<PartDemandRequest[]>([])
   const [parts, setParts] = useState<SparePart[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -962,6 +968,7 @@ function DemandRequestsTab({ organizationId }: { organizationId: string }) {
 }
 
 function StocktakeTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [sessions, setSessions] = useState<StocktakeSession[]>([])
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createForm] = Form.useForm()
@@ -1086,6 +1093,7 @@ function StocktakeTab({ organizationId }: { organizationId: string }) {
 }
 
 function PartTypeConfigTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [configs, setConfigs] = useState<PartTypeConfig[]>([])
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [renameModal, setRenameModal] = useState<PartTypeConfig>()
@@ -1193,6 +1201,7 @@ function PartTypeConfigTab({ organizationId }: { organizationId: string }) {
 }
 
 function WarehousesTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [stock, setStock] = useState<Record<string, WarehouseStock[]>>({})
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -1282,6 +1291,7 @@ function WarehousesTab({ organizationId }: { organizationId: string }) {
 }
 
 function LoansTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [loans, setLoans] = useState<PartLoan[]>([])
   const [overdue, setOverdue] = useState<PartLoan[]>([])
   const [parts, setParts] = useState<SparePart[]>([])
@@ -1393,6 +1403,7 @@ function LoansTab({ organizationId }: { organizationId: string }) {
 }
 
 function PartInspectionTab({ organizationId }: { organizationId: string }) {
+  const { message } = App.useApp()
   const [parts, setParts] = useState<SparePart[]>([])
   const [dueSoon, setDueSoon] = useState<PartInspectionDueSoonItem[]>([])
   const [inspections, setInspections] = useState<Record<string, PartInspectionRecord[]>>({})

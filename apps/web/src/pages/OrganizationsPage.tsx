@@ -1,11 +1,12 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, Form, Input, Modal, Space, Switch, Table, Tag, message } from 'antd'
+import { App, Button, Form, Input, Modal, Space, Switch, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { organizationsApi } from '../api/organizations'
 import type { Organization } from '../api/types'
 
 export function OrganizationsPage() {
+  const { message } = App.useApp()
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -24,11 +25,16 @@ export function OrganizationsPage() {
 
   const handleCreate = async () => {
     const values = await form.validateFields()
-    await organizationsApi.create(values)
-    message.success('机构创建成功')
-    setModalOpen(false)
-    form.resetFields()
-    load()
+    try {
+      await organizationsApi.create(values)
+      message.success('机构创建成功')
+      setModalOpen(false)
+      form.resetFields()
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? '创建失败')
+    }
   }
 
   return (

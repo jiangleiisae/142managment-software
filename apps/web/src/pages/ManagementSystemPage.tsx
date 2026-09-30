@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, App, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
@@ -59,6 +59,7 @@ function riskColor(score: number) {
 }
 
 export function ManagementSystemPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [roleAssignments, setRoleAssignments] = useState<RoleAssignment[]>([])
   const [personnel, setPersonnel] = useState<Personnel[]>([])

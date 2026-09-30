@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, App, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type {
@@ -34,6 +34,7 @@ function riskColor(score: number) {
 
 /// 3.2.4 ISMS ((EU) 2023/203, 2026-02-22起适用): 信息资产清单/风险评估/事件响应, 独立于Part-ORA的SMS但复用同样的风险矩阵体验
 export function IsmsPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [assets, setAssets] = useState<InformationAsset[]>([])
   const [incidents, setIncidents] = useState<InfoSecurityIncident[]>([])

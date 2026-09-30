@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, App, Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import type { CourseRequirement, FstdCompatibilityResult } from '../api/courses'
 import { coursesApi } from '../api/courses'
@@ -15,6 +15,7 @@ interface CourseWithRequirements extends Course {
 }
 
 export function CoursesPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [courses, setCourses] = useState<CourseWithRequirements[]>([])
   const [fstds, setFstds] = useState<Fstd[]>([])

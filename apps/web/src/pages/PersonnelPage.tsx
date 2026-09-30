@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { personnelApi } from '../api/personnel'
 import type { InstructorType, Personnel } from '../api/types'
@@ -7,6 +7,7 @@ import type { InstructorType, Personnel } from '../api/types'
 const INSTRUCTOR_TYPES: InstructorType[] = ['FI', 'TRI', 'SFI', 'THEORETICAL', 'EXAMINER']
 
 export function PersonnelPage() {
+  const { message } = App.useApp()
   const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)

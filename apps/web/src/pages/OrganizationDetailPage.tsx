@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd'
+import { Alert, App, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -19,6 +19,7 @@ const STATUS_COLOR: Record<CertificateStatus, string> = {
 const describeListEntry = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v))
 
 export function OrganizationDetailPage() {
+  const { message } = App.useApp()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [org, setOrg] = useState<Organization | null>(null)

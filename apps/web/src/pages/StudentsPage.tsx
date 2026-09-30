@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, List, Modal, Progress, Select, Space, Table, Tag, message } from 'antd'
+import { Alert, App, Button, DatePicker, Empty, Form, Input, List, Modal, Progress, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type { CourseRequirement } from '../api/courses'
@@ -18,6 +18,7 @@ const ENROLLMENT_STATUS_COLOR: Record<Enrollment['status'], string> = {
 }
 
 export function StudentsPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [students, setStudents] = useState<StudentDetail[]>([])
   const [courses, setCourses] = useState<Course[]>([])

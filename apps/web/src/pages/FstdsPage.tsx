@@ -1,5 +1,5 @@
 import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload, message } from 'antd'
+import { Alert, App, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type {
@@ -85,6 +85,7 @@ const emptyEslEntryState = (): EslEntryState =>
   Object.fromEntries(FCS_CHARACTERISTICS.map((c) => [c, { fidelityLevel: undefined, equipmentDescription: '', limitations: '' }])) as EslEntryState
 
 export function FstdsPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<FstdDetail[]>([])
   const [dueSoon, setDueSoon] = useState<EvaluationDueSoonItem[]>([])

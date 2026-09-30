@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, DatePicker, Empty, Form, Modal, Select, Space, Table, Tag, message } from 'antd'
+import { App, Button, DatePicker, Empty, Form, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { bookingsApi } from '../api/bookings'
 import { fstdsApi } from '../api/fstds'
@@ -12,6 +12,7 @@ const { RangePicker } = DatePicker
 
 // 需求清单 3.8: 排课引擎强依赖设备能力(3.3)/学员前置条件(3.7)的实时校验, 校验逻辑全部在后端, 这里负责把结果透出给用户
 export function BookingsPage() {
+  const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<Fstd[]>([])
   const [students, setStudents] = useState<Student[]>([])

@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd'
+import { App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { personnelApi } from '../api/personnel'
@@ -22,6 +22,7 @@ const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS) as Permission[]
 
 /// 仅OWNER/ADMIN可见 (见 App.tsx 的 AdminOnlyRoute)。OWNER账户本身不可在此编辑/停用 (后端强制)。
 export function UsersPage() {
+  const { message } = App.useApp()
   const { user: currentUser } = useAuth()
   const isOwner = currentUser?.role === 'OWNER'
 
