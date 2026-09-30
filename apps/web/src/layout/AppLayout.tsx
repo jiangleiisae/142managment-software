@@ -17,6 +17,7 @@ import { Button, Layout, Menu, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { NotificationBell } from '../components/NotificationBell'
 import type { Permission } from '../api/users'
 
 const { Header, Sider, Content } = Layout
@@ -80,7 +81,8 @@ export function AppLayout() {
           <Typography.Text strong style={{ fontSize: 16 }}>
             EASA ATO 合规管理平台 (MVP)
           </Typography.Text>
-          <Space>
+          <Space size="large">
+            <NotificationBell />
             <Typography.Text type="secondary">
               {user?.email} ({user?.role})
             </Typography.Text>
