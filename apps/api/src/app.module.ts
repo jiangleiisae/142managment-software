@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuditLogModule } from './audit-log/audit-log.module.js';
@@ -25,6 +26,8 @@ import { UserModule } from './user/user.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // 默认限流: 每IP每分钟100次请求; 登录/注册等易受暴力破解攻击的路由通过 @Throttle() 单独设更严格的限制。
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     AuditLogModule,
     AuthModule,
@@ -44,8 +47,10 @@ import { UserModule } from './user/user.module.js';
   controllers: [AppController],
   providers: [
     AppService,
-    // 全局认证/租户隔离/模块权限校验, 按顺序执行: JwtAuthGuard(验证token, @Public()例外) ->
-    // TenantGuard(校验organizationId归属) -> PermissionsGuard(校验@RequirePermissions()所需模块权限)
+    // 全局限流/认证/租户隔离/模块权限校验, 按顺序执行: ThrottlerGuard(限流, 优先于其他所有校验) ->
+    // JwtAuthGuard(验证token, @Public()例外) -> TenantGuard(校验organizationId归属) ->
+    // PermissionsGuard(校验@RequirePermissions()所需模块权限)
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
