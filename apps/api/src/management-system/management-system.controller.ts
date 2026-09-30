@@ -1,8 +1,32 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ManagementRoleType, Permission } from '@prisma/client';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
+import { AddCorrectiveActionDto } from './dto/add-corrective-action.dto.js';
+import { AddErpPlanDto } from './dto/add-erp-plan.dto.js';
+import { AddFindingDto } from './dto/add-finding.dto.js';
+import { AddMitigationActionDto } from './dto/add-mitigation-action.dto.js';
+import { AddSafetyPolicyDto } from './dto/add-safety-policy.dto.js';
+import { AddSrbActionDto } from './dto/add-srb-action.dto.js';
+import { AssessHazardRiskDto } from './dto/assess-hazard-risk.dto.js';
+import { AssignRoleDto } from './dto/assign-role.dto.js';
+import { AttachRiskAssessmentToMocDto } from './dto/attach-risk-assessment-to-moc.dto.js';
+import { CreateAuditScheduleDto } from './dto/create-audit-schedule.dto.js';
+import { CreateAuditTaskDto } from './dto/create-audit-task.dto.js';
+import { CreateContractDto } from './dto/create-contract.dto.js';
+import { CreateMocDto } from './dto/create-moc.dto.js';
+import { CreateSafetyIndicatorDto } from './dto/create-safety-indicator.dto.js';
+import { CreateSrbMeetingDto } from './dto/create-srb-meeting.dto.js';
+import { ImplementMocDto } from './dto/implement-moc.dto.js';
+import { MarkOccurrenceReportedDto } from './dto/mark-occurrence-reported.dto.js';
+import { RecordErpDrillDto } from './dto/record-erp-drill.dto.js';
+import { RecordSafetyMeasurementDto } from './dto/record-safety-measurement.dto.js';
+import { ReportHazardDto } from './dto/report-hazard.dto.js';
+import { ReportOccurrenceDto } from './dto/report-occurrence.dto.js';
+import { SignSafetyPolicyDto } from './dto/sign-safety-policy.dto.js';
+import { UpdateContractDto } from './dto/update-contract.dto.js';
+import { VerifyMocDto } from './dto/verify-moc.dto.js';
 import { ManagementSystemService } from './management-system.service.js';
 
 @Controller('management-system')
@@ -13,10 +37,7 @@ export class ManagementSystemController {
   // ---- 3.2.1 人员角色任命 ----
 
   @Post('role-assignments')
-  assignRole(
-    @Body()
-    dto: { organizationId: string; personnelId: string; role: ManagementRoleType; startDate: string; appointmentRef?: string },
-  ) {
+  assignRole(@Body() dto: AssignRoleDto) {
     return this.service.assignRole(dto);
   }
 
@@ -33,18 +54,7 @@ export class ManagementSystemController {
   // ---- 3.2.2 事件报告 ----
 
   @Post('occurrence-reports')
-  reportOccurrence(
-    @Body()
-    dto: {
-      organizationId: string;
-      discoveredAt: string;
-      occurrenceType: string;
-      involvedPersonnel?: string;
-      involvedAircraft?: string;
-      involvedFstdId?: string;
-      isMandatory?: boolean;
-    },
-  ) {
+  reportOccurrence(@Body() dto: ReportOccurrenceDto) {
     return this.service.reportOccurrence(dto);
   }
 
@@ -54,14 +64,14 @@ export class ManagementSystemController {
   }
 
   @Post('occurrence-reports/:id/mark-reported')
-  markOccurrenceReported(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { reportedTo: string }) {
+  markOccurrenceReported(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: MarkOccurrenceReportedDto) {
     return this.service.markOccurrenceReported(id, user.tenantId, dto.reportedTo);
   }
 
   // ---- 3.2.3 合规监督闭环 ----
 
   @Post('audit-schedules')
-  createAuditSchedule(@Body() dto: { organizationId: string; title: string; plannedAt: string; scopeTag?: string }) {
+  createAuditSchedule(@Body() dto: CreateAuditScheduleDto) {
     return this.service.createAuditSchedule(dto);
   }
 
@@ -71,7 +81,7 @@ export class ManagementSystemController {
   }
 
   @Post('audit-schedules/:id/tasks')
-  createAuditTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { auditorId?: string; scope: string }) {
+  createAuditTask(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: CreateAuditTaskDto) {
     return this.service.createAuditTask(id, user.tenantId, dto);
   }
 
@@ -81,16 +91,12 @@ export class ManagementSystemController {
   }
 
   @Post('audit-tasks/:id/findings')
-  addFinding(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { level: number; description: string; rootCause?: string }) {
+  addFinding(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddFindingDto) {
     return this.service.addFinding(id, user.tenantId, dto);
   }
 
   @Post('findings/:id/corrective-actions')
-  addCorrectiveAction(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { planDescription: string; responsiblePersonnelId?: string; dueDate?: string },
-  ) {
+  addCorrectiveAction(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddCorrectiveActionDto) {
     return this.service.addCorrectiveAction(id, user.tenantId, dto);
   }
 
@@ -102,7 +108,7 @@ export class ManagementSystemController {
   // ---- SMS 风险管理闭环: 危险源 -> 风险评估 -> 缓解措施 ----
 
   @Post('hazards')
-  reportHazard(@Body() dto: { organizationId: string; source: string; description: string; affectedArea?: string }) {
+  reportHazard(@Body() dto: ReportHazardDto) {
     return this.service.reportHazard(dto);
   }
 
@@ -112,20 +118,12 @@ export class ManagementSystemController {
   }
 
   @Post('hazards/:id/risk-assessments')
-  assessRisk(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { probabilityLevel: number; severityLevel: number; existingMitigation?: string; residualRiskLevel?: number },
-  ) {
+  assessRisk(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AssessHazardRiskDto) {
     return this.service.assessRisk(id, user.tenantId, dto);
   }
 
   @Post('risk-assessments/:id/mitigation-actions')
-  addMitigationAction(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { description: string; responsiblePersonnelId?: string; dueDate?: string },
-  ) {
+  addMitigationAction(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddMitigationActionDto) {
     return this.service.addMitigationAction(id, user.tenantId, dto);
   }
 
@@ -142,10 +140,7 @@ export class ManagementSystemController {
   // ---- 3.2.2 安全政策 (Safety Policy) ----
 
   @Post('safety-policies')
-  addSafetyPolicy(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { organizationId: string; version: string; policyText: string; effectiveDate: string },
-  ) {
+  addSafetyPolicy(@CurrentUser() user: AuthContext, @Body() dto: AddSafetyPolicyDto) {
     return this.service.addSafetyPolicy(user.tenantId, dto);
   }
 
@@ -155,14 +150,14 @@ export class ManagementSystemController {
   }
 
   @Post('safety-policies/:id/sign')
-  signSafetyPolicy(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { personnelId: string }) {
+  signSafetyPolicy(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: SignSafetyPolicyDto) {
     return this.service.signSafetyPolicy(id, user.tenantId, dto.personnelId);
   }
 
   // ---- 3.2.2 变更管理 MOC ----
 
   @Post('mocs')
-  createMoc(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; changeDescription: string }) {
+  createMoc(@CurrentUser() user: AuthContext, @Body() dto: CreateMocDto) {
     return this.service.createMoc(user.tenantId, dto);
   }
 
@@ -172,27 +167,24 @@ export class ManagementSystemController {
   }
 
   @Post('mocs/:id/risk-assessment')
-  attachRiskAssessmentToMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { riskAssessmentId: string }) {
+  attachRiskAssessmentToMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AttachRiskAssessmentToMocDto) {
     return this.service.attachRiskAssessmentToMoc(id, user.tenantId, dto.riskAssessmentId);
   }
 
   @Post('mocs/:id/implement')
-  implementMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { implementationPlan: string }) {
+  implementMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ImplementMocDto) {
     return this.service.implementMoc(id, user.tenantId, dto.implementationPlan);
   }
 
   @Post('mocs/:id/verify')
-  verifyMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { verificationNotes: string }) {
+  verifyMoc(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: VerifyMocDto) {
     return this.service.verifyMoc(id, user.tenantId, dto.verificationNotes);
   }
 
   // ---- 3.2.2 应急响应计划 ERP ----
 
   @Post('erp-plans')
-  addErpPlan(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { organizationId: string; version: string; planText: string; effectiveDate: string },
-  ) {
+  addErpPlan(@CurrentUser() user: AuthContext, @Body() dto: AddErpPlanDto) {
     return this.service.addErpPlan(user.tenantId, dto);
   }
 
@@ -202,11 +194,7 @@ export class ManagementSystemController {
   }
 
   @Post('erp-plans/:id/drills')
-  recordErpDrill(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { drilledAt: string; scenario: string; outcome?: string },
-  ) {
+  recordErpDrill(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordErpDrillDto) {
     return this.service.recordErpDrill(id, user.tenantId, dto);
   }
 
@@ -218,16 +206,7 @@ export class ManagementSystemController {
   // ---- 3.2.2 安全绩效指标 SPI/SPT ----
 
   @Post('safety-indicators')
-  createIndicator(
-    @Body()
-    dto: {
-      organizationId: string;
-      name: string;
-      description?: string;
-      targetValue: number;
-      direction?: 'LOWER_IS_BETTER' | 'HIGHER_IS_BETTER';
-    },
-  ) {
+  createIndicator(@Body() dto: CreateSafetyIndicatorDto) {
     return this.service.createIndicator(dto);
   }
 
@@ -237,20 +216,14 @@ export class ManagementSystemController {
   }
 
   @Post('safety-indicators/:id/measurements')
-  recordMeasurement(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { periodStart: string; periodEnd: string; value: number },
-  ) {
+  recordMeasurement(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordSafetyMeasurementDto) {
     return this.service.recordMeasurement(id, user.tenantId, dto);
   }
 
   // ---- 3.2.2 安全评审委员会 (复杂机构) ----
 
   @Post('srb-meetings')
-  createSrbMeeting(
-    @Body() dto: { organizationId: string; meetingDate: string; attendeeRoles: string[]; agenda: string; decisions?: string },
-  ) {
+  createSrbMeeting(@Body() dto: CreateSrbMeetingDto) {
     return this.service.createSrbMeeting(dto);
   }
 
@@ -260,11 +233,7 @@ export class ManagementSystemController {
   }
 
   @Post('srb-meetings/:id/actions')
-  addSrbAction(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { description: string; responsiblePersonnelId?: string; dueDate?: string },
-  ) {
+  addSrbAction(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: AddSrbActionDto) {
     return this.service.addSrbAction(id, user.tenantId, dto);
   }
 
@@ -276,10 +245,7 @@ export class ManagementSystemController {
   // ---- 3.2.5 承包活动管理 (Contracted Activities, ORA.GEN.205) ----
 
   @Post('contracts')
-  createContract(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean },
-  ) {
+  createContract(@CurrentUser() user: AuthContext, @Body() dto: CreateContractDto) {
     // organizationId 的租户归属已由全局 TenantGuard 校验
     return this.service.createContract(user.tenantId, dto);
   }
@@ -290,11 +256,7 @@ export class ManagementSystemController {
   }
 
   @Post('contracts/:id')
-  updateContract(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { contractorName?: string; scope?: string; agreementRef?: string; includedInAudit?: boolean },
-  ) {
+  updateContract(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateContractDto) {
     return this.service.updateContract(id, user.tenantId, dto);
   }
 }
