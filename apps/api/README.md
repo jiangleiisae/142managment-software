@@ -57,6 +57,17 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+e2e tests run against an isolated `tcms_test` Postgres database, never the dev database. Create
+`apps/api/.env.test` (gitignored, same shape as `.env`) pointing `DATABASE_URL` at that database,
+then run `npx prisma db push` with that URL to create/sync it once:
+
+```bash
+DATABASE_URL="postgresql://<user>:<password>@localhost:5432/tcms_test" npx prisma db push
+```
+
+Each e2e spec file registers its own fresh tenant/org via the API, so the database can be reused
+and reset (`prisma db push --force-reset`) freely without needing seed data.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
