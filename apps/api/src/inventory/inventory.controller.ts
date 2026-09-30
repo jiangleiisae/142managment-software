@@ -1,8 +1,29 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { FaultyPartStatus, PartMovementType, Permission, WarehouseType } from '@prisma/client';
+import { Permission } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
+import { ApproveScrapDto } from './dto/approve-scrap.dto.js';
+import { ConvertDemandToPurchaseOrderDto } from './dto/convert-demand-to-po.dto.js';
+import { CreateDemandRequestDto } from './dto/create-demand-request.dto.js';
+import { CreateLoanDto } from './dto/create-loan.dto.js';
+import { CreatePartTypeConfigDto } from './dto/create-part-type-config.dto.js';
+import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto.js';
+import { CreateSparePartDto } from './dto/create-spare-part.dto.js';
+import { CreateStocktakeSessionDto } from './dto/create-stocktake-session.dto.js';
+import { CreateSupplierDto } from './dto/create-supplier.dto.js';
+import { CreateToolDto } from './dto/create-tool.dto.js';
+import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
+import { RecordCalibrationDto } from './dto/record-calibration.dto.js';
+import { RecordMovementDto } from './dto/record-movement.dto.js';
+import { RecordPartInspectionDto } from './dto/record-part-inspection.dto.js';
+import { RecordStocktakeCountDto } from './dto/record-stocktake-count.dto.js';
+import { ReconcileStocktakeDto } from './dto/reconcile-stocktake.dto.js';
+import { RejectScrapDto } from './dto/reject-scrap.dto.js';
+import { ReportFaultyPartDto } from './dto/report-faulty-part.dto.js';
+import { RequestScrapDto } from './dto/request-scrap.dto.js';
+import { UpdateFaultyPartStatusDto } from './dto/update-faulty-part-status.dto.js';
+import { UpdatePartTypeConfigLabelDto } from './dto/update-part-type-config-label.dto.js';
 import { InventoryService } from './inventory.service.js';
 
 @Controller('inventory')
@@ -13,21 +34,7 @@ export class InventoryController {
   // ---- 3.4.1 备件库存 ----
 
   @Post('spare-parts')
-  createSparePart(
-    @Body()
-    dto: {
-      organizationId: string;
-      partNumber: string;
-      name: string;
-      compatibleWith?: string;
-      partCategory?: string;
-      unit?: string;
-      minQuantity?: number;
-      location?: string;
-      requiresInspection?: boolean;
-      inspectionIntervalMonths?: number;
-    },
-  ) {
+  createSparePart(@Body() dto: CreateSparePartDto) {
     return this.service.createSparePart(dto);
   }
 
@@ -47,19 +54,7 @@ export class InventoryController {
   }
 
   @Post('spare-parts/:id/movements')
-  recordMovement(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      type: PartMovementType;
-      quantity: number;
-      note?: string;
-      relatedDiscrepancyId?: string;
-      warehouseId?: string;
-      usageLocation?: string;
-    },
-  ) {
+  recordMovement(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordMovementDto) {
     return this.service.recordMovement(id, user.tenantId, dto);
   }
 
@@ -72,10 +67,7 @@ export class InventoryController {
   // ---- 3.4.2 工具校准 ----
 
   @Post('tools')
-  createTool(
-    @Body()
-    dto: { organizationId: string; toolCode: string; name: string; category?: string; location?: string; calibrationIntervalMonths?: number },
-  ) {
+  createTool(@Body() dto: CreateToolDto) {
     return this.service.createTool(dto);
   }
 
@@ -95,18 +87,14 @@ export class InventoryController {
   }
 
   @Post('tools/:id/calibrations')
-  recordCalibration(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { calibratedAt: string; result?: string; performedBy?: string },
-  ) {
+  recordCalibration(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordCalibrationDto) {
     return this.service.recordCalibration(id, user.tenantId, dto);
   }
 
   // ---- 3.4.3 供应商与采购订单 ----
 
   @Post('suppliers')
-  createSupplier(@Body() dto: { organizationId: string; name: string; serviceCategory?: string; contactInfo?: string }) {
+  createSupplier(@Body() dto: CreateSupplierDto) {
     return this.service.createSupplier(dto);
   }
 
@@ -116,14 +104,7 @@ export class InventoryController {
   }
 
   @Post('purchase-orders')
-  createPurchaseOrder(
-    @Body()
-    dto: {
-      organizationId: string;
-      supplierId: string;
-      items: { sparePartId: string; quantity: number; unitPrice?: number }[];
-    },
-  ) {
+  createPurchaseOrder(@Body() dto: CreatePurchaseOrderDto) {
     return this.service.createPurchaseOrder(dto);
   }
 
@@ -155,17 +136,7 @@ export class InventoryController {
   // ---- 3.4.4 故障件管理 ----
 
   @Post('faulty-parts')
-  reportFaultyPart(
-    @CurrentUser() user: AuthContext,
-    @Body()
-    dto: {
-      sparePartId: string;
-      removedFromFstdId?: string;
-      relatedDiscrepancyId?: string;
-      quantity?: number;
-      faultDescription: string;
-    },
-  ) {
+  reportFaultyPart(@CurrentUser() user: AuthContext, @Body() dto: ReportFaultyPartDto) {
     return this.service.reportFaultyPart(user.tenantId, dto);
   }
 
@@ -175,21 +146,14 @@ export class InventoryController {
   }
 
   @Post('faulty-parts/:id/status')
-  updateFaultyPartStatus(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { status: FaultyPartStatus; supplierId?: string; resolutionNotes?: string },
-  ) {
+  updateFaultyPartStatus(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateFaultyPartStatusDto) {
     return this.service.updateFaultyPartStatus(id, user.tenantId, dto);
   }
 
   // ---- 3.4.5 备件报废管理 ----
 
   @Post('scrap-requests')
-  requestScrap(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { sparePartId: string; quantity: number; reasonCode: string; requestedById?: string },
-  ) {
+  requestScrap(@CurrentUser() user: AuthContext, @Body() dto: RequestScrapDto) {
     return this.service.requestScrap(user.tenantId, dto);
   }
 
@@ -199,31 +163,19 @@ export class InventoryController {
   }
 
   @Post('scrap-requests/:id/approve')
-  approveScrap(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { approvedById: string }) {
+  approveScrap(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ApproveScrapDto) {
     return this.service.approveScrap(id, user.tenantId, dto.approvedById);
   }
 
   @Post('scrap-requests/:id/reject')
-  rejectScrap(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { rejectedReason?: string }) {
+  rejectScrap(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RejectScrapDto) {
     return this.service.rejectScrap(id, user.tenantId, dto.rejectedReason);
   }
 
   // ---- 3.4.6 备件需求登记 ----
 
   @Post('demand-requests')
-  createDemandRequest(
-    @Body()
-    dto: {
-      organizationId: string;
-      sparePartId?: string;
-      partNumber?: string;
-      name?: string;
-      quantity: number;
-      neededBy?: string;
-      requestedById?: string;
-      notes?: string;
-    },
-  ) {
+  createDemandRequest(@Body() dto: CreateDemandRequestDto) {
     return this.service.createDemandRequest(dto);
   }
 
@@ -241,7 +193,7 @@ export class InventoryController {
   convertDemandToPurchaseOrder(
     @CurrentUser() user: AuthContext,
     @Param('id') id: string,
-    @Body() dto: { supplierId: string },
+    @Body() dto: ConvertDemandToPurchaseOrderDto,
   ) {
     return this.service.convertDemandToPurchaseOrder(id, user.tenantId, dto.supplierId);
   }
@@ -249,7 +201,7 @@ export class InventoryController {
   // ---- 3.4.7 备件盘点 ----
 
   @Post('stocktakes')
-  createStocktakeSession(@Body() dto: { organizationId: string; title?: string }) {
+  createStocktakeSession(@Body() dto: CreateStocktakeSessionDto) {
     return this.service.createStocktakeSession(dto.organizationId, dto.title);
   }
 
@@ -264,16 +216,12 @@ export class InventoryController {
   }
 
   @Post('stocktakes/items/:itemId/count')
-  recordStocktakeCount(
-    @CurrentUser() user: AuthContext,
-    @Param('itemId') itemId: string,
-    @Body() dto: { countedQuantity: number },
-  ) {
+  recordStocktakeCount(@CurrentUser() user: AuthContext, @Param('itemId') itemId: string, @Body() dto: RecordStocktakeCountDto) {
     return this.service.recordStocktakeCount(itemId, user.tenantId, dto.countedQuantity);
   }
 
   @Post('stocktakes/:id/reconcile')
-  reconcileStocktake(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { reconciledById?: string }) {
+  reconcileStocktake(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: ReconcileStocktakeDto) {
     return this.service.reconcileStocktake(id, user.tenantId, dto.reconciledById);
   }
 
@@ -285,12 +233,12 @@ export class InventoryController {
   }
 
   @Post('part-type-configs')
-  createPartTypeConfig(@CurrentUser() user: AuthContext, @Body() dto: { organizationId: string; code: string; label: string }) {
+  createPartTypeConfig(@CurrentUser() user: AuthContext, @Body() dto: CreatePartTypeConfigDto) {
     return this.service.createPartTypeConfig(user.tenantId, dto);
   }
 
   @Post('part-type-configs/:id')
-  updatePartTypeConfigLabel(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: { label: string }) {
+  updatePartTypeConfigLabel(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdatePartTypeConfigLabelDto) {
     return this.service.updatePartTypeConfigLabel(id, user.tenantId, dto.label);
   }
 
@@ -302,7 +250,7 @@ export class InventoryController {
   // ---- 3.4.3 多仓库 + 寄售/托管库房 ----
 
   @Post('warehouses')
-  createWarehouse(@Body() dto: { organizationId: string; name: string; type?: WarehouseType; externalPartyInfo?: string }) {
+  createWarehouse(@Body() dto: CreateWarehouseDto) {
     return this.service.createWarehouse(dto);
   }
 
@@ -324,10 +272,7 @@ export class InventoryController {
   // ---- 3.4.5 借用件管理 ----
 
   @Post('loans')
-  createLoan(
-    @CurrentUser() user: AuthContext,
-    @Body() dto: { sparePartId: string; quantity: number; borrowerInfo: string; purposeNote?: string; dueDate?: string },
-  ) {
+  createLoan(@CurrentUser() user: AuthContext, @Body() dto: CreateLoanDto) {
     return this.service.createLoan(user.tenantId, dto);
   }
 
@@ -349,11 +294,7 @@ export class InventoryController {
   // ---- 3.4.8 备件检测管理 ----
 
   @Post('spare-parts/:id/inspections')
-  recordPartInspection(
-    @CurrentUser() user: AuthContext,
-    @Param('id') id: string,
-    @Body() dto: { inspectedAt: string; result?: string; inspectorId?: string; notes?: string },
-  ) {
+  recordPartInspection(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordPartInspectionDto) {
     return this.service.recordPartInspection(id, user.tenantId, dto);
   }
 
