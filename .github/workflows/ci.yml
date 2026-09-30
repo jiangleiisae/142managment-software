@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tcms_app
+          POSTGRES_PASSWORD: tcms_dev_pw
+          POSTGRES_DB: tcms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tcms_app -d tcms_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # 匹配上面的 postgres service 容器, 覆盖 apps/api/.env.test 里的值 (该文件本身未提交到仓库)
+      DATABASE_URL: postgresql://tcms_app:tcms_dev_pw@localhost:5432/tcms_test
+      JWT_SECRET: ci-only-secret-not-for-production-use
+      PORT: 3099
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck (including test/)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Sync test database schema
+        run: npx prisma db push --skip-generate
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: e2e tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (includes typecheck via tsc -b)
+        run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build api image
+        run: docker build -t tcms-api:ci ./apps/api
+
+      - name: Build web image
+        run: docker build -t tcms-web:ci ./apps/web

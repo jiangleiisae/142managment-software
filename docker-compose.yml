@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tcms_app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: tcms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tcms_app -d tcms']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # 一次性任务: 应用数据库迁移后退出, api 等它成功完成才启动 (见下方 depends_on)。
+  migrate:
+    build:
+      context: ./apps/api
+      target: build
+    environment:
+      DATABASE_URL: postgresql://tcms_app:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/tcms
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./apps/api
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql://tcms_app:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/tcms
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      PORT: 3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    volumes:
+      - api_uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  api_uploads:
