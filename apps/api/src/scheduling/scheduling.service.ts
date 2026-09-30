@@ -130,7 +130,16 @@ export class SchedulingService {
     await this.assertNoConflict(data.resourceType, data.resourceId, startAt, endAt);
 
     const booking = await this.prisma.booking.create({
-      data: { ...data, startAt, endAt },
+      data: {
+        organizationId: data.organizationId,
+        resourceType: data.resourceType,
+        resourceId: data.resourceId,
+        startAt,
+        endAt,
+        courseId: data.courseId,
+        studentId: data.studentId,
+        taskCode: data.taskCode,
+      },
     });
     await this.auditLog.write(tenantId, 'Booking', booking.id, 'create', null, booking);
     return booking;

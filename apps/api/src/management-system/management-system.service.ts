@@ -147,7 +147,7 @@ export class ManagementSystemService {
 
   async createAuditTask(auditScheduleId: string, tenantId: string, data: { auditorId?: string; scope: string }) {
     await this.findAuditScheduleOrThrow(auditScheduleId, tenantId);
-    return this.prisma.auditTask.create({ data: { auditScheduleId, ...data } });
+    return this.prisma.auditTask.create({ data: { auditScheduleId, auditorId: data.auditorId, scope: data.scope } });
   }
 
   async completeAuditTask(id: string, tenantId: string) {
@@ -159,7 +159,9 @@ export class ManagementSystemService {
 
   async addFinding(auditTaskId: string, tenantId: string, data: { level: number; description: string; rootCause?: string }) {
     await this.findAuditTaskOrThrow(auditTaskId, tenantId);
-    return this.prisma.finding.create({ data: { auditTaskId, ...data } });
+    return this.prisma.finding.create({
+      data: { auditTaskId, level: data.level, description: data.description, rootCause: data.rootCause },
+    });
   }
 
   async addCorrectiveAction(
@@ -194,7 +196,9 @@ export class ManagementSystemService {
   // ---- SMS 风险管理闭环: hazard_register -> risk_assessment -> mitigation_action (ORA.GEN.200(a)(3)) ----
 
   reportHazard(data: { organizationId: string; source: string; description: string; affectedArea?: string }) {
-    return this.prisma.hazardRegisterEntry.create({ data });
+    return this.prisma.hazardRegisterEntry.create({
+      data: { organizationId: data.organizationId, source: data.source, description: data.description, affectedArea: data.affectedArea },
+    });
   }
 
   listHazards(organizationId: string) {
@@ -350,7 +354,10 @@ export class ManagementSystemService {
   // ---- 3.2.2 变更管理 MOC: draft -> risk_assessed -> implemented -> verified ----
 
   async createMoc(tenantId: string, data: { organizationId: string; changeDescription: string }) {
-    const moc = await this.prisma.managementOfChange.create({ data });
+    // 显式只写这两个字段: 不让请求体里可能携带的 status/riskAssessmentId/verifiedAt 等字段绕过风险评估→实施→核实的状态机
+    const moc = await this.prisma.managementOfChange.create({
+      data: { organizationId: data.organizationId, changeDescription: data.changeDescription },
+    });
     await this.auditLog.write(tenantId, 'ManagementOfChange', moc.id, 'create', null, moc);
     return moc;
   }
@@ -496,7 +503,13 @@ export class ManagementSystemService {
     direction?: 'LOWER_IS_BETTER' | 'HIGHER_IS_BETTER';
   }) {
     return this.prisma.safetyPerformanceIndicator.create({
-      data: { ...data, direction: data.direction ?? 'LOWER_IS_BETTER' },
+      data: {
+        organizationId: data.organizationId,
+        name: data.name,
+        description: data.description,
+        targetValue: data.targetValue,
+        direction: data.direction ?? 'LOWER_IS_BETTER',
+      },
     });
   }
 
@@ -550,7 +563,13 @@ export class ManagementSystemService {
 
   createSrbMeeting(data: { organizationId: string; meetingDate: string; attendeeRoles: string[]; agenda: string; decisions?: string }) {
     return this.prisma.safetyReviewBoardMeeting.create({
-      data: { ...data, meetingDate: new Date(data.meetingDate) },
+      data: {
+        organizationId: data.organizationId,
+        meetingDate: new Date(data.meetingDate),
+        attendeeRoles: data.attendeeRoles,
+        agenda: data.agenda,
+        decisions: data.decisions,
+      },
     });
   }
 
@@ -597,7 +616,15 @@ export class ManagementSystemService {
     tenantId: string,
     data: { organizationId: string; contractorName: string; scope: string; agreementRef?: string; includedInAudit?: boolean },
   ) {
-    const contract = await this.prisma.contractRecord.create({ data });
+    const contract = await this.prisma.contractRecord.create({
+      data: {
+        organizationId: data.organizationId,
+        contractorName: data.contractorName,
+        scope: data.scope,
+        agreementRef: data.agreementRef,
+        includedInAudit: data.includedInAudit,
+      },
+    });
     await this.auditLog.write(tenantId, 'ContractRecord', contract.id, 'create', null, contract);
     return contract;
   }
@@ -613,7 +640,15 @@ export class ManagementSystemService {
   ) {
     const contract = await this.prisma.contractRecord.findUnique({ where: { id }, include: { organization: true } });
     if (!contract || contract.organization.tenantId !== tenantId) throw new NotFoundException(`Contract ${id} not found`);
-    const updated = await this.prisma.contractRecord.update({ where: { id }, data });
+    const updated = await this.prisma.contractRecord.update({
+      where: { id },
+      data: {
+        contractorName: data.contractorName,
+        scope: data.scope,
+        agreementRef: data.agreementRef,
+        includedInAudit: data.includedInAudit,
+      },
+    });
     await this.auditLog.write(tenantId, 'ContractRecord', id, 'update', contract, updated);
     return updated;
   }

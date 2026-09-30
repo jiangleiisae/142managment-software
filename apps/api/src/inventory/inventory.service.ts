@@ -43,7 +43,21 @@ export class InventoryService {
     if (!configs.some((c) => c.code === partCategory)) {
       throw new BadRequestException(`未知的备件分类 "${partCategory}", 请先在备件信息配置中添加该分类`);
     }
-    return this.prisma.sparePart.create({ data: { ...data, partCategory } });
+    // 逐字段显式列出, 不要 {...data} 展开: currentQuantity 只能通过movement记录变化, 不能由建档请求直接写入
+    return this.prisma.sparePart.create({
+      data: {
+        organizationId: data.organizationId,
+        partNumber: data.partNumber,
+        name: data.name,
+        compatibleWith: data.compatibleWith,
+        partCategory,
+        unit: data.unit,
+        minQuantity: data.minQuantity,
+        location: data.location,
+        requiresInspection: data.requiresInspection,
+        inspectionIntervalMonths: data.inspectionIntervalMonths,
+      },
+    });
   }
 
   listSpareParts(organizationId: string) {
@@ -173,7 +187,16 @@ export class InventoryService {
     location?: string;
     calibrationIntervalMonths?: number;
   }) {
-    return this.prisma.tool.create({ data });
+    return this.prisma.tool.create({
+      data: {
+        organizationId: data.organizationId,
+        toolCode: data.toolCode,
+        name: data.name,
+        category: data.category,
+        location: data.location,
+        calibrationIntervalMonths: data.calibrationIntervalMonths,
+      },
+    });
   }
 
   listTools(organizationId: string) {
@@ -224,7 +247,14 @@ export class InventoryService {
   // ==================== 3.4.3 供应商与采购订单 ====================
 
   createSupplier(data: { organizationId: string; name: string; serviceCategory?: string; contactInfo?: string }) {
-    return this.prisma.supplier.create({ data });
+    return this.prisma.supplier.create({
+      data: {
+        organizationId: data.organizationId,
+        name: data.name,
+        serviceCategory: data.serviceCategory,
+        contactInfo: data.contactInfo,
+      },
+    });
   }
 
   listSuppliers(organizationId: string) {
@@ -723,7 +753,9 @@ export class InventoryService {
   // ==================== 3.4.3 多仓库 + 寄售/托管库房 (吸收天津飞安实践) ====================
 
   createWarehouse(data: { organizationId: string; name: string; type?: WarehouseType; externalPartyInfo?: string }) {
-    return this.prisma.warehouse.create({ data });
+    return this.prisma.warehouse.create({
+      data: { organizationId: data.organizationId, name: data.name, type: data.type, externalPartyInfo: data.externalPartyInfo },
+    });
   }
 
   listWarehouses(organizationId: string) {

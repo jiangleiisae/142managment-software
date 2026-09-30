@@ -20,7 +20,16 @@ export class IsmsService {
     ownerPersonnelId?: string;
     description?: string;
   }) {
-    return this.prisma.informationAsset.create({ data });
+    return this.prisma.informationAsset.create({
+      data: {
+        organizationId: data.organizationId,
+        name: data.name,
+        category: data.category,
+        criticality: data.criticality,
+        ownerPersonnelId: data.ownerPersonnelId,
+        description: data.description,
+      },
+    });
   }
 
   listAssets(organizationId: string) {

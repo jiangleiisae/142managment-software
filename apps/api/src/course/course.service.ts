@@ -21,7 +21,10 @@ export class CourseService {
 
   // 需求清单 3.6: 一期基础版, 不含ZFTT/MPL等特殊课程规则
   async create(tenantId: string, data: { organizationId: string; name: string; courseType: CourseType }) {
-    const course = await this.prisma.course.create({ data });
+    // 显式只写这三个字段: 不让请求体里可能携带的 isApproved/approvedAt 绕过approve()审批流程
+    const course = await this.prisma.course.create({
+      data: { organizationId: data.organizationId, name: data.name, courseType: data.courseType },
+    });
     await this.auditLog.write(tenantId, 'Course', course.id, 'create', null, course);
     return course;
   }
@@ -66,7 +69,10 @@ export class CourseService {
 
   async addRequirement(courseId: string, tenantId: string, data: { taskCode: string; taskName: string; minHours?: number }) {
     await this.findCourseOrThrow(courseId, tenantId);
-    return this.prisma.courseRequirement.create({ data: { courseId, ...data } });
+    // courseId 显式放在展开之后并单独赋值, 避免请求体里携带的同名字段覆盖路径参数校验过的courseId
+    return this.prisma.courseRequirement.create({
+      data: { taskCode: data.taskCode, taskName: data.taskName, minHours: data.minHours, courseId },
+    });
   }
 
   async listRequirements(courseId: string, tenantId: string) {

@@ -11,7 +11,9 @@ export class PersonnelService {
   ) {}
 
   create(tenantId: string, data: { firstName: string; lastName: string; email?: string; phone?: string }) {
-    return this.prisma.personnel.create({ data: { ...data, tenantId } });
+    return this.prisma.personnel.create({
+      data: { tenantId, firstName: data.firstName, lastName: data.lastName, email: data.email, phone: data.phone },
+    });
   }
 
   findAll(tenantId: string) {

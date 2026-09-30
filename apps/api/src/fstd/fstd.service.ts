@@ -106,7 +106,10 @@ export class FstdService {
     data: { taskCode: string; taskName: string; requiresSpecialAuth?: boolean },
   ) {
     await this.findFstdOrThrow(fstdId, tenantId);
-    return this.prisma.fstdQualifiedTask.create({ data: { fstdId, ...data } });
+    // fstdId 单独赋值且放在最后, 避免请求体里携带的同名字段覆盖路径参数校验过的fstdId
+    return this.prisma.fstdQualifiedTask.create({
+      data: { taskCode: data.taskCode, taskName: data.taskName, requiresSpecialAuth: data.requiresSpecialAuth, fstdId },
+    });
   }
 
   // ---- 3.3.2 FCS能力矩阵 (qualificationBasisType=EASA_FCS时使用) ----
@@ -244,10 +247,22 @@ export class FstdService {
     if (data.month < 1 || data.month > 12) {
       throw new BadRequestException(`month must be 1-12, got ${data.month}`);
     }
+    const metricFields = {
+      year: data.year,
+      month: data.month,
+      plannedAvailableHours: data.plannedAvailableHours,
+      scheduledTrainingHours: data.scheduledTrainingHours,
+      supportHours: data.supportHours,
+      fstdFailureHours: data.fstdFailureHours,
+      externalFailureHours: data.externalFailureHours,
+      lostTrainingHours: data.lostTrainingHours,
+      discrepancyCount: data.discrepancyCount,
+      interruptionCount: data.interruptionCount,
+    };
     const metric = await this.prisma.fstdPerformanceMetric.upsert({
       where: { fstdId_year_month: { fstdId, year: data.year, month: data.month } },
-      create: { fstdId, ...data },
-      update: { ...data },
+      create: { ...metricFields, fstdId },
+      update: metricFields,
     });
     return this.withComputedMetrics(metric);
   }
