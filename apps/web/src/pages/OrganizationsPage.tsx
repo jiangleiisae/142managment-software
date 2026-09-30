@@ -1,11 +1,13 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { App, Button, Form, Input, Modal, Space, Switch, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { organizationsApi } from '../api/organizations'
 import type { Organization } from '../api/types'
 
 export function OrganizationsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(false)
@@ -27,13 +29,13 @@ export function OrganizationsPage() {
     const values = await form.validateFields()
     try {
       await organizationsApi.create(values)
-      message.success('机构创建成功')
+      message.success(t('organizations.list.createSuccess'))
       setModalOpen(false)
       form.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '创建失败')
+      message.error(err.response?.data?.message ?? t('organizations.list.createFailed'))
     }
   }
 
@@ -41,7 +43,7 @@ export function OrganizationsPage() {
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          新建机构
+          {t('organizations.list.createButton')}
         </Button>
       </Space>
 
@@ -51,29 +53,34 @@ export function OrganizationsPage() {
         dataSource={organizations}
         onRow={(record) => ({ onClick: () => navigate(`/organizations/${record.id}`) })}
         columns={[
-          { title: '机构名称', dataIndex: 'name' },
-          { title: '主管当局', dataIndex: 'competentAuthority' },
+          { title: t('organizations.list.columnName'), dataIndex: 'name' },
+          { title: t('organizations.list.columnAuthority'), dataIndex: 'competentAuthority' },
           {
-            title: '复杂机构 (AMC1 ORA.GEN.200(b))',
+            title: t('organizations.list.columnComplex'),
             dataIndex: 'isComplexOrg',
-            render: (v: boolean) => (v ? <Tag color="orange">复杂机构</Tag> : <Tag>非复杂</Tag>),
+            render: (v: boolean) =>
+              v ? (
+                <Tag color="orange">{t('organizations.list.complexTag')}</Tag>
+              ) : (
+                <Tag>{t('organizations.list.nonComplexTag')}</Tag>
+              ),
           },
-          { title: '创建时间', dataIndex: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
+          { title: t('organizations.list.columnCreatedAt'), dataIndex: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
         ]}
       />
 
-      <Modal title="新建机构" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('organizations.list.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="机构名称" rules={[{ required: true, message: '请输入机构名称' }]}>
+          <Form.Item name="name" label={t('organizations.list.fieldName')} rules={[{ required: true, message: t('organizations.list.fieldNameRequired') }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="address" label="地址">
+          <Form.Item name="address" label={t('organizations.list.fieldAddress')}>
             <Input />
           </Form.Item>
-          <Form.Item name="competentAuthority" label="主管当局">
-            <Input placeholder="如: CAAC / EASA member state authority" />
+          <Form.Item name="competentAuthority" label={t('organizations.list.fieldAuthority')}>
+            <Input placeholder={t('organizations.list.fieldAuthorityPlaceholder')} />
           </Form.Item>
-          <Form.Item name="isComplexOrg" label="是否复杂机构" valuePropName="checked">
+          <Form.Item name="isComplexOrg" label={t('organizations.list.fieldIsComplex')} valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

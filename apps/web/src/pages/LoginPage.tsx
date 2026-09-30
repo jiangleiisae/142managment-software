@@ -1,9 +1,12 @@
-import { Alert, Button, Card, Form, Input, Typography } from 'antd'
+import { Alert, Button, Card, Form, Input, Select, Typography } from 'antd'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { setLanguage, type SupportedLanguage } from '../i18n'
 
 export function LoginPage() {
+  const { t, i18n } = useTranslation()
   const { login } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState<string>()
@@ -15,8 +18,9 @@ export function LoginPage() {
     try {
       await login(values.email, values.password)
       navigate('/organizations')
-    } catch {
-      setError('邮箱或密码错误')
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      setError(err.response?.data?.message ?? t('auth.login.genericError'))
     } finally {
       setLoading(false)
     }
@@ -24,24 +28,34 @@ export function LoginPage() {
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f0f2f5' }}>
+      <Select<SupportedLanguage>
+        size="small"
+        style={{ position: 'absolute', top: 16, right: 16, width: 90 }}
+        value={i18n.language === 'en' ? 'en' : 'zh'}
+        onChange={setLanguage}
+        options={[
+          { value: 'zh', label: t('language.zh') },
+          { value: 'en', label: t('language.en') },
+        ]}
+      />
       <Card style={{ width: 380 }}>
         <Typography.Title level={3} style={{ textAlign: 'center' }}>
-          培训中心管理系统
+          {t('auth.login.title')}
         </Typography.Title>
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
         <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
+          <Form.Item name="email" label={t('auth.login.email')} rules={[{ required: true, type: 'email' }]}>
             <Input autoFocus />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true }]}>
+          <Form.Item name="password" label={t('auth.login.password')} rules={[{ required: true }]}>
             <Input.Password />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={loading}>
-            登录
+            {t('auth.login.submit')}
           </Button>
         </Form>
         <div style={{ textAlign: 'center', marginTop: 16 }}>
-          还没有账号? <Link to="/register">注册新机构</Link>
+          {t('auth.login.noAccount')} <Link to="/register">{t('auth.login.registerLink')}</Link>
         </div>
       </Card>
     </div>

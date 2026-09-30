@@ -2,6 +2,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { ApplicationRecord, OrganisationalSelfReview } from '../api/organizations'
 import { organizationsApi } from '../api/organizations'
@@ -19,6 +20,7 @@ const STATUS_COLOR: Record<CertificateStatus, string> = {
 const describeListEntry = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v))
 
 export function OrganizationDetailPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -58,7 +60,7 @@ export function OrganizationDetailPage() {
       ...values,
       issuedAt: values.issuedAt.format('YYYY-MM-DD'),
     })
-    message.success('证书已添加 (状态: ACTIVE)')
+    message.success(t('organizations.detail.certificateAdded'))
     setModalOpen(false)
     form.resetFields()
     load()
@@ -74,11 +76,11 @@ export function OrganizationDetailPage() {
         terminate: organizationsApi.terminateCertificate,
       }[action]
       await fn(certId)
-      message.success('状态已更新')
+      message.success(t('organizations.detail.statusUpdated'))
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('organizations.detail.operationFailed'))
     }
   }
 
@@ -96,14 +98,14 @@ export function OrganizationDetailPage() {
       reviewedAt: values.reviewedAt.format('YYYY-MM-DD'),
       items: checklist.map((item) => ({ item, ...reviewItemState[item] })),
     })
-    message.success('年度自查已登记 (GM2 ORA.GEN.200(c)), 请及时通报当局')
+    message.success(t('organizations.detail.selfReviewRecorded'))
     setReviewModalOpen(false)
     load()
   }
 
   const handleNotifySelfReview = async (reviewId: string) => {
     await organizationsApi.notifySelfReview(reviewId)
-    message.success('已标记为通报当局')
+    message.success(t('organizations.detail.markedNotified'))
     load()
   }
 
@@ -114,7 +116,7 @@ export function OrganizationDetailPage() {
       ...values,
       proposedStartDate: values.proposedStartDate?.format('YYYY-MM-DD'),
     })
-    message.success('申请材料已登记 (ORA.ATO.105)')
+    message.success(t('organizations.detail.applicationRecorded'))
     setApplicationModalOpen(false)
     applicationForm.resetFields()
     load()
@@ -125,24 +127,28 @@ export function OrganizationDetailPage() {
   return (
     <div>
       <Button style={{ marginBottom: 16 }} onClick={() => navigate('/organizations')}>
-        ← 返回机构列表
+        {t('organizations.detail.back')}
       </Button>
 
       <Card title={org.name} style={{ marginBottom: 16 }}>
         <Descriptions column={2}>
-          <Descriptions.Item label="主管当局">{org.competentAuthority || '-'}</Descriptions.Item>
-          <Descriptions.Item label="地址">{org.address || '-'}</Descriptions.Item>
-          <Descriptions.Item label="复杂机构判定">
-            {org.isComplexOrg ? <Tag color="orange">复杂机构</Tag> : <Tag>非复杂</Tag>}
+          <Descriptions.Item label={t('organizations.detail.authority')}>{org.competentAuthority || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('organizations.detail.address')}>{org.address || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('organizations.detail.complexDetermination')}>
+            {org.isComplexOrg ? (
+              <Tag color="orange">{t('organizations.list.complexTag')}</Tag>
+            ) : (
+              <Tag>{t('organizations.list.nonComplexTag')}</Tag>
+            )}
           </Descriptions.Item>
         </Descriptions>
       </Card>
 
       <Card
-        title="ATO 批准证书 (EASA Form 143)"
+        title={t('organizations.detail.certificatesTitle')}
         extra={
           <Button icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-            新增证书
+            {t('organizations.detail.addCertificate')}
           </Button>
         }
       >
@@ -150,40 +156,40 @@ export function OrganizationDetailPage() {
           rowKey="id"
           dataSource={org.certificates ?? []}
           columns={[
-            { title: '证书编号', dataIndex: 'certificateNo' },
-            { title: '颁发机构', dataIndex: 'issuedAuthority' },
-            { title: '批准范围', dataIndex: 'approvalScope' },
+            { title: t('organizations.detail.columnCertNo'), dataIndex: 'certificateNo' },
+            { title: t('organizations.detail.columnIssuedAuthority'), dataIndex: 'issuedAuthority' },
+            { title: t('organizations.detail.columnScope'), dataIndex: 'approvalScope' },
             {
-              title: '状态 (ORA.GEN.135 持续有效)',
+              title: t('organizations.detail.columnStatus'),
               dataIndex: 'status',
               render: (status: CertificateStatus) => <Tag color={STATUS_COLOR[status]}>{status}</Tag>,
             },
             {
-              title: '操作',
+              title: t('organizations.detail.columnActions'),
               render: (_, cert) => (
                 <Space>
                   {cert.status === 'ACTIVE' && (
-                    <Popconfirm title="确认暂停该证书?" onConfirm={() => doTransition('suspend', cert.id)}>
+                    <Popconfirm title={t('organizations.detail.confirmSuspend')} onConfirm={() => doTransition('suspend', cert.id)}>
                       <Button size="small" danger>
-                        暂停
+                        {t('organizations.detail.suspend')}
                       </Button>
                     </Popconfirm>
                   )}
                   {cert.status === 'SUSPENDED' && (
                     <>
                       <Button size="small" type="primary" onClick={() => doTransition('restore', cert.id)}>
-                        恢复
+                        {t('organizations.detail.restore')}
                       </Button>
-                      <Popconfirm title="确认吊销该证书? 此操作不可逆" onConfirm={() => doTransition('revoke', cert.id)}>
+                      <Popconfirm title={t('organizations.detail.confirmRevoke')} onConfirm={() => doTransition('revoke', cert.id)}>
                         <Button size="small" danger>
-                          吊销
+                          {t('organizations.detail.revoke')}
                         </Button>
                       </Popconfirm>
                     </>
                   )}
                   {(cert.status === 'ACTIVE' || cert.status === 'SUSPENDED') && (
-                    <Popconfirm title="确认终止该证书 (机构主动交回)?" onConfirm={() => doTransition('terminate', cert.id)}>
-                      <Button size="small">终止</Button>
+                    <Popconfirm title={t('organizations.detail.confirmTerminate')} onConfirm={() => doTransition('terminate', cert.id)}>
+                      <Button size="small">{t('organizations.detail.terminate')}</Button>
                     </Popconfirm>
                   )}
                 </Space>
@@ -193,16 +199,16 @@ export function OrganizationDetailPage() {
         />
       </Card>
 
-      <Card title="机构变更管理 (3.1, ORA.GEN.130)" style={{ marginTop: 16 }}>
+      <Card title={t('organizations.detail.changeManagementTitle')} style={{ marginTop: 16 }}>
         {id && <ChangeRequestPanel entityType="Organization" entityId={id} />}
       </Card>
 
       <Card
-        title="年度机构自查 (3.2.2 非复杂机构简化路径, GM2 ORA.GEN.200(c))"
+        title={t('organizations.detail.selfReviewTitle')}
         style={{ marginTop: 16 }}
         extra={
           <Button icon={<PlusOutlined />} onClick={openReviewModal}>
-            登记本年度自查
+            {t('organizations.detail.recordSelfReview')}
           </Button>
         }
       >
@@ -211,20 +217,20 @@ export function OrganizationDetailPage() {
             style={{ marginBottom: 12 }}
             type="warning"
             showIcon
-            message="该机构为复杂机构, 应使用完整SMS+合规监督流程 (管理体系页面); 年度自查简化路径仅适用于非复杂机构"
+            message={t('organizations.detail.complexOrgWarning')}
           />
         )}
         <List
           size="small"
           dataSource={selfReviews}
-          locale={{ emptyText: '尚未登记任何年度自查' }}
+          locale={{ emptyText: t('organizations.detail.noSelfReviews') }}
           renderItem={(review) => (
             <List.Item
               actions={
                 !review.notifiedAuthorityAt
                   ? [
                       <Button key="notify" size="small" onClick={() => handleNotifySelfReview(review.id)}>
-                        标记已通报当局
+                        {t('organizations.detail.markNotified')}
                       </Button>,
                     ]
                   : []
@@ -232,12 +238,12 @@ export function OrganizationDetailPage() {
             >
               <Space direction="vertical" size={0} style={{ width: '100%' }}>
                 <Space wrap>
-                  <Tag>{review.year}年度</Tag>
+                  <Tag>{t('organizations.detail.yearTag', { year: review.year })}</Tag>
                   <Tag color={review.overallResult === 'compliant' ? 'green' : 'red'}>
-                    {review.overallResult === 'compliant' ? '合规' : '发现问题'}
+                    {review.overallResult === 'compliant' ? t('organizations.detail.compliant') : t('organizations.detail.nonCompliant')}
                   </Tag>
                   <Tag color={review.notifiedAuthorityAt ? 'green' : 'orange'}>
-                    {review.notifiedAuthorityAt ? '已通报当局' : '待通报当局'}
+                    {review.notifiedAuthorityAt ? t('organizations.detail.notified') : t('organizations.detail.pendingNotify')}
                   </Tag>
                 </Space>
                 <Space wrap>
@@ -245,13 +251,13 @@ export function OrganizationDetailPage() {
                     .filter((i) => !i.compliant)
                     .map((i) => (
                       <Tag key={i.item} color="red">
-                        {i.item}: {i.notes || '不合规'}
+                        {i.item}: {i.notes || t('organizations.detail.nonCompliantNote')}
                       </Tag>
                     ))}
                 </Space>
                 <span style={{ color: '#888', fontSize: 12 }}>
-                  自查日期 {new Date(review.reviewedAt).toLocaleDateString()}
-                  {review.notifiedAuthorityAt && ` | 通报于 ${new Date(review.notifiedAuthorityAt).toLocaleString()}`}
+                  {t('organizations.detail.reviewedAtLabel')} {new Date(review.reviewedAt).toLocaleDateString()}
+                  {review.notifiedAuthorityAt && ` | ${t('organizations.detail.notifiedAtLabel')} ${new Date(review.notifiedAuthorityAt).toLocaleString()}`}
                 </span>
               </Space>
             </List.Item>
@@ -260,26 +266,30 @@ export function OrganizationDetailPage() {
       </Card>
 
       <Card
-        title="申请材料 (ORA.ATO.105)"
+        title={t('organizations.detail.applicationRecordsTitle')}
         style={{ marginTop: 16 }}
         extra={
           <Button icon={<PlusOutlined />} onClick={() => setApplicationModalOpen(true)}>
-            登记申请材料
+            {t('organizations.detail.recordApplication')}
           </Button>
         }
       >
         <List
           size="small"
           dataSource={applicationRecords}
-          locale={{ emptyText: '尚未登记任何申请材料' }}
+          locale={{ emptyText: t('organizations.detail.noApplicationRecords') }}
           renderItem={(rec) => (
             <List.Item>
               <Space direction="vertical" size={0} style={{ width: '100%' }}>
                 <Space wrap>
                   <Tag color={rec.isChangeApplication ? 'blue' : 'green'}>
-                    {rec.isChangeApplication ? '变更申请' : '首次申请'}
+                    {rec.isChangeApplication ? t('organizations.detail.changeApplication') : t('organizations.detail.initialApplication')}
                   </Tag>
-                  {rec.proposedStartDate && <span>拟运营日期: {new Date(rec.proposedStartDate).toLocaleDateString()}</span>}
+                  {rec.proposedStartDate && (
+                    <span>
+                      {t('organizations.detail.proposedStartDate')}: {new Date(rec.proposedStartDate).toLocaleDateString()}
+                    </span>
+                  )}
                 </Space>
                 <Space wrap>
                   {(rec.courseTypesJson ?? []).map((c, i) => (
@@ -287,10 +297,14 @@ export function OrganizationDetailPage() {
                   ))}
                 </Space>
                 <span style={{ color: '#888', fontSize: 12 }}>
-                  提交于 {new Date(rec.submittedAt).toLocaleString()}
-                  {rec.trainingSitesJson?.length ? ` | 训练场地: ${rec.trainingSitesJson.map(describeListEntry).join(', ')}` : ''}
-                  {rec.aircraftListJson?.length ? ` | 航空器: ${rec.aircraftListJson.map(describeListEntry).join(', ')}` : ''}
-                  {rec.fstdListJson?.length ? ` | FSTD: ${rec.fstdListJson.map(describeListEntry).join(', ')}` : ''}
+                  {t('organizations.detail.submittedAt')} {new Date(rec.submittedAt).toLocaleString()}
+                  {rec.trainingSitesJson?.length
+                    ? ` | ${t('organizations.detail.trainingSites')}: ${rec.trainingSitesJson.map(describeListEntry).join(', ')}`
+                    : ''}
+                  {rec.aircraftListJson?.length
+                    ? ` | ${t('organizations.detail.aircraft')}: ${rec.aircraftListJson.map(describeListEntry).join(', ')}`
+                    : ''}
+                  {rec.fstdListJson?.length ? ` | ${t('organizations.detail.fstdList')}: ${rec.fstdListJson.map(describeListEntry).join(', ')}` : ''}
                 </span>
               </Space>
             </List.Item>
@@ -298,25 +312,25 @@ export function OrganizationDetailPage() {
         />
       </Card>
 
-      <Modal title="新增证书" open={modalOpen} onOk={handleAddCertificate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('organizations.detail.addCertModalTitle')} open={modalOpen} onOk={handleAddCertificate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ issuedAt: dayjs() }}>
-          <Form.Item name="certificateNo" label="证书编号" rules={[{ required: true }]}>
+          <Form.Item name="certificateNo" label={t('organizations.detail.certNoLabel')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="issuedAuthority" label="颁发机构" rules={[{ required: true }]}>
+          <Form.Item name="issuedAuthority" label={t('organizations.detail.issuedAuthorityLabel')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="approvalScope" label="批准范围声明" rules={[{ required: true }]}>
+          <Form.Item name="approvalScope" label={t('organizations.detail.scopeLabel')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="issuedAt" label="颁发日期" rules={[{ required: true }]}>
+          <Form.Item name="issuedAt" label={t('organizations.detail.issuedAtLabel')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记年度机构自查 (GM2 ORA.GEN.200(c))"
+        title={t('organizations.detail.selfReviewModalTitle')}
         open={reviewModalOpen}
         onOk={handleRecordSelfReview}
         onCancel={() => setReviewModalOpen(false)}
@@ -324,10 +338,10 @@ export function OrganizationDetailPage() {
       >
         <Form form={reviewForm} layout="vertical" initialValues={{ year: dayjs().year(), reviewedAt: dayjs() }}>
           <Space>
-            <Form.Item name="year" label="年度" rules={[{ required: true }]}>
+            <Form.Item name="year" label={t('organizations.detail.yearLabel')} rules={[{ required: true }]}>
               <InputNumber style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="reviewedAt" label="自查日期" rules={[{ required: true }]}>
+            <Form.Item name="reviewedAt" label={t('organizations.detail.reviewedAtLabel')} rules={[{ required: true }]}>
               <DatePicker />
             </Form.Item>
           </Space>
@@ -338,8 +352,8 @@ export function OrganizationDetailPage() {
               <span>{item}</span>
               <Switch
                 checked={reviewItemState[item]?.compliant ?? true}
-                checkedChildren="合规"
-                unCheckedChildren="不合规"
+                checkedChildren={t('organizations.detail.checklistCompliant')}
+                unCheckedChildren={t('organizations.detail.checklistNonCompliant')}
                 onChange={(checked) =>
                   setReviewItemState((s) => ({ ...s, [item]: { ...s[item], compliant: checked } }))
                 }
@@ -347,7 +361,7 @@ export function OrganizationDetailPage() {
             </Space>
             {!reviewItemState[item]?.compliant && (
               <Input
-                placeholder="不合规说明"
+                placeholder={t('organizations.detail.nonComplianceNotePlaceholder')}
                 value={reviewItemState[item]?.notes}
                 onChange={(e) => setReviewItemState((s) => ({ ...s, [item]: { ...s[item], notes: e.target.value } }))}
                 style={{ marginTop: 4 }}
@@ -358,39 +372,39 @@ export function OrganizationDetailPage() {
       </Modal>
 
       <Modal
-        title="登记申请材料 (ORA.ATO.105)"
+        title={t('organizations.detail.applicationModalTitle')}
         open={applicationModalOpen}
         onOk={handleCreateApplicationRecord}
         onCancel={() => setApplicationModalOpen(false)}
       >
         <Form form={applicationForm} layout="vertical" initialValues={{ isChangeApplication: false }}>
-          <Form.Item name="isChangeApplication" label="申请类型" rules={[{ required: true }]}>
+          <Form.Item name="isChangeApplication" label={t('organizations.detail.applicationTypeLabel')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: false, label: '首次申请' },
-                { value: true, label: '变更申请 (仅需提交变更相关部分)' },
+                { value: false, label: t('organizations.detail.initialApplication') },
+                { value: true, label: t('organizations.detail.changeApplicationOption') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="proposedStartDate" label="拟运营日期">
+          <Form.Item name="proposedStartDate" label={t('organizations.detail.proposedStartDate')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="courseTypesJson" label="课程类型">
+          <Form.Item name="courseTypesJson" label={t('organizations.detail.courseTypesLabel')}>
             <Select mode="tags" placeholder="如 PPL, CPL" />
           </Form.Item>
-          <Form.Item name="trainingSitesJson" label="训练场地清单">
-            <Select mode="tags" placeholder="逐个输入场地名称后回车" />
+          <Form.Item name="trainingSitesJson" label={t('organizations.detail.trainingSitesLabel')}>
+            <Select mode="tags" placeholder={t('organizations.detail.trainingSitesPlaceholder')} />
           </Form.Item>
-          <Form.Item name="aircraftListJson" label="航空器清单">
+          <Form.Item name="aircraftListJson" label={t('organizations.detail.aircraftLabel')}>
             <Select mode="tags" placeholder="如 A320/B-1234" />
           </Form.Item>
-          <Form.Item name="fstdListJson" label="FSTD清单">
+          <Form.Item name="fstdListJson" label={t('organizations.detail.fstdListLabel')}>
             <Select mode="tags" placeholder="设备编号" />
           </Form.Item>
-          <Form.Item name="operationsManualRef" label="运行手册引用">
+          <Form.Item name="operationsManualRef" label={t('organizations.detail.opsManualRefLabel')}>
             <Input />
           </Form.Item>
-          <Form.Item name="trainingManualRef" label="训练手册引用">
+          <Form.Item name="trainingManualRef" label={t('organizations.detail.trainingManualRefLabel')}>
             <Input />
           </Form.Item>
         </Form>

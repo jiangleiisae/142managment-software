@@ -14,40 +14,43 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { Button, Layout, Menu, Space, Typography } from 'antd'
+import { Button, Layout, Menu, Select, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { NotificationBell } from '../components/NotificationBell'
+import { setLanguage, type SupportedLanguage } from '../i18n'
 import type { Permission } from '../api/users'
 
 const { Header, Sider, Content } = Layout
 
-const menuItems: { key: string; icon: React.ReactNode; label: string; permission?: Permission }[] = [
-  { key: '/organizations', icon: <ApartmentOutlined />, label: '机构与证书', permission: 'ORGANIZATION' },
-  { key: '/management-system', icon: <AuditOutlined />, label: '管理体系 SMS/QMS', permission: 'MANAGEMENT_SYSTEM' },
-  { key: '/fstds', icon: <RocketOutlined />, label: '模拟机(FSTD)', permission: 'FSTD' },
-  { key: '/inventory', icon: <InboxOutlined />, label: '备件/工具管理', permission: 'INVENTORY' },
-  { key: '/personnel', icon: <TeamOutlined />, label: '人员资质', permission: 'PERSONNEL' },
-  { key: '/courses', icon: <BookOutlined />, label: '课程管理', permission: 'COURSES' },
-  { key: '/students', icon: <UserOutlined />, label: '学员记录', permission: 'STUDENTS' },
-  { key: '/bookings', icon: <CalendarOutlined />, label: '排班预订', permission: 'SCHEDULING' },
-  { key: '/kiosk', icon: <DesktopOutlined />, label: '缺陷报告 Kiosk' }, // 任何在场人员均可使用, 不受模块权限限制
-  { key: '/isms', icon: <LockOutlined />, label: '信息安全 ISMS', permission: 'ISMS' },
+const menuItems: { key: string; icon: React.ReactNode; labelKey: string; permission?: Permission }[] = [
+  { key: '/organizations', icon: <ApartmentOutlined />, labelKey: 'menu.organizations', permission: 'ORGANIZATION' },
+  { key: '/management-system', icon: <AuditOutlined />, labelKey: 'menu.managementSystem', permission: 'MANAGEMENT_SYSTEM' },
+  { key: '/fstds', icon: <RocketOutlined />, labelKey: 'menu.fstds', permission: 'FSTD' },
+  { key: '/inventory', icon: <InboxOutlined />, labelKey: 'menu.inventory', permission: 'INVENTORY' },
+  { key: '/personnel', icon: <TeamOutlined />, labelKey: 'menu.personnel', permission: 'PERSONNEL' },
+  { key: '/courses', icon: <BookOutlined />, labelKey: 'menu.courses', permission: 'COURSES' },
+  { key: '/students', icon: <UserOutlined />, labelKey: 'menu.students', permission: 'STUDENTS' },
+  { key: '/bookings', icon: <CalendarOutlined />, labelKey: 'menu.bookings', permission: 'SCHEDULING' },
+  { key: '/kiosk', icon: <DesktopOutlined />, labelKey: 'menu.kiosk' }, // 任何在场人员均可使用, 不受模块权限限制
+  { key: '/isms', icon: <LockOutlined />, labelKey: 'menu.isms', permission: 'ISMS' },
 ]
 
 export function AppLayout() {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const { user, isAdmin, hasPermission, logout } = useAuth()
 
   const visibleItems: MenuProps['items'] = menuItems
     .filter((item) => !item.permission || hasPermission(item.permission))
-    .map(({ key, icon, label }) => ({ key, icon, label }))
+    .map(({ key, icon, labelKey }) => ({ key, icon, label: t(labelKey) }))
 
   if (isAdmin) {
-    visibleItems.push({ key: '/users', icon: <SettingOutlined />, label: '用户与权限' })
-    visibleItems.push({ key: '/audit-logs', icon: <FileSearchOutlined />, label: '审计轨迹' })
+    visibleItems.push({ key: '/users', icon: <SettingOutlined />, label: t('menu.users') })
+    visibleItems.push({ key: '/audit-logs', icon: <FileSearchOutlined />, label: t('menu.auditLogs') })
   }
 
   const handleLogout = () => {
@@ -58,9 +61,7 @@ export function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider breakpoint="lg" collapsedWidth="0">
-        <div style={{ color: '#fff', textAlign: 'center', padding: 16, fontWeight: 600 }}>
-          培训中心管理系统
-        </div>
+        <div style={{ color: '#fff', textAlign: 'center', padding: 16, fontWeight: 600 }}>{t('app.title')}</div>
         <Menu
           theme="dark"
           mode="inline"
@@ -80,21 +81,31 @@ export function AppLayout() {
           }}
         >
           <Typography.Text strong style={{ fontSize: 16 }}>
-            EASA ATO 合规管理平台 (MVP)
+            {t('app.subtitle')}
           </Typography.Text>
           <Space size="large">
+            <Select<SupportedLanguage>
+              size="small"
+              style={{ width: 90 }}
+              value={i18n.language === 'en' ? 'en' : 'zh'}
+              onChange={setLanguage}
+              options={[
+                { value: 'zh', label: t('language.zh') },
+                { value: 'en', label: t('language.en') },
+              ]}
+            />
             <NotificationBell />
             <Button
               type="text"
               icon={<QuestionCircleOutlined style={{ fontSize: 18 }} />}
               onClick={() => navigate('/help')}
-              aria-label="使用说明"
+              aria-label={t('menu.help')}
             />
             <Typography.Text type="secondary">
               {user?.email} ({user?.role})
             </Typography.Text>
             <Button icon={<LogoutOutlined />} onClick={handleLogout}>
-              退出登录
+              {t('header.logout')}
             </Button>
           </Space>
         </Header>

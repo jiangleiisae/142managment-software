@@ -2,6 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { I18nContext, I18nService } from 'nestjs-i18n';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
@@ -14,7 +15,14 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly i18n: I18nService,
   ) {}
+
+  /// 登录/注册这两个接口在未登录状态下调用, 错误提示要跟着前端当前选择的语言走 (见 app.module.ts 的
+  /// HeaderResolver, 读取前端发来的 X-Lang 请求头)。
+  private t(key: string) {
+    return this.i18n.t(key, { lang: I18nContext.current()?.lang });
+  }
 
   private issueToken(payload: JwtPayload) {
     return this.jwtService.sign(payload);
@@ -23,7 +31,7 @@ export class AuthService {
   /// 注册创建新租户 + 该租户的第一个用户 (OWNER)。一期没有"加入已有租户"的邀请流程, 后续按需补充。
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (existing) throw new ConflictException('该邮箱已被注册');
+    if (existing) throw new ConflictException(this.t('auth.emailAlreadyRegistered'));
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
@@ -50,11 +58,11 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user) throw new UnauthorizedException('邮箱或密码错误');
-    if (!user.isActive) throw new UnauthorizedException('账户已被停用, 请联系管理员');
+    if (!user) throw new UnauthorizedException(this.t('auth.invalidCredentials'));
+    if (!user.isActive) throw new UnauthorizedException(this.t('auth.accountDisabled'));
 
     const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!passwordMatches) throw new UnauthorizedException('邮箱或密码错误');
+    if (!passwordMatches) throw new UnauthorizedException(this.t('auth.invalidCredentials'));
 
     const payload: JwtPayload = { sub: user.id };
     return {

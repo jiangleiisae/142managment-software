@@ -1,8 +1,10 @@
+import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AcceptLanguageResolver, HeaderResolver, I18nModule } from 'nestjs-i18n';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuditLogModule } from './audit-log/audit-log.module.js';
@@ -31,6 +33,12 @@ import { UserModule } from './user/user.module.js';
     // 默认限流: 每IP每分钟100次请求; 登录/注册等易受暴力破解攻击的路由通过 @Throttle() 单独设更严格的限制。
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     ScheduleModule.forRoot(),
+    // 前端通过 X-Lang 请求头携带当前界面语言(zh|en); 未携带时退回 Accept-Language, 都没有则用中文。
+    I18nModule.forRoot({
+      fallbackLanguage: 'zh',
+      loaderOptions: { path: join(import.meta.dirname, 'i18n/'), watch: true },
+      resolvers: [new HeaderResolver(['x-lang']), AcceptLanguageResolver],
+    }),
     PrismaModule,
     AuditLogModule,
     AuthModule,

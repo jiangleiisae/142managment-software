@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getLanguage } from '../i18n'
 
 const TOKEN_STORAGE_KEY = 'tcms.accessToken'
 
@@ -12,6 +13,8 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // 告诉后端当前界面语言, 让 nestjs-i18n 把错误提示翻译成对应语言 (见 app.module.ts 的 HeaderResolver)
+  config.headers['X-Lang'] = getLanguage()
   return config
 })
 
