@@ -1,5 +1,5 @@
 import { IsBoolean, IsOptional, IsString, IsEnum, MinLength } from 'class-validator';
-import { OrganizationType } from '@prisma/client';
+import { OrganizationType, RegulatoryStandard } from '@prisma/client';
 
 export class CreateOrganizationDto {
   @IsString()
@@ -9,6 +9,10 @@ export class CreateOrganizationDto {
   @IsOptional()
   @IsEnum(OrganizationType)
   type?: OrganizationType;
+
+  @IsOptional()
+  @IsEnum(RegulatoryStandard)
+  regulatoryStandard?: RegulatoryStandard;
 
   @IsOptional()
   @IsString()

@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { App, Button, Form, Input, Modal, Space, Switch, Table, Tag } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -56,6 +56,13 @@ export function OrganizationsPage() {
           { title: t('organizations.list.columnName'), dataIndex: 'name' },
           { title: t('organizations.list.columnAuthority'), dataIndex: 'competentAuthority' },
           {
+            title: t('organizations.list.columnStandard'),
+            dataIndex: 'regulatoryStandard',
+            render: (v: Organization['regulatoryStandard']) => (
+              <Tag color={v === 'CAAC' ? 'blue' : 'default'}>{v === 'CAAC' ? t('organizations.list.standardCAAC') : t('organizations.list.standardEASA')}</Tag>
+            ),
+          },
+          {
             title: t('organizations.list.columnComplex'),
             dataIndex: 'isComplexOrg',
             render: (v: boolean) =>
@@ -79,6 +86,19 @@ export function OrganizationsPage() {
           </Form.Item>
           <Form.Item name="competentAuthority" label={t('organizations.list.fieldAuthority')}>
             <Input placeholder={t('organizations.list.fieldAuthorityPlaceholder')} />
+          </Form.Item>
+          <Form.Item
+            name="regulatoryStandard"
+            label={t('organizations.list.fieldStandard')}
+            initialValue="EASA"
+            tooltip={t('organizations.list.fieldStandardTooltip')}
+          >
+            <Select
+              options={[
+                { value: 'EASA', label: t('organizations.list.standardEASA') },
+                { value: 'CAAC', label: t('organizations.list.standardCAAC') },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="isComplexOrg" label={t('organizations.list.fieldIsComplex')} valuePropName="checked">
             <Switch />

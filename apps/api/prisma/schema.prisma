@@ -166,17 +166,26 @@ enum OrganizationType {
   EASA_ATO_DUAL_FAA142 // 预留: 未来若需同时服务FAA Part142客户
 }
 
+/// 该机构适用的法规标准体系。CAAC 在 EASA 现有要求基础上叠加 CCAR-60(飞行模拟训练设备管理和运行规则)
+/// 和 CCAR-142(飞行训练中心合格审定规则)里独有的更严格要求(如模拟机QMS、教员8小时上岗培训、
+/// 24小时教学时长上限等), 而不是替换 EASA 要求 —— 界面文案/默认值会按此字段分流, 具体合规逻辑按模块逐步补齐。
+enum RegulatoryStandard {
+  EASA
+  CAAC
+}
+
 model Organization {
-  id                  String           @id @default(cuid())
+  id                  String             @id @default(cuid())
   tenantId            String
-  type                OrganizationType @default(EASA_ATO)
+  type                OrganizationType   @default(EASA_ATO)
+  regulatoryStandard  RegulatoryStandard @default(EASA)
   name                String
   address             String?
   competentAuthority  String? // 主管当局名称
-  isComplexOrg        Boolean          @default(false) // AMC1 ORA.GEN.200(b) 复杂/非复杂机构判定
+  isComplexOrg        Boolean            @default(false) // AMC1 ORA.GEN.200(b) 复杂/非复杂机构判定
   complexOrgReason    String? // 触发复杂机构判定的具体原因 (>20FTE / FFS训练 / MP / ZFTT / 多场地 等)
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id])
   certificates         OrganizationCertificate[]
@@ -202,6 +211,7 @@ model Organization {
   informationAssets    InformationAsset[]
   infoSecurityIncidents InfoSecurityIncident[]
   selfReviews          OrganisationalSelfReview[]
+  fstdQms              FstdQms?
   partDemandRequests   PartDemandRequest[]
   stocktakeSessions    StocktakeSession[]
   warehouses           Warehouse[]
@@ -227,6 +237,24 @@ model OrganisationalSelfReview {
 
   @@unique([organizationId, year])
   @@map("organisational_self_reviews")
+}
+
+/// CCAR-60 附录B: 飞行模拟训练设备质量管理系统, 按飞行模拟训练设备运营人(机构)建立, 覆盖其全部FSTD (60.11(e)/60.55)。
+/// 是否"已建立QMS"直接决定第60.19条规定的合格证有效期档位(建立后更长, 未建立则更短), 而非EASA模式下"12个月为标准、
+/// 24/36个月需专门申请延期"的例外逻辑——二者方向相反, 故CAAC机构不复用EASA的延期资格(ExtensionEligibility)流程。
+model FstdQms {
+  id                    String    @id @default(cuid())
+  organizationId        String    @unique
+  establishedAt         DateTime? // 质量管理系统建立日期; 为空视为未建立
+  designatedManagerName String? // 附录B(b): 指定负责建立/纠正QMS政策措施程序并对接民航局的管理人员
+  itemsJson             Json      @default("[]") // 附录B(c)(1)-(21)逐项: [{ item, compliant, notes }, ...]
+  lastInternalAuditAt   DateTime? // 附录B(c)(21): 质量保证计划内部审计
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("fstd_qms")
 }
 
 enum CertificateStatus {
@@ -708,6 +736,7 @@ model Fstd {
   qualificationBasisVersion String? // 初始鉴定采用的标准版本, 后续周期性鉴定持续沿用
   location              String?
   status                String                     @default("active") // active / deactivated / relocating / decommissioned
+  isLargeAircraftPublicTransport Boolean           @default(false) // CCAR-60第60.19条(a)款: 模拟大型飞机(多发、公共航空运输)的FFS适用独立的有效期档位(12/6个月), 区别于(b)款其他FSTD的24/36或12/18个月档位
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
 
@@ -718,6 +747,7 @@ model Fstd {
   equipmentSpecificationLists EquipmentSpecificationList[]
   recurrentEvals  FstdRecurrentEvaluation[]
   safetyFacilityChecks FstdSafetyFacilityCheck[]
+  preFlightChecks FstdPreFlightCheck[]
   discrepancies   DiscrepancyLog[]
   qtgDocuments    FstdQtgDocument[]
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
@@ -955,6 +985,25 @@ model FstdSafetyFacilityCheck {
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
   @@map("fstd_safety_facility_checks")
+}
+
+/// CCAR-60第60.37条(a)(2)(3): 每个飞行日历日开始使用前的飞行前功能检查, 以及每7个连续日历日内至少一次的保底检查要求
+/// (同一份检查同时满足两款——每日使用前做一次即可, 7天窗口用于设备未使用日子的兜底)。检查内容见(c)款: 外部液压/气源/
+/// 电器连接、运动系统行程范围无障碍物、故障记录核查、主要系统通电/视景/声音/起落架襟翼等完整功能性检查序列, 共14项。
+model FstdPreFlightCheck {
+  id            String   @id @default(cuid())
+  fstdId        String
+  checkDate     DateTime // 检查对应的日历日 (非精确时间戳), 用于按日去重和7天窗口计算
+  performedById String? // Personnel.id, 执行检查的人员
+  itemsJson     Json // [{ item: "...", passed: true, notes: string }, ...] (60.37条(c)款14项)
+  overallResult String // pass / issues_found
+  nextDueDate   DateTime // checkDate + 7个日历日 (60.37条(a)(3)保底周期)
+  createdAt     DateTime @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@unique([fstdId, checkDate])
+  @@map("fstd_pre_flight_checks")
 }
 
 /// 3.3.10 常规维护(PM)排期: 独立于3.3.4 QTG(按季度滚动)和3.3.5周期性评估(按年/三年)的第三套周期性机制,

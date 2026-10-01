@@ -1,5 +1,5 @@
 import { FstdDeviceType, FstdQualificationBasisType, LegacyLevel } from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateFstdDto {
   @IsString()
@@ -32,4 +32,8 @@ export class CreateFstdDto {
   @IsOptional()
   @IsEnum(FstdQualificationBasisType)
   qualificationBasisType?: FstdQualificationBasisType;
+
+  @IsOptional()
+  @IsBoolean()
+  isLargeAircraftPublicTransport?: boolean;
 }

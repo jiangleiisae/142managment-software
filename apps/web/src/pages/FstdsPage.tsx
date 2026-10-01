@@ -11,11 +11,14 @@ import type {
   FcsCharacteristic,
   FcsFidelityLevel,
   FstdFcsCapability,
+  FstdQms,
   PerformanceMetricsSummary,
   PmChecklistTemplate,
   PmCheckLevel,
   PmTask,
   PmTaskDueSoonItem,
+  PreFlightCheck,
+  PreFlightCheckDueSoonItem,
   QtgDocument,
   QtgDocumentType,
   QuarterlyQtgIssue,
@@ -34,6 +37,7 @@ import { personnelApi } from '../api/personnel'
 import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel, Personnel } from '../api/types'
 import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
 import { OrganizationSelector } from '../components/OrganizationSelector'
+import { resolveStandard, useStandardText } from '../hooks/useRegulatoryStandard'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
 const RETENTION_CATEGORY_COLOR: Record<RetentionCategory, string> = {
@@ -67,6 +71,7 @@ interface FstdDetail extends Fstd {
   evaluations?: RecurrentEvaluation[]
   discrepancies?: Discrepancy[]
   safetyChecks?: SafetyFacilityCheck[]
+  preFlightChecks?: PreFlightCheck[]
   qtgDocuments?: QtgDocument[]
   qtgRuns?: QuarterlyQtgRun[]
   fcsCapabilities?: FstdFcsCapability[]
@@ -84,6 +89,13 @@ export function FstdsPage() {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
+  const regulatoryStandard = resolveStandard(organizations, selectedId)
+  const isCaac = regulatoryStandard === 'CAAC'
+  const { ts } = useStandardText(regulatoryStandard)
+  const [qms, setQms] = useState<FstdQms>()
+  const [qmsChecklist, setQmsChecklist] = useState<string[]>([])
+  const [qmsItemState, setQmsItemState] = useState<Record<string, { compliant: boolean; notes: string }>>({})
+  const [qmsForm] = Form.useForm()
   const [fstds, setFstds] = useState<FstdDetail[]>([])
   const [dueSoon, setDueSoon] = useState<EvaluationDueSoonItem[]>([])
   const [overdueDiscrepancies, setOverdueDiscrepancies] = useState<Discrepancy[]>([])
@@ -100,6 +112,11 @@ export function FstdsPage() {
   const [safetyCheckItemState, setSafetyCheckItemState] = useState<Record<string, boolean>>(
     () => Object.fromEntries(SAFETY_CHECK_ITEMS.map((item) => [item, true])),
   )
+  const [preFlightCheckItems, setPreFlightCheckItems] = useState<string[]>([])
+  const [preFlightCheckDueSoon, setPreFlightCheckDueSoon] = useState<PreFlightCheckDueSoonItem[]>([])
+  const [preFlightCheckModalFstdId, setPreFlightCheckModalFstdId] = useState<string>()
+  const [preFlightCheckItemState, setPreFlightCheckItemState] = useState<Record<string, boolean>>({})
+  const [preFlightCheckForm] = Form.useForm()
   const [qtgIssues, setQtgIssues] = useState<QuarterlyQtgIssue[]>([])
   const [qtgDocModalFstdId, setQtgDocModalFstdId] = useState<string>()
   const [qtgRunModalFstdId, setQtgRunModalFstdId] = useState<string>()
@@ -149,6 +166,7 @@ export function FstdsPage() {
           evaluations: await fstdsApi.listRecurrentEvaluations(f.id),
           discrepancies: await fstdsApi.listDiscrepancies(f.id),
           safetyChecks: await fstdsApi.listSafetyFacilityChecks(f.id),
+          preFlightChecks: await fstdsApi.listPreFlightChecks(f.id),
           qtgDocuments: await fstdsApi.listQtgDocuments(f.id),
           qtgRuns: await fstdsApi.listQuarterlyQtgRuns(f.id),
           fcsCapabilities: await fstdsApi.listFcsCapabilities(f.id),
@@ -164,9 +182,19 @@ export function FstdsPage() {
     fstdsApi.listEvaluationsDueSoon().then(setDueSoon)
     fstdsApi.findOverdueDiscrepancies().then(setOverdueDiscrepancies)
     fstdsApi.findSafetyChecksDueSoon().then(setSafetyCheckDueSoon)
+    fstdsApi.findPreFlightChecksDueSoon().then(setPreFlightCheckDueSoon)
     fstdsApi.findQuarterlyQtgIssues().then(setQtgIssues)
     fstdsApi.listPmChecklistTemplates(selectedId).then(setPmTemplates)
     fstdsApi.findPmTasksDueSoon().then(setPmDueSoon)
+    fstdsApi.getQms(selectedId).then((q) => {
+      setQms(q)
+      qmsForm.setFieldsValue({
+        establishedAt: q.establishedAt ? dayjs(q.establishedAt) : undefined,
+        designatedManagerName: q.designatedManagerName ?? undefined,
+        lastInternalAuditAt: q.lastInternalAuditAt ? dayjs(q.lastInternalAuditAt) : undefined,
+      })
+      setQmsItemState(Object.fromEntries((q.itemsJson ?? []).map((i) => [i.item, { compliant: i.compliant, notes: i.notes ?? '' }])))
+    })
   }
 
   useEffect(() => {
@@ -175,6 +203,8 @@ export function FstdsPage() {
 
   useEffect(() => {
     fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
+    fstdsApi.listQmsChecklistItems().then(setQmsChecklist)
+    fstdsApi.listPreFlightCheckItems().then(setPreFlightCheckItems)
     personnelApi.list().then(setPersonnel)
   }, [])
 
@@ -269,6 +299,29 @@ export function FstdsPage() {
     })
     message.success(t('fstdsPage.safetyCheckRecorded'))
     setSafetyCheckModalFstdId(undefined)
+    load()
+  }
+
+  const openPreFlightCheckModal = (fstdId: string) => {
+    setPreFlightCheckItemState(Object.fromEntries(preFlightCheckItems.map((item) => [item, true])))
+    preFlightCheckForm.resetFields()
+    setPreFlightCheckModalFstdId(fstdId)
+  }
+
+  const handleRecordPreFlightCheck = async () => {
+    if (!preFlightCheckModalFstdId) return
+    const values = await preFlightCheckForm.validateFields()
+    await fstdsApi.recordPreFlightCheck(preFlightCheckModalFstdId, {
+      checkDate: values.checkDate.format('YYYY-MM-DD'),
+      performedById: values.performedById,
+      items: preFlightCheckItems.map((item) => ({
+        item,
+        passed: preFlightCheckItemState[item],
+        notes: !preFlightCheckItemState[item] ? values.notes : undefined,
+      })),
+    })
+    message.success(t('fstdsPage.preFlightCheckRecorded'))
+    setPreFlightCheckModalFstdId(undefined)
     load()
   }
 
@@ -453,6 +506,34 @@ export function FstdsPage() {
     load()
   }
 
+  const handleSaveQms = async () => {
+    if (!selectedId) return
+    const values = await qmsForm.validateFields()
+    const items = qmsChecklist.map((item) => ({ item, ...(qmsItemState[item] ?? { compliant: true, notes: '' }) }))
+    const updated = await fstdsApi.upsertQms({
+      organizationId: selectedId,
+      establishedAt: values.establishedAt ? values.establishedAt.format('YYYY-MM-DD') : undefined,
+      designatedManagerName: values.designatedManagerName,
+      items,
+      lastInternalAuditAt: values.lastInternalAuditAt ? values.lastInternalAuditAt.format('YYYY-MM-DD') : undefined,
+    })
+    setQms(updated)
+    message.success(t('fstdsPage.qmsSaved'))
+  }
+
+  const handleSetLargeAircraftFlag = async (fstdId: string, isLargeAircraftPublicTransport: boolean) => {
+    await fstdsApi.update(fstdId, { isLargeAircraftPublicTransport })
+    message.success(t('fstdsPage.largeAircraftFlagUpdated'))
+    load()
+  }
+
+  // CCAR-60第60.19条: 有效期档位由QMS建立状态+设备档位决定, 供UI展示参考 (真正写库由后端recordRecurrentEvaluation统一计算)
+  const computeCaacValidityMonths = (fstd: Fstd): number => {
+    if (fstd.deviceType === 'FFS' && fstd.isLargeAircraftPublicTransport) return qms?.isEstablished ? 12 : 6
+    if (fstd.deviceType === 'FFS') return qms?.isEstablished ? 24 : 12
+    return qms?.isEstablished ? 36 : 18
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -512,6 +593,51 @@ export function FstdsPage() {
             />
           </div>
 
+          {isCaac && (
+            <div style={{ marginBottom: 16, border: '1px solid #f0f0f0', borderRadius: 8, padding: 16 }}>
+              <Space style={{ marginBottom: 8 }}>
+                <span style={{ fontWeight: 600 }}>{t('fstdsPage.qmsTitle')}</span>
+                <Tag color={qms?.isEstablished ? 'green' : 'orange'}>
+                  {qms?.isEstablished ? t('fstdsPage.qmsEstablished') : t('fstdsPage.qmsNotEstablished')}
+                </Tag>
+              </Space>
+              <Alert style={{ marginBottom: 12 }} type="info" showIcon message={t('fstdsPage.qmsIntro')} />
+              <Form form={qmsForm} layout="vertical">
+                <Space size="large" wrap>
+                  <Form.Item name="establishedAt" label={t('fstdsPage.qmsFieldEstablishedAt')}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="designatedManagerName" label={t('fstdsPage.qmsFieldManagerName')}>
+                    <Input style={{ width: 200 }} />
+                  </Form.Item>
+                  <Form.Item name="lastInternalAuditAt" label={t('fstdsPage.qmsFieldLastAuditAt')}>
+                    <DatePicker />
+                  </Form.Item>
+                </Space>
+              </Form>
+              <List
+                size="small"
+                dataSource={qmsChecklist}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
+                      <span>{item}</span>
+                      <Switch
+                        checked={qmsItemState[item]?.compliant ?? true}
+                        checkedChildren={t('organizations.detail.checklistCompliant')}
+                        unCheckedChildren={t('organizations.detail.checklistNonCompliant')}
+                        onChange={(checked) => setQmsItemState((s) => ({ ...s, [item]: { ...s[item], compliant: checked } }))}
+                      />
+                    </Space>
+                  </List.Item>
+                )}
+              />
+              <Button type="primary" style={{ marginTop: 12 }} onClick={handleSaveQms}>
+                {t('fstdsPage.qmsSave')}
+              </Button>
+            </div>
+          )}
+
           {pmDueSoon.length > 0 && (
             <Alert
               style={{ marginBottom: 16 }}
@@ -546,6 +672,15 @@ export function FstdsPage() {
               showIcon
               message={t('fstdsPage.safetyCheckDueSoonWarning', { count: safetyCheckDueSoon.length })}
               description={safetyCheckDueSoon.map((d) => d.deviceCode).join('、')}
+            />
+          )}
+          {isCaac && preFlightCheckDueSoon.length > 0 && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message={t('fstdsPage.preFlightCheckDueSoonWarning', { count: preFlightCheckDueSoon.length })}
+              description={preFlightCheckDueSoon.map((d) => d.deviceCode).join('、')}
             />
           )}
           {qtgIssues.length > 0 && (
@@ -584,6 +719,32 @@ export function FstdsPage() {
                 dataIndex: 'legacyLevel',
                 render: (v: Fstd['legacyLevel']) => (v ? <Tag color="blue">{v.level}</Tag> : '-'),
               },
+              ...(isCaac
+                ? [
+                    {
+                      title: t('fstdsPage.columnCaacValidity'),
+                      render: (_: unknown, fstd: FstdDetail) => (
+                        <Space direction="vertical" size={0}>
+                          {fstd.deviceType === 'FFS' && (
+                            <Space size={4}>
+                              <span style={{ fontSize: 12, color: '#888' }}>{t('fstdsPage.fieldIsLargeAircraft')}</span>
+                              <Switch
+                                size="small"
+                                checked={fstd.isLargeAircraftPublicTransport}
+                                onChange={(checked) => handleSetLargeAircraftFlag(fstd.id, checked)}
+                              />
+                            </Space>
+                          )}
+                          {fstd.deviceType !== 'BITD' && (
+                            <Tag color={qms?.isEstablished ? 'green' : 'orange'}>
+                              {t('fstdsPage.caacValidityMonths', { months: computeCaacValidityMonths(fstd) })}
+                            </Tag>
+                          )}
+                        </Space>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 title: t('fstdsPage.columnActions'),
                 render: (_, fstd) => (
@@ -605,6 +766,11 @@ export function FstdsPage() {
                     <Button size="small" onClick={() => openSafetyCheckModal(fstd.id)}>
                       {t('fstdsPage.recordSafetyCheck')}
                     </Button>
+                    {isCaac && (
+                      <Button size="small" onClick={() => openPreFlightCheckModal(fstd.id)}>
+                        {t('fstdsPage.recordPreFlightCheck')}
+                      </Button>
+                    )}
                     <Button size="small" onClick={() => setQtgDocModalFstdId(fstd.id)}>
                       {t('fstdsPage.qtgDocuments')}
                     </Button>
@@ -948,6 +1114,38 @@ export function FstdsPage() {
                       </List.Item>
                     )}
                   />
+                  {isCaac && (
+                    <List
+                      header={t('fstdsPage.preFlightCheckHeader')}
+                      size="small"
+                      dataSource={fstd.preFlightChecks ?? []}
+                      locale={{ emptyText: t('fstdsPage.noPreFlightChecks') }}
+                      renderItem={(c) => (
+                        <List.Item>
+                          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                            <Space wrap>
+                              <Tag color={c.overallResult === 'pass' ? 'green' : 'red'}>
+                                {c.overallResult === 'pass' ? t('fstdsPage.allPassedTag') : t('fstdsPage.foundIssuesTag')}
+                              </Tag>
+                              {c.itemsJson
+                                .filter((i) => !i.passed)
+                                .map((i) => (
+                                  <Tag key={i.item} color="red">
+                                    {t('fstdsPage.notPassedTag', { item: i.item, notes: i.notes || t('fstdsPage.notPassedDefault') })}
+                                  </Tag>
+                                ))}
+                            </Space>
+                            <span style={{ color: '#888', fontSize: 12 }}>
+                              {t('fstdsPage.preFlightCheckFooter', {
+                                checkDate: new Date(c.checkDate).toLocaleDateString(),
+                                nextDue: new Date(c.nextDueDate).toLocaleDateString(),
+                              })}
+                            </span>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  )}
                   <List
                     header={t('fstdsPage.qtgDocHeader')}
                     size="small"
@@ -1035,6 +1233,22 @@ export function FstdsPage() {
               )
             }
           </Form.Item>
+          {isCaac && (
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.deviceType !== cur.deviceType}>
+              {({ getFieldValue }) =>
+                getFieldValue('deviceType') === 'FFS' && (
+                  <Form.Item
+                    name="isLargeAircraftPublicTransport"
+                    label={t('fstdsPage.fieldIsLargeAircraft')}
+                    valuePropName="checked"
+                    tooltip={t('fstdsPage.fieldIsLargeAircraftTooltip')}
+                  >
+                    <Switch />
+                  </Form.Item>
+                )
+              }
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -1061,47 +1275,66 @@ export function FstdsPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="useExtension" label={t('fstdsPage.fieldUseExtension')} valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.useExtension !== cur.useExtension}>
-            {({ getFieldValue }) =>
-              getFieldValue('useExtension') && (
-                <>
-                  {extensionEligibility && (
-                    <Alert
-                      style={{ marginBottom: 12 }}
-                      type={extensionEligibility.has36MonthsCompliantRecord && extensionEligibility.hasAnnualManagementAudit ? 'success' : 'warning'}
-                      showIcon
-                      message={t('fstdsPage.extensionEligibilityTitle')}
-                      description={
-                        <>
-                          <div>{extensionEligibility.has36MonthsCompliantRecord ? '✓' : '✗'} {t('fstdsPage.extension36MonthRecord')}</div>
-                          <div>{extensionEligibility.hasAnnualManagementAudit ? '✓' : '✗'} {t('fstdsPage.extensionAnnualAudit')}</div>
-                          <div>{t('fstdsPage.extensionSelfAssessmentNote')}</div>
-                        </>
-                      }
-                    />
-                  )}
-                  <Form.Item name="extensionMonths" label={t('fstdsPage.fieldExtensionMonths')} rules={[{ required: true }]}>
-                    <Select
-                      options={[
-                        { value: 24, label: t('fstdsPage.extension24Months') },
-                        { value: 36, label: t('fstdsPage.extension36Months') },
-                      ]}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="selfAssessmentConfirmed"
-                    valuePropName="checked"
-                    rules={[{ validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error(t('fstdsPage.selfAssessmentValidationError')))) }]}
-                  >
-                    <Switch checkedChildren={t('fstdsPage.selfAssessmentConfirmedSwitch')} unCheckedChildren={t('fstdsPage.selfAssessmentUnconfirmedSwitch')} />
-                  </Form.Item>
-                </>
+          {isCaac ? (
+            (() => {
+              const evalFstd = fstds.find((f) => f.id === evalModalFstdId)
+              return (
+                evalFstd &&
+                evalFstd.deviceType !== 'BITD' && (
+                  <Alert
+                    type={qms?.isEstablished ? 'success' : 'warning'}
+                    showIcon
+                    message={t('fstdsPage.caacValidityMonths', { months: computeCaacValidityMonths(evalFstd) })}
+                    description={ts('fstdsPage.extensionSelfAssessmentNote')}
+                  />
+                )
               )
-            }
-          </Form.Item>
+            })()
+          ) : (
+            <>
+              <Form.Item name="useExtension" label={t('fstdsPage.fieldUseExtension')} valuePropName="checked">
+                <Switch />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.useExtension !== cur.useExtension}>
+                {({ getFieldValue }) =>
+                  getFieldValue('useExtension') && (
+                    <>
+                      {extensionEligibility && (
+                        <Alert
+                          style={{ marginBottom: 12 }}
+                          type={extensionEligibility.has36MonthsCompliantRecord && extensionEligibility.hasAnnualManagementAudit ? 'success' : 'warning'}
+                          showIcon
+                          message={t('fstdsPage.extensionEligibilityTitle')}
+                          description={
+                            <>
+                              <div>{extensionEligibility.has36MonthsCompliantRecord ? '✓' : '✗'} {t('fstdsPage.extension36MonthRecord')}</div>
+                              <div>{extensionEligibility.hasAnnualManagementAudit ? '✓' : '✗'} {t('fstdsPage.extensionAnnualAudit')}</div>
+                              <div>{ts('fstdsPage.extensionSelfAssessmentNote')}</div>
+                            </>
+                          }
+                        />
+                      )}
+                      <Form.Item name="extensionMonths" label={t('fstdsPage.fieldExtensionMonths')} rules={[{ required: true }]}>
+                        <Select
+                          options={[
+                            { value: 24, label: t('fstdsPage.extension24Months') },
+                            { value: 36, label: t('fstdsPage.extension36Months') },
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="selfAssessmentConfirmed"
+                        valuePropName="checked"
+                        rules={[{ validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error(t('fstdsPage.selfAssessmentValidationError')))) }]}
+                      >
+                        <Switch checkedChildren={t('fstdsPage.selfAssessmentConfirmedSwitch')} unCheckedChildren={t('fstdsPage.selfAssessmentUnconfirmedSwitch')} />
+                      </Form.Item>
+                    </>
+                  )
+                }
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
 
@@ -1303,6 +1536,39 @@ export function FstdsPage() {
             </Form.Item>
           ))}
           {Object.values(safetyCheckItemState).some((v) => !v) && (
+            <Form.Item name="notes" label={t('fstdsPage.fieldUnqualifiedNotes')}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
+          )}
+        </Form>
+      </Modal>
+
+      <Modal
+        title={t('fstdsPage.preFlightCheckModalTitle')}
+        open={!!preFlightCheckModalFstdId}
+        onOk={handleRecordPreFlightCheck}
+        onCancel={() => setPreFlightCheckModalFstdId(undefined)}
+        width={600}
+      >
+        <Alert style={{ marginBottom: 12 }} type="info" showIcon message={t('fstdsPage.preFlightCheckIntro')} />
+        <Form form={preFlightCheckForm} layout="vertical" initialValues={{ checkDate: dayjs() }}>
+          <Form.Item name="checkDate" label={t('fstdsPage.fieldCheckDate')} rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="performedById" label={t('fstdsPage.fieldPerformedBy')}>
+            <Select allowClear options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
+          </Form.Item>
+          {preFlightCheckItems.map((item) => (
+            <Form.Item key={item} label={item} style={{ marginBottom: 12 }}>
+              <Switch
+                checked={preFlightCheckItemState[item]}
+                checkedChildren={t('fstdsPage.passedSwitch')}
+                unCheckedChildren={t('fstdsPage.notPassedSwitch')}
+                onChange={(checked) => setPreFlightCheckItemState((s) => ({ ...s, [item]: checked }))}
+              />
+            </Form.Item>
+          ))}
+          {Object.values(preFlightCheckItemState).some((v) => !v) && (
             <Form.Item name="notes" label={t('fstdsPage.fieldUnqualifiedNotes')}>
               <Input.TextArea rows={2} />
             </Form.Item>

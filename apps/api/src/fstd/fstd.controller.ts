@@ -15,6 +15,7 @@ import { CreateFstdDto } from './dto/create-fstd.dto.js';
 import { CreatePmTaskDto } from './dto/create-pm-task.dto.js';
 import { DeclareEslDto } from './dto/declare-esl.dto.js';
 import { RecordPerformanceMetricDto } from './dto/record-performance-metric.dto.js';
+import { RecordPreFlightCheckDto } from './dto/record-pre-flight-check.dto.js';
 import { RecordQuarterlyQtgRunDto } from './dto/record-quarterly-qtg-run.dto.js';
 import { RecordRecurrentEvaluationDto } from './dto/record-recurrent-evaluation.dto.js';
 import { RecordSafetyFacilityCheckDto } from './dto/record-safety-facility-check.dto.js';
@@ -23,6 +24,8 @@ import { ReviewPmTaskDto } from './dto/review-pm-task.dto.js';
 import { SetDiscrepancyRetentionDto } from './dto/set-discrepancy-retention.dto.js';
 import { SetFcsCapabilityDto } from './dto/set-fcs-capability.dto.js';
 import { SetPmChecklistTemplateDto } from './dto/set-pm-checklist-template.dto.js';
+import { UpdateFstdDto } from './dto/update-fstd.dto.js';
+import { UpsertFstdQmsDto } from './dto/upsert-fstd-qms.dto.js';
 import { FstdService } from './fstd.service.js';
 import { qtgFileUploadOptions } from './qtg-file-storage.js';
 
@@ -75,6 +78,23 @@ export class FstdController {
     return this.fstdService.findPmTasksDueSoon(user.tenantId, Number(withinDays) || 60);
   }
 
+  // ---- CCAR-60 附录B: FSTD质量管理系统 (机构级, 须在 :id 路由之前注册) ----
+
+  @Get('qms/checklist')
+  listQmsChecklistItems() {
+    return this.fstdService.listQmsChecklistItems();
+  }
+
+  @Get('qms')
+  getQms(@Query('organizationId') organizationId: string) {
+    return this.fstdService.getQms(organizationId);
+  }
+
+  @Post('qms')
+  upsertQms(@CurrentUser() user: AuthContext, @Body() dto: UpsertFstdQmsDto) {
+    return this.fstdService.upsertQms(dto.organizationId, user.tenantId, dto);
+  }
+
   @Post('pm-tasks/:taskId/review')
   reviewPmTask(@CurrentUser() user: AuthContext, @Param('taskId') taskId: string, @Body() dto: ReviewPmTaskDto) {
     return this.fstdService.reviewPmTask(taskId, user.tenantId, dto);
@@ -83,6 +103,11 @@ export class FstdController {
   @Get(':id')
   findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.fstdService.findOne(id, user.tenantId);
+  }
+
+  @Post(':id')
+  updateFstd(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateFstdDto) {
+    return this.fstdService.updateFstd(id, user.tenantId, dto);
   }
 
   @Post(':id/qualified-tasks')
@@ -218,6 +243,28 @@ export class FstdController {
   @Get('safety-facility-checks/due-soon')
   findSafetyChecksDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
     return this.fstdService.findSafetyChecksDueSoon(user.tenantId, Number(withinDays) || 60);
+  }
+
+  // ---- CCAR-60第60.37条(a)(2)(3): 飞行前功能检查 (每日使用前 + 每7日保底) ----
+
+  @Get('pre-flight-checks/checklist')
+  listPreFlightCheckItems() {
+    return this.fstdService.listPreFlightCheckItems();
+  }
+
+  @Get('pre-flight-checks/due-soon')
+  findPreFlightChecksDueSoon(@CurrentUser() user: AuthContext, @Query('withinDays') withinDays: string) {
+    return this.fstdService.findPreFlightChecksDueSoon(user.tenantId, Number(withinDays) || 2);
+  }
+
+  @Post(':id/pre-flight-checks')
+  recordPreFlightCheck(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: RecordPreFlightCheckDto) {
+    return this.fstdService.recordPreFlightCheck(id, user.tenantId, dto);
+  }
+
+  @Get(':id/pre-flight-checks')
+  listPreFlightChecks(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.fstdService.listPreFlightChecks(id, user.tenantId);
   }
 
   // ---- 3.3.4 QTG/MQTG生命周期: 文档版本管理 ----

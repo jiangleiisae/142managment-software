@@ -2,10 +2,13 @@
 
 export type CertificateStatus = 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'TERMINATED'
 
+export type RegulatoryStandard = 'EASA' | 'CAAC'
+
 export interface Organization {
   id: string
   tenantId: string
   type: 'EASA_ATO' | 'EASA_ATO_DUAL_FAA142'
+  regulatoryStandard: RegulatoryStandard
   name: string
   address?: string | null
   competentAuthority?: string | null
@@ -53,6 +56,7 @@ export interface Fstd {
   deviceType: FstdDeviceType
   status: string
   qualificationBasisType: FstdQualificationBasisType
+  isLargeAircraftPublicTransport: boolean
   legacyLevel?: { level: LegacyLevel } | null
   qualifiedTasks?: { id: string; taskCode: string; taskName: string }[]
 }

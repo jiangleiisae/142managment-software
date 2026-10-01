@@ -7,6 +7,7 @@ import {
   LegacyLevel,
   PmCheckLevel,
   PmTaskStatus,
+  Prisma,
   QtgDocumentType,
   RetentionCategory,
 } from '@prisma/client';
@@ -26,6 +27,85 @@ export interface TaskCapabilityResult {
   reason?: string;
   missingForStart?: MissingCharacteristic[];
   missingForCompletion?: MissingCharacteristic[];
+}
+
+/// CCAR-60 附录B: 飞行模拟训练设备质量管理系统要求清单 ((b)指定管理人员 + (c)(1)-(21)逐项书面程序)
+export const FSTD_QMS_CHECKLIST_ITEMS = [
+  '已指定至少一名管理人员, 负责建立/纠正QMS政策措施程序, 并就本规则事宜与民航局联系', // (b)
+  '管理部门确保满足规则/鉴定性能标准/建立质量系统重要性的方法', // (c)(1)
+  '管理部门确定满足规章标准和QMS要求的方法, 及不符合时的纠正与防止再发生方法', // (c)(2)
+  '管理部门确定能及时正常提供合格FSTD的方法', // (c)(3)
+  'FSTD正常维护/维修/零件更换/改装等工艺的标准、定义或描述, 及由谁/何时/如何确认符合标准', // (c)(4)
+  '保存和控制技术参考文件、训练记录和其他文档的方法', // (c)(5)
+  '选择从事FSTD检查/测试/维修(预防性和纠正性)人员的标准(如训练或经验)', // (c)(6)
+  '对FSTD的检查/测试/维修(预防性和纠正性)进行跟踪的方法', // (c)(7)
+  '向训练大纲审批部门报告民航局计划实施的鉴定及每次鉴定结果的方法', // (c)(8)
+  '确保飞行教员/检查员/考试员/执行日常飞行前检查的人员能够发现FSTD缺陷的方法', // (c)(9)
+  '确保上述人员在故障记录本或故障记录系统中记录FSTD故障及缺件/故障/不工作部件的方法', // (c)(10)
+  '确保完整准确记录FSTD中断次数、耽误训练/考试/检查/获取飞行经历的时间及中断原因的方法', // (c)(11)
+  '通知FSTD使用者因缺件/故障/不工作部件而引起的使用限制的方法', // (c)(12)
+  '记录民航局实施的鉴定和其他检查(如日常飞行前检查、运营人自查)的方法, 含日期/结果/缺陷/建议/纠正措施', // (c)(13)
+  '确保FSTD与所模拟航空器构型一致, 以及改装后最新构型系统功能正常的方法', // (c)(14)
+  '确定预计的航空器/FSTD改装是否影响性能操纵等特性, 并与训练管理部门、其他用户和民航局沟通的方法', // (c)(15)
+  '根据故障记录本/系统信息排除故障, 必要时修改现行维护程序的方法', // (c)(16)
+  '确定何时/怎样完成软硬件更改并跟踪记录(自初始QMS评估审核以来所有更改)的方法', // (c)(17)
+  '确定FSTD在日常使用中满足相应标准的方法', // (c)(18)
+  '获取飞行教员/检查员/考试员及FSTD技术维修人员关于FSTD运行的独立反馈意见, 并说明处理方法', // (c)(19)
+  '对检验/测量/监控FSTD正确运行的设备进行精度校准调整的方法, 含可追溯性及保持良好运行状态的方法', // (c)(20)
+  '由何人、如何、以多长周期进行质量保证计划的内部审计, 审计结果如何保管并向管理部门和民航局报告', // (c)(21)
+];
+
+interface FstdQmsChecklistItem {
+  item: string;
+  compliant: boolean;
+  notes?: string;
+}
+
+/// 已建立QMS: establishedAt已填写, 且21+1项清单全部合规 (60.19条有效期档位的判定依据)
+function isFstdQmsEstablished(qms: { establishedAt: Date | null; itemsJson: unknown } | null | undefined): boolean {
+  if (!qms?.establishedAt) return false;
+  const items = Array.isArray(qms.itemsJson) ? (qms.itemsJson as FstdQmsChecklistItem[]) : [];
+  return items.length === FSTD_QMS_CHECKLIST_ITEMS.length && items.every((i) => i.compliant);
+}
+
+/// CCAR-60第60.37条(c): 飞行前功能检查内容——(a)(2)每个飞行日历日开始使用前、(a)(3)每7个连续日历日内至少一次,
+/// 两款共用同一份检查项目, 同一天完成一次即可同时满足两款要求
+export const FSTD_PRE_FLIGHT_CHECK_ITEMS = [
+  '外部液压、气源和电器连接的检查', // (c)(1)
+  '运动系统行程范围内无潜在障碍物检查', // (c)(2)
+  '飞行模拟训练设备故障记录检查', // (c)(3)
+  '接通主电源(含运动系统)并使其达到稳定状态', // (c)(4)(i)
+  '接通航空器电源(快速起动发动机/辅助动力装置/地面电源)', // (c)(4)(ii)
+  '全面检查照明灯泡功能、带灯光仪表和电门、故障警告旗或其他指示', // (c)(4)(iii)
+  '检查飞行管理系统在有效日期范围内', // (c)(4)(iv)
+  '选择起飞位置, 从任一驾驶员位置观察视景系统运行(光点、颜色平衡与汇聚、边缘匹配等)', // (c)(4)(v)
+  '调整能见度值并解冻位置/飞行冻结, 检查声音系统和发动机仪表反应、滑行、减速板刹车可靠性、运动系统、反推', // (c)(4)(vi)
+  '选择五边位置观察视景图像, 检查起落架/襟翼正常操作、操纵感觉和自由度、飞机正确反应', // (c)(4)(vii)
+  '放出起落架和襟翼(如适用)', // (c)(4)(viii)
+  '飞行到机场并着陆或者选择起飞位置', // (c)(4)(ix)
+  '关停发动机, 关闭灯光、主电源和运动系统', // (c)(4)(x)
+  '发现缺件、故障或不工作部件时记录在故障记录本或故障记录系统中', // (c)(4)(xi)
+];
+
+const PRE_FLIGHT_CHECK_WINDOW_DAYS = 7;
+
+/// CCAR-60第60.19条: 合格证有效期档位。方向与EASA相反——建立QMS后有效期更长, 未建立则更短,
+/// 而非EASA"12个月为标准、24/36个月需专门申请延期"的例外逻辑。
+/// (a)款: 模拟大型飞机(多发、公共航空运输)的FFS, 单独档位 12/6个月。
+/// (b)款: 其他FSTD, FFS为24/12个月, 飞行训练器(FTD/FNPT视同训练器)为36/18个月。
+/// BITD在CCAR-60中无对应分类, 不适用本函数, 沿用既有EASA式固定周期。
+export function computeCaacValidityMonths(
+  deviceType: FstdDeviceType,
+  isLargeAircraftPublicTransport: boolean,
+  qmsEstablished: boolean,
+): number {
+  if (deviceType === 'FFS' && isLargeAircraftPublicTransport) {
+    return qmsEstablished ? 12 : 6;
+  }
+  if (deviceType === 'FFS') {
+    return qmsEstablished ? 24 : 12;
+  }
+  return qmsEstablished ? 36 : 18;
 }
 
 @Injectable()
@@ -55,6 +135,7 @@ export class FstdService {
     location?: string;
     legacyLevel?: LegacyLevel;
     qualificationBasisType?: FstdQualificationBasisType;
+    isLargeAircraftPublicTransport?: boolean;
   }) {
     return this.prisma.fstd
       .create({
@@ -66,6 +147,7 @@ export class FstdService {
           serialNumber: data.serialNumber,
           location: data.location,
           qualificationBasisType: data.qualificationBasisType ?? 'EASA_LEGACY_LEVEL',
+          isLargeAircraftPublicTransport: data.isLargeAircraftPublicTransport ?? false,
           ...(data.legacyLevel
             ? { legacyLevel: { create: { level: data.legacyLevel } } }
             : {}),
@@ -76,6 +158,16 @@ export class FstdService {
         await this.auditLog.write(fstd.organization.tenantId, 'Fstd', fstd.id, 'create', null, fstd);
         return fstd;
       });
+  }
+
+  async updateFstd(id: string, tenantId: string, data: { isLargeAircraftPublicTransport?: boolean }) {
+    const before = await this.findFstdOrThrow(id, tenantId);
+    const updated = await this.prisma.fstd.update({
+      where: { id },
+      data: { isLargeAircraftPublicTransport: data.isLargeAircraftPublicTransport },
+    });
+    await this.auditLog.write(tenantId, 'Fstd', id, 'update', before, updated);
+    return updated;
   }
 
   findAll(organizationId: string) {
@@ -562,12 +654,20 @@ export class FstdService {
     const fstd = await this.findFstdOrThrow(fstdId, tenantId);
     const periodStart = new Date(data.periodStart);
     const periodEnd = new Date(data.periodEnd);
-    const evaluationType = data.evaluationType ?? 'standard';
     const nextDueDate = new Date(periodEnd);
-    // BITD 标准周期3年; 满足延长条件(见checkExtensionEligibility)可延长至24/36个月; 其余标准周期12个月 (需求清单3.3.5)
+    let evaluationType = data.evaluationType ?? 'standard';
+    // BITD在CCAR-60中无对应分类, 两套标准下均沿用固定3年周期
     if (fstd.deviceType === 'BITD') {
       nextDueDate.setFullYear(nextDueDate.getFullYear() + 3);
+    } else if (fstd.organization.regulatoryStandard === 'CAAC') {
+      // CCAR-60第60.19条: 有效期档位由QMS建立状态决定, 不采用EASA的人工申请延期流程 (见computeCaacValidityMonths)
+      const qms = await this.prisma.fstdQms.findUnique({ where: { organizationId: fstd.organizationId } });
+      const qmsEstablished = isFstdQmsEstablished(qms);
+      const months = computeCaacValidityMonths(fstd.deviceType, fstd.isLargeAircraftPublicTransport, qmsEstablished);
+      nextDueDate.setMonth(nextDueDate.getMonth() + months);
+      evaluationType = qmsEstablished ? 'caac_qms_established' : 'caac_qms_not_established';
     } else if (evaluationType === 'extended') {
+      // 满足延长条件(见checkExtensionEligibility)可延长至24/36个月; 其余标准周期12个月 (需求清单3.3.5)
       nextDueDate.setMonth(nextDueDate.getMonth() + (data.extensionMonths === 36 ? 36 : 24));
     } else {
       nextDueDate.setMonth(nextDueDate.getMonth() + 12);
@@ -689,6 +789,55 @@ export class FstdService {
         deviceCode: f.deviceCode,
         nextDueDate: f.safetyFacilityChecks[0]?.nextDueDate ?? null,
         lastResult: f.safetyFacilityChecks[0]?.overallResult ?? null,
+      }));
+  }
+
+  // ---- CCAR-60第60.37条(a)(2)(3): 飞行前功能检查 (每日使用前 + 每7日保底) ----
+
+  listPreFlightCheckItems() {
+    return FSTD_PRE_FLIGHT_CHECK_ITEMS;
+  }
+
+  async recordPreFlightCheck(
+    fstdId: string,
+    tenantId: string,
+    data: { checkDate: string; performedById?: string; items: { item: string; passed: boolean; notes?: string }[] },
+  ) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    const checkDate = new Date(data.checkDate);
+    const nextDueDate = new Date(checkDate);
+    nextDueDate.setDate(nextDueDate.getDate() + PRE_FLIGHT_CHECK_WINDOW_DAYS);
+    const overallResult = data.items.every((i) => i.passed) ? 'pass' : 'issues_found';
+    return this.prisma.fstdPreFlightCheck.upsert({
+      where: { fstdId_checkDate: { fstdId, checkDate } },
+      create: { fstdId, checkDate, performedById: data.performedById, itemsJson: data.items, overallResult, nextDueDate },
+      update: { performedById: data.performedById, itemsJson: data.items, overallResult, nextDueDate },
+    });
+  }
+
+  async listPreFlightChecks(fstdId: string, tenantId: string) {
+    await this.findFstdOrThrow(fstdId, tenantId);
+    return this.prisma.fstdPreFlightCheck.findMany({ where: { fstdId }, orderBy: { checkDate: 'desc' } });
+  }
+
+  /// 找出飞行前功能检查已超过7日未做(或从未做过)的设备——60.37条(a)(3)"每7个连续日历日至少一次"的保底要求
+  async findPreFlightChecksDueSoon(tenantId: string, withinDays = 2) {
+    const fstds = await this.prisma.fstd.findMany({
+      where: { organization: { tenantId }, status: 'active' },
+      include: { preFlightChecks: { orderBy: { checkDate: 'desc' }, take: 1 } },
+    });
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return fstds
+      .filter((f) => {
+        const latest = f.preFlightChecks[0];
+        return !latest || latest.nextDueDate <= cutoff;
+      })
+      .map((f) => ({
+        fstdId: f.id,
+        deviceCode: f.deviceCode,
+        nextDueDate: f.preFlightChecks[0]?.nextDueDate ?? null,
+        lastResult: f.preFlightChecks[0]?.overallResult ?? null,
       }));
   }
 
@@ -880,6 +1029,38 @@ export class FstdService {
 
   listPmChecklistTemplates(organizationId: string) {
     return this.prisma.pmChecklistTemplate.findMany({ where: { organizationId }, orderBy: { level: 'asc' } });
+  }
+
+  // ---- CCAR-60 附录B: FSTD质量管理系统 (按机构建立, 覆盖其全部FSTD) ----
+
+  listQmsChecklistItems() {
+    return FSTD_QMS_CHECKLIST_ITEMS;
+  }
+
+  async getQms(organizationId: string) {
+    const qms = await this.prisma.fstdQms.findUnique({ where: { organizationId } });
+    return { ...qms, isEstablished: isFstdQmsEstablished(qms) };
+  }
+
+  async upsertQms(
+    organizationId: string,
+    tenantId: string,
+    data: { establishedAt?: string; designatedManagerName?: string; items?: FstdQmsChecklistItem[]; lastInternalAuditAt?: string },
+  ) {
+    const before = await this.prisma.fstdQms.findUnique({ where: { organizationId } });
+    const payload = {
+      establishedAt: data.establishedAt ? new Date(data.establishedAt) : before?.establishedAt ?? null,
+      designatedManagerName: data.designatedManagerName ?? before?.designatedManagerName,
+      itemsJson: (data.items ?? before?.itemsJson ?? []) as Prisma.InputJsonValue,
+      lastInternalAuditAt: data.lastInternalAuditAt ? new Date(data.lastInternalAuditAt) : before?.lastInternalAuditAt ?? null,
+    };
+    const qms = await this.prisma.fstdQms.upsert({
+      where: { organizationId },
+      create: { organizationId, ...payload },
+      update: payload,
+    });
+    await this.auditLog.write(tenantId, 'FstdQms', qms.id, before ? 'update' : 'create', before, qms);
+    return { ...qms, isEstablished: isFstdQmsEstablished(qms) };
   }
 
   /// 执行阶段: 执行人逐项登记检查结果, 进入PENDING_REVIEW等待审核 (须已为该层级配置检查单模板)

@@ -47,6 +47,22 @@ export interface ExtensionEligibility {
   requiresManualSelfAssessmentConfirmation: boolean
 }
 
+export interface FstdQmsChecklistItem {
+  item: string
+  compliant: boolean
+  notes?: string
+}
+
+export interface FstdQms {
+  id?: string
+  organizationId?: string
+  establishedAt?: string | null
+  designatedManagerName?: string | null
+  itemsJson?: FstdQmsChecklistItem[]
+  lastInternalAuditAt?: string | null
+  isEstablished: boolean
+}
+
 export interface EvaluationDueSoonItem {
   fstdId: string
   deviceCode: string
@@ -72,6 +88,30 @@ export interface SafetyFacilityCheck {
 }
 
 export interface SafetyCheckDueSoonItem {
+  fstdId: string
+  deviceCode: string
+  nextDueDate?: string | null
+  lastResult?: string | null
+}
+
+export interface PreFlightCheckItem {
+  item: string
+  passed: boolean
+  notes?: string
+}
+
+export interface PreFlightCheck {
+  id: string
+  fstdId: string
+  checkDate: string
+  performedById?: string | null
+  itemsJson: PreFlightCheckItem[]
+  overallResult: 'pass' | 'issues_found'
+  nextDueDate: string
+  createdAt: string
+}
+
+export interface PreFlightCheckDueSoonItem {
   fstdId: string
   deviceCode: string
   nextDueDate?: string | null
@@ -240,7 +280,11 @@ export const fstdsApi = {
     deviceType: FstdDeviceType
     legacyLevel?: LegacyLevel
     qualificationBasisType?: FstdQualificationBasisType
+    isLargeAircraftPublicTransport?: boolean
   }) => apiClient.post<Fstd>('/fstds', data).then((r) => r.data),
+
+  update: (id: string, data: { isLargeAircraftPublicTransport?: boolean }) =>
+    apiClient.post<Fstd>(`/fstds/${id}`, data).then((r) => r.data),
 
   addQualifiedTask: (fstdId: string, data: { taskCode: string; taskName: string }) =>
     apiClient.post(`/fstds/${fstdId}/qualified-tasks`, data).then((r) => r.data),
@@ -319,6 +363,21 @@ export const fstdsApi = {
   findSafetyChecksDueSoon: (withinDays = 60) =>
     apiClient
       .get<SafetyCheckDueSoonItem[]>('/fstds/safety-facility-checks/due-soon', { params: { withinDays } })
+      .then((r) => r.data),
+
+  // ---- CCAR-60第60.37条(a)(2)(3): 飞行前功能检查 (每日使用前 + 每7日保底) ----
+
+  listPreFlightCheckItems: () => apiClient.get<string[]>('/fstds/pre-flight-checks/checklist').then((r) => r.data),
+
+  recordPreFlightCheck: (fstdId: string, data: { checkDate: string; performedById?: string; items: PreFlightCheckItem[] }) =>
+    apiClient.post<PreFlightCheck>(`/fstds/${fstdId}/pre-flight-checks`, data).then((r) => r.data),
+
+  listPreFlightChecks: (fstdId: string) =>
+    apiClient.get<PreFlightCheck[]>(`/fstds/${fstdId}/pre-flight-checks`).then((r) => r.data),
+
+  findPreFlightChecksDueSoon: (withinDays = 2) =>
+    apiClient
+      .get<PreFlightCheckDueSoonItem[]>('/fstds/pre-flight-checks/due-soon', { params: { withinDays } })
       .then((r) => r.data),
 
   // ---- 装备规格清单 ESL (AMC1/AMC2 ORA.FSTD.120) ----
@@ -413,6 +472,20 @@ export const fstdsApi = {
 
   listEvaluationsDueSoon: (withinDays = 60) =>
     apiClient.get<EvaluationDueSoonItem[]>('/fstds/evaluations/due-soon', { params: { withinDays } }).then((r) => r.data),
+
+  // ---- CCAR-60 附录B: FSTD质量管理系统 (机构级) ----
+
+  listQmsChecklistItems: () => apiClient.get<string[]>('/fstds/qms/checklist').then((r) => r.data),
+
+  getQms: (organizationId: string) => apiClient.get<FstdQms>('/fstds/qms', { params: { organizationId } }).then((r) => r.data),
+
+  upsertQms: (data: {
+    organizationId: string
+    establishedAt?: string
+    designatedManagerName?: string
+    items?: FstdQmsChecklistItem[]
+    lastInternalAuditAt?: string
+  }) => apiClient.post<FstdQms>('/fstds/qms', data).then((r) => r.data),
 
   // 3.3.6 变更管理已迁移至通用 changeRequestsApi (entityType='Fstd'), 见 api/changeRequests.ts
 

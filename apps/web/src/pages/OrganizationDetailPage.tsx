@@ -103,6 +103,13 @@ export function OrganizationDetailPage() {
     load()
   }
 
+  const handleChangeStandard = async (regulatoryStandard: Organization['regulatoryStandard']) => {
+    if (!id) return
+    await organizationsApi.update(id, { regulatoryStandard })
+    message.success(t('organizations.detail.standardUpdated'))
+    load()
+  }
+
   const handleNotifySelfReview = async (reviewId: string) => {
     await organizationsApi.notifySelfReview(reviewId)
     message.success(t('organizations.detail.markedNotified'))
@@ -140,6 +147,17 @@ export function OrganizationDetailPage() {
             ) : (
               <Tag>{t('organizations.list.nonComplexTag')}</Tag>
             )}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('organizations.list.fieldStandard')}>
+            <Select
+              value={org.regulatoryStandard}
+              onChange={handleChangeStandard}
+              style={{ width: 160 }}
+              options={[
+                { value: 'EASA', label: t('organizations.list.standardEASA') },
+                { value: 'CAAC', label: t('organizations.list.standardCAAC') },
+              ]}
+            />
           </Descriptions.Item>
         </Descriptions>
       </Card>

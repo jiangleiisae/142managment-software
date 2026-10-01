@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Organization, OrganizationCertificate } from './types'
+import type { Organization, OrganizationCertificate, RegulatoryStandard } from './types'
 
 export interface SelfReviewChecklistItem {
   item: string
@@ -44,8 +44,16 @@ export const organizationsApi = {
 
   get: (id: string) => apiClient.get<Organization>(`/organizations/${id}`).then((r) => r.data),
 
-  create: (data: { name: string; address?: string; competentAuthority?: string; isComplexOrg?: boolean }) =>
-    apiClient.post<Organization>('/organizations', data).then((r) => r.data),
+  create: (data: {
+    name: string
+    address?: string
+    competentAuthority?: string
+    isComplexOrg?: boolean
+    regulatoryStandard?: RegulatoryStandard
+  }) => apiClient.post<Organization>('/organizations', data).then((r) => r.data),
+
+  update: (id: string, data: { regulatoryStandard?: RegulatoryStandard }) =>
+    apiClient.patch<Organization>(`/organizations/${id}`, data).then((r) => r.data),
 
   addCertificate: (
     organizationId: string,
