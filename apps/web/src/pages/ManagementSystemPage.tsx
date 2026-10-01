@@ -2,6 +2,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { personnelApi } from '../api/personnel'
 import type {
   ContractRecord,
@@ -23,16 +24,6 @@ import { retentionApi } from '../api/retention'
 import type { Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
-
-const DOCUMENT_TYPE_LABEL: Record<string, string> = {
-  default_fallback: '默认兜底 (未明确规定期限的记录)',
-  student_training_record: '学员训练记录',
-  personnel_qualification_record: '人员资质/经验记录',
-  fstd_initial_qualification: 'FSTD初始鉴定文件',
-  fstd_periodic_documentation: 'FSTD周期性复检文档',
-  fstd_safety_facility_check: 'FSTD安全设施年检记录',
-  compliance_monitoring_finding: '合规监督记录 (发现项/纠正措施)',
-}
 
 const ROLES: ManagementRoleType[] = [
   'ACCOUNTABLE_MANAGER',
@@ -59,6 +50,7 @@ function riskColor(score: number) {
 }
 
 export function ManagementSystemPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [roleAssignments, setRoleAssignments] = useState<RoleAssignment[]>([])
@@ -142,7 +134,7 @@ export function ManagementSystemPage() {
       ...values,
       startDate: values.startDate.format('YYYY-MM-DD'),
     })
-    message.success('角色任命成功')
+    message.success(t('managementSystemPage.roleAssignSuccess'))
     setRoleModalOpen(false)
     roleForm.resetFields()
     load()
@@ -156,7 +148,7 @@ export function ManagementSystemPage() {
       ...values,
       discoveredAt: values.discoveredAt.toISOString(),
     })
-    message.success('事件已登记, 72小时上报倒计时已启动 (ORA.GEN.160)')
+    message.success(t('managementSystemPage.occurrenceReportSuccess'))
     setOccurrenceModalOpen(false)
     occurrenceForm.resetFields()
     load()
@@ -166,7 +158,7 @@ export function ManagementSystemPage() {
     if (!selectedId) return
     const values = await hazardForm.validateFields()
     await managementSystemApi.reportHazard({ organizationId: selectedId, ...values })
-    message.success('危险源已登记')
+    message.success(t('managementSystemPage.hazardReportSuccess'))
     setHazardModalOpen(false)
     hazardForm.resetFields()
     load()
@@ -176,7 +168,7 @@ export function ManagementSystemPage() {
     if (!riskModalHazardId) return
     const values = await riskForm.validateFields()
     await managementSystemApi.assessRisk(riskModalHazardId, values)
-    message.success('风险评估已提交')
+    message.success(t('managementSystemPage.riskAssessSuccess'))
     setRiskModalHazardId(undefined)
     riskForm.resetFields()
     load()
@@ -189,7 +181,7 @@ export function ManagementSystemPage() {
       ...values,
       dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
     })
-    message.success('缓解措施已添加')
+    message.success(t('managementSystemPage.mitigationAddSuccess'))
     setMitigationModalRiskId(undefined)
     mitigationForm.resetFields()
     load()
@@ -197,7 +189,7 @@ export function ManagementSystemPage() {
 
   const closeMitigation = async (id: string) => {
     await managementSystemApi.closeMitigationAction(id)
-    message.success('缓解措施已关闭')
+    message.success(t('managementSystemPage.mitigationCloseSuccess'))
     load()
   }
 
@@ -213,7 +205,7 @@ export function ManagementSystemPage() {
       ...values,
       effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
     })
-    message.success('安全政策版本已登记, 旧版本已自动标记为已替代')
+    message.success(t('managementSystemPage.policyAddSuccess'))
     setPolicyModalOpen(false)
     policyForm.resetFields()
     load()
@@ -224,13 +216,13 @@ export function ManagementSystemPage() {
     const values = await signPolicyForm.validateFields()
     try {
       await managementSystemApi.signSafetyPolicy(signPolicyModalId, values.personnelId)
-      message.success('安全政策已签署')
+      message.success(t('managementSystemPage.policySignSuccess'))
       setSignPolicyModalId(undefined)
       signPolicyForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '签署失败, 该人员可能未持有负责人(Accountable Manager)角色')
+      message.error(err.response?.data?.message ?? t('managementSystemPage.policySignFailed'))
     }
   }
 
@@ -238,7 +230,7 @@ export function ManagementSystemPage() {
     if (!selectedId) return
     const values = await mocForm.validateFields()
     await managementSystemApi.createMoc({ organizationId: selectedId, ...values })
-    message.success('变更管理(MOC)记录已创建, 需先完成变更前风险评估')
+    message.success(t('managementSystemPage.mocCreateSuccess'))
     setMocModalOpen(false)
     mocForm.resetFields()
     load()
@@ -249,13 +241,13 @@ export function ManagementSystemPage() {
     const values = await mocRiskForm.validateFields()
     try {
       await managementSystemApi.attachRiskAssessmentToMoc(mocRiskModalId, values.riskAssessmentId)
-      message.success('已关联变更前风险评估, MOC进入风险已评估阶段')
+      message.success(t('managementSystemPage.mocAttachRiskSuccess'))
       setMocRiskModalId(undefined)
       mocRiskForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('managementSystemPage.operationFailed'))
     }
   }
 
@@ -264,13 +256,13 @@ export function ManagementSystemPage() {
     const values = await mocImplementForm.validateFields()
     try {
       await managementSystemApi.implementMoc(mocImplementModalId, values.implementationPlan)
-      message.success('MOC已标记为实施完成')
+      message.success(t('managementSystemPage.mocImplementSuccess'))
       setMocImplementModalId(undefined)
       mocImplementForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('managementSystemPage.operationFailed'))
     }
   }
 
@@ -279,13 +271,13 @@ export function ManagementSystemPage() {
     const values = await mocVerifyForm.validateFields()
     try {
       await managementSystemApi.verifyMoc(mocVerifyModalId, values.verificationNotes)
-      message.success('MOC变更后验证已完成')
+      message.success(t('managementSystemPage.mocVerifySuccess'))
       setMocVerifyModalId(undefined)
       mocVerifyForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('managementSystemPage.operationFailed'))
     }
   }
 
@@ -297,7 +289,7 @@ export function ManagementSystemPage() {
       ...values,
       effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
     })
-    message.success('应急响应计划版本已登记')
+    message.success(t('managementSystemPage.erpAddSuccess'))
     setErpModalOpen(false)
     erpForm.resetFields()
     load()
@@ -310,7 +302,7 @@ export function ManagementSystemPage() {
       ...values,
       drilledAt: values.drilledAt.format('YYYY-MM-DD'),
     })
-    message.success('演练记录已保存, 下次到期日已自动计算(12个月)')
+    message.success(t('managementSystemPage.drillRecordSuccess'))
     setDrillModalErpId(undefined)
     drillForm.resetFields()
     load()
@@ -320,7 +312,7 @@ export function ManagementSystemPage() {
     if (!selectedId) return
     const values = await indicatorForm.validateFields()
     await managementSystemApi.createIndicator({ organizationId: selectedId, ...values })
-    message.success('安全绩效指标已创建')
+    message.success(t('managementSystemPage.indicatorCreateSuccess'))
     setIndicatorModalOpen(false)
     indicatorForm.resetFields()
     load()
@@ -334,7 +326,7 @@ export function ManagementSystemPage() {
       periodEnd: values.range[1].format('YYYY-MM-DD'),
       value: values.value,
     })
-    message.success('采集值已记录')
+    message.success(t('managementSystemPage.measurementRecordSuccess'))
     setMeasurementModalIndicatorId(undefined)
     measurementForm.resetFields()
     load()
@@ -348,7 +340,7 @@ export function ManagementSystemPage() {
       ...values,
       meetingDate: values.meetingDate.format('YYYY-MM-DD'),
     })
-    message.success('安全评审委员会会议记录已创建')
+    message.success(t('managementSystemPage.srbCreateSuccess'))
     setSrbModalOpen(false)
     srbForm.resetFields()
     load()
@@ -361,7 +353,7 @@ export function ManagementSystemPage() {
       ...values,
       dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
     })
-    message.success('行动项已添加')
+    message.success(t('managementSystemPage.srbActionAddSuccess'))
     setSrbActionModalId(undefined)
     srbActionForm.resetFields()
     load()
@@ -369,7 +361,7 @@ export function ManagementSystemPage() {
 
   const closeSrbAction = async (id: string) => {
     await managementSystemApi.closeSrbAction(id)
-    message.success('行动项已关闭')
+    message.success(t('managementSystemPage.srbActionCloseSuccess'))
     load()
   }
 
@@ -377,7 +369,7 @@ export function ManagementSystemPage() {
     if (!selectedId) return
     const values = await contractForm.validateFields()
     await managementSystemApi.createContract({ organizationId: selectedId, ...values })
-    message.success('承包记录已创建')
+    message.success(t('managementSystemPage.contractCreateSuccess'))
     setContractModalOpen(false)
     contractForm.resetFields()
     load()
@@ -393,33 +385,36 @@ export function ManagementSystemPage() {
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
 
       <Card
-        title="记录保存策略 (3.9 跨模块基础设施, 全租户范围)"
+        title={t('managementSystemPage.retentionCardTitle')}
         style={{ marginBottom: 16 }}
       >
-        <p style={{ color: '#888' }}>
-          保存期限来自配置表而非硬编码; 满足最低保存期限前禁止物理删除, 到期后也仅表示"可归档"而非自动删除。
-        </p>
+        <p style={{ color: '#888' }}>{t('managementSystemPage.retentionCardNote')}</p>
         <Table<RetentionStatusItem>
           rowKey="documentType"
           size="small"
           dataSource={retentionStatus}
           pagination={false}
           columns={[
-            { title: '记录类型', dataIndex: 'documentType', render: (v: string) => DOCUMENT_TYPE_LABEL[v] ?? v },
-            { title: '法规依据', dataIndex: 'basisRegulation' },
             {
-              title: '保存期限',
-              dataIndex: 'retentionMonths',
-              render: (v?: number | null) => (v == null ? '设备/记录全生命周期' : `${(v / 12).toFixed(1)} 年`),
+              title: t('managementSystemPage.columnDocumentType'),
+              dataIndex: 'documentType',
+              render: (v: string) => t(`managementSystemPage.documentTypes.${v}`, { defaultValue: v }),
             },
-            { title: '总数', dataIndex: 'totalCount' },
+            { title: t('managementSystemPage.columnBasisRegulation'), dataIndex: 'basisRegulation' },
             {
-              title: '强制保存中',
+              title: t('managementSystemPage.columnRetentionPeriod'),
+              dataIndex: 'retentionMonths',
+              render: (v?: number | null) =>
+                v == null ? t('managementSystemPage.retentionLifetime') : t('managementSystemPage.retentionYears', { years: (v / 12).toFixed(1) }),
+            },
+            { title: t('managementSystemPage.columnTotalCount'), dataIndex: 'totalCount' },
+            {
+              title: t('managementSystemPage.columnProtectedCount'),
               dataIndex: 'protectedCount',
               render: (v: number) => <Tag color={v > 0 ? 'blue' : 'default'}>{v}</Tag>,
             },
             {
-              title: '已满期可归档',
+              title: t('managementSystemPage.columnEligibleCount'),
               dataIndex: 'eligibleForArchivalCount',
               render: (v: number) => <Tag color={v > 0 ? 'orange' : 'default'}>{v}</Tag>,
             },
@@ -428,7 +423,7 @@ export function ManagementSystemPage() {
       </Card>
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('managementSystemPage.selectOrgFirst')} />
       ) : (
         <>
           {overdueOccurrences.length > 0 && (
@@ -436,7 +431,7 @@ export function ManagementSystemPage() {
               style={{ marginBottom: 16 }}
               type="error"
               showIcon
-              message={`有 ${overdueOccurrences.length} 起事件已超过72小时强制上报时限 (ORA.GEN.160), 请立即处理`}
+              message={t('managementSystemPage.overdueOccurrenceWarning', { count: overdueOccurrences.length })}
             />
           )}
           {openHighRiskCount > 0 && (
@@ -444,7 +439,7 @@ export function ManagementSystemPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${openHighRiskCount} 项高风险(评分≥12)尚未完成缓解措施, 建议优先处理`}
+              message={t('managementSystemPage.highRiskWarning', { count: openHighRiskCount })}
             />
           )}
           {erpDrillsDueSoon.length > 0 && (
@@ -452,7 +447,7 @@ export function ManagementSystemPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${erpDrillsDueSoon.length} 个机构的应急响应演练即将到期或从未演练过 (3.2.2 ERP)`}
+              message={t('managementSystemPage.erpDrillsDueSoonWarning', { count: erpDrillsDueSoon.length })}
               description={erpDrillsDueSoon.map((d) => d.organizationName).join('、')}
             />
           )}
@@ -461,19 +456,19 @@ export function ManagementSystemPage() {
               style={{ marginBottom: 16 }}
               type="error"
               showIcon
-              message={`有 ${indicators.filter((i) => i.breached).length} 项安全绩效指标(SPI)最新采集值未达标 (3.2.2 SPI/SPT)`}
+              message={t('managementSystemPage.spiBreachedWarning', { count: indicators.filter((i) => i.breached).length })}
               description={indicators
                 .filter((i) => i.breached)
-                .map((i) => `${i.name}: 最新值${i.latestValue} vs 目标${i.targetValue}`)
+                .map((i) => t('managementSystemPage.spiBreachedItem', { name: i.name, latest: i.latestValue, target: i.targetValue }))
                 .join('; ')}
             />
           )}
 
           <Card
-            title="组织角色任命 (ORA.GEN.210 / ORA.ATO.110/210)"
+            title={t('managementSystemPage.roleAssignmentsCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setRoleModalOpen(true)}>
-                任命角色
+                {t('managementSystemPage.assignRole')}
               </Button>
             }
             style={{ marginBottom: 16 }}
@@ -482,34 +477,34 @@ export function ManagementSystemPage() {
               rowKey="id"
               dataSource={roleAssignments}
               columns={[
-                { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color="blue">{v}</Tag> },
+                { title: t('managementSystemPage.columnRole'), dataIndex: 'role', render: (v: string) => <Tag color="blue">{v}</Tag> },
                 {
-                  title: '人员',
+                  title: t('managementSystemPage.columnPersonnel'),
                   dataIndex: 'personnel',
                   render: (p: RoleAssignment['personnel']) => (p ? `${p.lastName}${p.firstName}` : '-'),
                 },
-                { title: '任职起始日期', dataIndex: 'startDate', render: (v: string) => new Date(v).toLocaleDateString() },
+                { title: t('managementSystemPage.columnStartDate'), dataIndex: 'startDate', render: (v: string) => new Date(v).toLocaleDateString() },
               ]}
             />
           </Card>
 
           <Card
-            title="事件报告 (ORA.GEN.160, 强制事件72小时上报)"
+            title={t('managementSystemPage.occurrenceCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setOccurrenceModalOpen(true)}>
-                登记事件
+                {t('managementSystemPage.reportOccurrence')}
               </Button>
             }
             style={{ marginBottom: 16 }}
           >
-            <p style={{ color: '#888' }}>上方红色提示展示全租户范围内已超时未上报的强制性事件, 需要立即跟进。</p>
+            <p style={{ color: '#888' }}>{t('managementSystemPage.occurrenceCardNote')}</p>
           </Card>
 
           <Card
-            title="风险管理: 危险源 → 风险评估 → 缓解措施 (ORA.GEN.200(a)(3) SMS核心)"
+            title={t('managementSystemPage.riskCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setHazardModalOpen(true)}>
-                登记危险源
+                {t('managementSystemPage.reportHazard')}
               </Button>
             }
           >
@@ -517,14 +512,14 @@ export function ManagementSystemPage() {
               rowKey="id"
               dataSource={hazards}
               columns={[
-                { title: '来源', dataIndex: 'source' },
-                { title: '危险源描述', dataIndex: 'description' },
-                { title: '涉及环节', dataIndex: 'affectedArea' },
+                { title: t('managementSystemPage.columnSource'), dataIndex: 'source' },
+                { title: t('managementSystemPage.columnHazardDescription'), dataIndex: 'description' },
+                { title: t('managementSystemPage.columnAffectedArea'), dataIndex: 'affectedArea' },
                 {
-                  title: '操作',
+                  title: t('managementSystemPage.columnActions'),
                   render: (_, hazard) => (
                     <Button size="small" onClick={() => setRiskModalHazardId(hazard.id)}>
-                      做风险评估
+                      {t('managementSystemPage.assessRisk')}
                     </Button>
                   ),
                 },
@@ -534,19 +529,19 @@ export function ManagementSystemPage() {
                   <List
                     size="small"
                     dataSource={hazard.riskAssessments ?? []}
-                    locale={{ emptyText: '尚未做风险评估' }}
+                    locale={{ emptyText: t('managementSystemPage.noRiskAssessments') }}
                     renderItem={(risk) => (
                       <List.Item
                         actions={[
                           <Button key="add" size="small" onClick={() => setMitigationModalRiskId(risk.id)}>
-                            添加缓解措施
+                            {t('managementSystemPage.addMitigation')}
                           </Button>,
                         ]}
                       >
                         <Space direction="vertical" style={{ width: '100%' }}>
                           <Space>
                             <Tag color={riskColor(risk.riskScore)}>
-                              风险评分 {risk.riskScore} (概率{risk.probabilityLevel} × 严重度{risk.severityLevel})
+                              {t('managementSystemPage.riskScoreTag', { score: risk.riskScore, probability: risk.probabilityLevel, severity: risk.severityLevel })}
                             </Tag>
                           </Space>
                           <Space wrap>
@@ -557,7 +552,7 @@ export function ManagementSystemPage() {
                                 onClick={() => m.status !== 'closed' && closeMitigation(m.id)}
                                 style={{ cursor: m.status !== 'closed' ? 'pointer' : 'default' }}
                               >
-                                {m.description} [{m.status === 'closed' ? '已关闭' : '点击关闭'}]
+                                {m.description} [{m.status === 'closed' ? t('managementSystemPage.mitigationClosedTag') : t('managementSystemPage.mitigationClickToClose')}]
                               </Tag>
                             ))}
                           </Space>
@@ -571,10 +566,10 @@ export function ManagementSystemPage() {
           </Card>
 
           <Card
-            title="安全政策 Safety Policy (3.2.2 SMS核心要素2)"
+            title={t('managementSystemPage.policyCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setPolicyModalOpen(true)}>
-                登记新版本
+                {t('managementSystemPage.registerNewVersion')}
               </Button>
             }
             style={{ marginTop: 16, marginBottom: 16 }}
@@ -582,35 +577,41 @@ export function ManagementSystemPage() {
             <List
               size="small"
               dataSource={safetyPolicies}
-              locale={{ emptyText: '尚未登记安全政策' }}
+              locale={{ emptyText: t('managementSystemPage.noPolicies') }}
               renderItem={(p) => (
                 <List.Item
                   actions={
                     !p.signedAt
                       ? [
                           <Button key="sign" size="small" onClick={() => setSignPolicyModalId(p.id)}>
-                            签署
+                            {t('managementSystemPage.sign')}
                           </Button>,
                         ]
                       : []
                   }
                 >
-                  <Tag color={p.supersededAt ? 'default' : 'green'}>{p.supersededAt ? '历史版本' : '当前版本'}</Tag>
+                  <Tag color={p.supersededAt ? 'default' : 'green'}>
+                    {p.supersededAt ? t('managementSystemPage.historicalVersionTag') : t('managementSystemPage.currentVersionTag')}
+                  </Tag>
                   {p.version}
                   <Tag color={p.signedAt ? 'blue' : 'orange'} style={{ marginLeft: 8 }}>
-                    {p.signedAt ? `已由负责人签署 ${new Date(p.signedAt).toLocaleDateString()}` : '待负责人签署'}
+                    {p.signedAt
+                      ? t('managementSystemPage.signedByAccountableManager', { date: new Date(p.signedAt).toLocaleDateString() })
+                      : t('managementSystemPage.pendingSignature')}
                   </Tag>
-                  <span style={{ color: '#888', marginLeft: 8 }}>生效日期 {new Date(p.effectiveDate).toLocaleDateString()}</span>
+                  <span style={{ color: '#888', marginLeft: 8 }}>
+                    {t('managementSystemPage.effectiveDateLabel', { date: new Date(p.effectiveDate).toLocaleDateString() })}
+                  </span>
                 </List.Item>
               )}
             />
           </Card>
 
           <Card
-            title="变更管理 MOC (3.2.2): draft → risk_assessed → implemented → verified"
+            title={t('managementSystemPage.mocCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setMocModalOpen(true)}>
-                发起变更
+                {t('managementSystemPage.initiateChange')}
               </Button>
             }
             style={{ marginBottom: 16 }}
@@ -618,23 +619,23 @@ export function ManagementSystemPage() {
             <List
               size="small"
               dataSource={mocs}
-              locale={{ emptyText: '暂无变更管理记录' }}
+              locale={{ emptyText: t('managementSystemPage.noMocRecords') }}
               renderItem={(m) => (
                 <List.Item
                   actions={[
                     m.status === 'DRAFT' && (
                       <Button key="risk" size="small" onClick={() => setMocRiskModalId(m.id)}>
-                        关联风险评估
+                        {t('managementSystemPage.attachRiskAssessment')}
                       </Button>
                     ),
                     m.status === 'RISK_ASSESSED' && (
                       <Button key="impl" size="small" type="primary" onClick={() => setMocImplementModalId(m.id)}>
-                        标记已实施
+                        {t('managementSystemPage.markImplemented')}
                       </Button>
                     ),
                     m.status === 'IMPLEMENTED' && (
                       <Button key="verify" size="small" type="primary" onClick={() => setMocVerifyModalId(m.id)}>
-                        变更后验证
+                        {t('managementSystemPage.verifyAfterChange')}
                       </Button>
                     ),
                   ].filter(Boolean)}
@@ -647,10 +648,10 @@ export function ManagementSystemPage() {
           </Card>
 
           <Card
-            title="应急响应计划 ERP (3.2.2, 标准演练周期12个月)"
+            title={t('managementSystemPage.erpCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setErpModalOpen(true)}>
-                登记新版本
+                {t('managementSystemPage.registerNewVersion')}
               </Button>
             }
             style={{ marginBottom: 16 }}
@@ -658,28 +659,36 @@ export function ManagementSystemPage() {
             <List
               size="small"
               dataSource={erpPlans}
-              locale={{ emptyText: '尚未登记应急响应计划' }}
+              locale={{ emptyText: t('managementSystemPage.noErpPlans') }}
               renderItem={(e) => (
                 <List.Item
                   actions={
                     !e.supersededAt
                       ? [
                           <Button key="drill" size="small" onClick={() => setDrillModalErpId(e.id)}>
-                            记录演练
+                            {t('managementSystemPage.recordDrill')}
                           </Button>,
                         ]
                       : []
                   }
                 >
                   <div style={{ width: '100%' }}>
-                    <Tag color={e.supersededAt ? 'default' : 'green'}>{e.supersededAt ? '历史版本' : '当前版本'}</Tag>
+                    <Tag color={e.supersededAt ? 'default' : 'green'}>
+                      {e.supersededAt ? t('managementSystemPage.historicalVersionTag') : t('managementSystemPage.currentVersionTag')}
+                    </Tag>
                     {e.version}
-                    <span style={{ color: '#888', marginLeft: 8 }}>生效日期 {new Date(e.effectiveDate).toLocaleDateString()}</span>
+                    <span style={{ color: '#888', marginLeft: 8 }}>
+                      {t('managementSystemPage.effectiveDateLabel', { date: new Date(e.effectiveDate).toLocaleDateString() })}
+                    </span>
                     <div style={{ marginTop: 4 }}>
                       {(e.drills ?? []).map((d) => (
                         <Tag key={d.id} style={{ marginBottom: 4 }}>
-                          {new Date(d.drilledAt).toLocaleDateString()} {d.scenario} ({d.outcome ?? '-'}) 下次到期{' '}
-                          {new Date(d.nextDueDate).toLocaleDateString()}
+                          {t('managementSystemPage.drillTag', {
+                            date: new Date(d.drilledAt).toLocaleDateString(),
+                            scenario: d.scenario,
+                            outcome: d.outcome ?? '-',
+                            nextDue: new Date(d.nextDueDate).toLocaleDateString(),
+                          })}
                         </Tag>
                       ))}
                     </div>
@@ -690,10 +699,10 @@ export function ManagementSystemPage() {
           </Card>
 
           <Card
-            title="安全绩效指标 SPI/SPT (3.2.2)"
+            title={t('managementSystemPage.spiCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setIndicatorModalOpen(true)}>
-                新增指标
+                {t('managementSystemPage.addIndicator')}
               </Button>
             }
             style={{ marginBottom: 16 }}
@@ -704,28 +713,29 @@ export function ManagementSystemPage() {
               dataSource={indicators}
               pagination={false}
               columns={[
-                { title: '指标名称', dataIndex: 'name' },
+                { title: t('managementSystemPage.columnIndicatorName'), dataIndex: 'name' },
                 {
-                  title: '方向',
+                  title: t('managementSystemPage.columnDirection'),
                   dataIndex: 'direction',
-                  render: (v: SpiDirection) => (v === 'LOWER_IS_BETTER' ? '越低越好' : '越高越好'),
+                  render: (v: SpiDirection) =>
+                    v === 'LOWER_IS_BETTER' ? t('managementSystemPage.directionLowerIsBetter') : t('managementSystemPage.directionHigherIsBetter'),
                 },
-                { title: '目标值 (SPT)', dataIndex: 'targetValue' },
-                { title: '最新采集值', dataIndex: 'latestValue', render: (v?: number | null) => v ?? '-' },
+                { title: t('managementSystemPage.columnTargetValue'), dataIndex: 'targetValue' },
+                { title: t('managementSystemPage.columnLatestValue'), dataIndex: 'latestValue', render: (v?: number | null) => v ?? '-' },
                 {
-                  title: '状态',
+                  title: t('managementSystemPage.columnStatus'),
                   render: (_, i) =>
                     i.latestValue == null ? (
-                      <Tag>尚无采集值</Tag>
+                      <Tag>{t('managementSystemPage.noMeasurementsYet')}</Tag>
                     ) : (
-                      <Tag color={i.breached ? 'red' : 'green'}>{i.breached ? '未达标' : '达标'}</Tag>
+                      <Tag color={i.breached ? 'red' : 'green'}>{i.breached ? t('managementSystemPage.breachedTag') : t('managementSystemPage.metTag')}</Tag>
                     ),
                 },
                 {
-                  title: '操作',
+                  title: t('managementSystemPage.columnActions'),
                   render: (_, i) => (
                     <Button size="small" onClick={() => setMeasurementModalIndicatorId(i.id)}>
-                      录入采集值
+                      {t('managementSystemPage.recordMeasurement')}
                     </Button>
                   ),
                 },
@@ -734,22 +744,22 @@ export function ManagementSystemPage() {
           </Card>
 
           <Card
-            title="安全评审委员会 Safety Review Board (3.2.2, 复杂机构)"
+            title={t('managementSystemPage.srbCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setSrbModalOpen(true)}>
-                新增会议
+                {t('managementSystemPage.addMeeting')}
               </Button>
             }
           >
             <List
               size="small"
               dataSource={srbMeetings}
-              locale={{ emptyText: '暂无会议记录' }}
+              locale={{ emptyText: t('managementSystemPage.noMeetings') }}
               renderItem={(m) => (
                 <List.Item
                   actions={[
                     <Button key="action" size="small" onClick={() => setSrbActionModalId(m.id)}>
-                      添加行动项
+                      {t('managementSystemPage.addActionItem')}
                     </Button>,
                   ]}
                 >
@@ -770,7 +780,7 @@ export function ManagementSystemPage() {
                           onClick={() => a.status !== 'closed' && closeSrbAction(a.id)}
                           style={{ cursor: a.status !== 'closed' ? 'pointer' : 'default', marginBottom: 4 }}
                         >
-                          {a.description} [{a.status === 'closed' ? '已关闭' : '点击关闭'}]
+                          {a.description} [{a.status === 'closed' ? t('managementSystemPage.actionClosedTag') : t('managementSystemPage.actionClickToClose')}]
                         </Tag>
                       ))}
                     </div>
@@ -781,22 +791,22 @@ export function ManagementSystemPage() {
           </Card>
 
           <Card
-            title="承包活动管理 Contracted Activities (3.2.5, ORA.GEN.205)"
+            title={t('managementSystemPage.contractCardTitle')}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setContractModalOpen(true)}>
-                新增承包记录
+                {t('managementSystemPage.addContract')}
               </Button>
             }
           >
             <List
               size="small"
               dataSource={contracts}
-              locale={{ emptyText: '暂无承包记录' }}
+              locale={{ emptyText: t('managementSystemPage.noContracts') }}
               renderItem={(c) => (
                 <List.Item
                   actions={[
                     <Button key="toggle" size="small" onClick={() => toggleContractAuditFlag(c)}>
-                      {c.includedInAudit ? '移出审计计划' : '纳入审计计划'}
+                      {c.includedInAudit ? t('managementSystemPage.removeFromAudit') : t('managementSystemPage.includeInAudit')}
                     </Button>,
                   ]}
                 >
@@ -804,11 +814,13 @@ export function ManagementSystemPage() {
                     <Space wrap>
                       <span style={{ fontWeight: 600 }}>{c.contractorName}</span>
                       <Tag color={c.includedInAudit ? 'green' : 'default'}>
-                        {c.includedInAudit ? '已纳入审计计划' : '未纳入审计计划'}
+                        {c.includedInAudit ? t('managementSystemPage.includedInAuditTag') : t('managementSystemPage.notIncludedInAuditTag')}
                       </Tag>
                     </Space>
                     <span>{c.scope}</span>
-                    {c.agreementRef && <span style={{ color: '#888', fontSize: 12 }}>协议编号: {c.agreementRef}</span>}
+                    {c.agreementRef && (
+                      <span style={{ color: '#888', fontSize: 12 }}>{t('managementSystemPage.agreementRefLabel', { ref: c.agreementRef })}</span>
+                    )}
                   </Space>
                 </List.Item>
               )}
@@ -817,117 +829,117 @@ export function ManagementSystemPage() {
         </>
       )}
 
-      <Modal title="任命组织角色" open={roleModalOpen} onOk={handleAssignRole} onCancel={() => setRoleModalOpen(false)}>
+      <Modal title={t('managementSystemPage.assignRoleModalTitle')} open={roleModalOpen} onOk={handleAssignRole} onCancel={() => setRoleModalOpen(false)}>
         <Form form={roleForm} layout="vertical">
-          <Form.Item name="role" label="角色" rules={[{ required: true }]}>
+          <Form.Item name="role" label={t('managementSystemPage.fieldRole')} rules={[{ required: true }]}>
             <Select options={ROLES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="personnelId" label="人员" rules={[{ required: true }]}>
+          <Form.Item name="personnelId" label={t('managementSystemPage.fieldPersonnel')} rules={[{ required: true }]}>
             <Select
               showSearch
               optionFilterProp="label"
               options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
             />
           </Form.Item>
-          <Form.Item name="startDate" label="任职起始日期" rules={[{ required: true }]} initialValue={dayjs()}>
+          <Form.Item name="startDate" label={t('managementSystemPage.fieldStartDate')} rules={[{ required: true }]} initialValue={dayjs()}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记事件报告"
+        title={t('managementSystemPage.reportOccurrenceModalTitle')}
         open={occurrenceModalOpen}
         onOk={handleReportOccurrence}
         onCancel={() => setOccurrenceModalOpen(false)}
       >
         <Form form={occurrenceForm} layout="vertical" initialValues={{ discoveredAt: dayjs(), isMandatory: true }}>
-          <Form.Item name="occurrenceType" label="事件类型" rules={[{ required: true }]}>
-            <Input placeholder="如: FSTD故障 / 训练不安全事件" />
+          <Form.Item name="occurrenceType" label={t('managementSystemPage.fieldOccurrenceType')} rules={[{ required: true }]}>
+            <Input placeholder={t('managementSystemPage.fieldOccurrenceTypePlaceholder')} />
           </Form.Item>
-          <Form.Item name="discoveredAt" label="发现时间 (72小时倒计时起点)" rules={[{ required: true }]}>
+          <Form.Item name="discoveredAt" label={t('managementSystemPage.fieldDiscoveredAt')} rules={[{ required: true }]}>
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="登记危险源" open={hazardModalOpen} onOk={handleReportHazard} onCancel={() => setHazardModalOpen(false)}>
+      <Modal title={t('managementSystemPage.reportHazardModalTitle')} open={hazardModalOpen} onOk={handleReportHazard} onCancel={() => setHazardModalOpen(false)}>
         <Form form={hazardForm} layout="vertical" initialValues={{ source: 'internal_report' }}>
-          <Form.Item name="source" label="来源" rules={[{ required: true }]}>
+          <Form.Item name="source" label={t('managementSystemPage.fieldSource')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'internal_report', label: '内部报告' },
-                { value: 'audit', label: '审计发现' },
-                { value: 'occurrence', label: '来自事件报告' },
+                { value: 'internal_report', label: t('managementSystemPage.sourceInternalReport') },
+                { value: 'audit', label: t('managementSystemPage.sourceAudit') },
+                { value: 'occurrence', label: t('managementSystemPage.sourceOccurrence') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="description" label="危险源描述" rules={[{ required: true }]}>
+          <Form.Item name="description" label={t('managementSystemPage.fieldHazardDescription')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="affectedArea" label="涉及运行环节">
-            <Input placeholder="如: 某型FSTD训练 / 某训练科目 / 某场地" />
+          <Form.Item name="affectedArea" label={t('managementSystemPage.fieldAffectedArea')}>
+            <Input placeholder={t('managementSystemPage.fieldAffectedAreaPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="风险评估 (概率 x 严重度矩阵)"
+        title={t('managementSystemPage.riskModalTitle')}
         open={!!riskModalHazardId}
         onOk={handleAssessRisk}
         onCancel={() => setRiskModalHazardId(undefined)}
       >
         <Form form={riskForm} layout="vertical">
-          <Form.Item name="probabilityLevel" label="概率等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+          <Form.Item name="probabilityLevel" label={t('managementSystemPage.fieldProbabilityLevel')} rules={[{ required: true }]}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="severityLevel" label="严重度等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+          <Form.Item name="severityLevel" label={t('managementSystemPage.fieldSeverityLevel')} rules={[{ required: true }]}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="existingMitigation" label="现有缓解措施说明">
+          <Form.Item name="existingMitigation" label={t('managementSystemPage.fieldExistingMitigation')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="添加缓解措施"
+        title={t('managementSystemPage.mitigationModalTitle')}
         open={!!mitigationModalRiskId}
         onOk={handleAddMitigation}
         onCancel={() => setMitigationModalRiskId(undefined)}
       >
         <Form form={mitigationForm} layout="vertical">
-          <Form.Item name="description" label="措施描述" rules={[{ required: true }]}>
+          <Form.Item name="description" label={t('managementSystemPage.fieldMitigationDescription')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="dueDate" label="计划完成日期">
+          <Form.Item name="dueDate" label={t('managementSystemPage.fieldDueDate')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="登记安全政策新版本" open={policyModalOpen} onOk={handleAddPolicy} onCancel={() => setPolicyModalOpen(false)}>
+      <Modal title={t('managementSystemPage.policyModalTitle')} open={policyModalOpen} onOk={handleAddPolicy} onCancel={() => setPolicyModalOpen(false)}>
         <Form form={policyForm} layout="vertical" initialValues={{ effectiveDate: dayjs() }}>
-          <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
-            <Input placeholder="如 v2.0" />
+          <Form.Item name="version" label={t('managementSystemPage.fieldVersion')} rules={[{ required: true }]}>
+            <Input placeholder={t('managementSystemPage.fieldVersionPlaceholder')} />
           </Form.Item>
-          <Form.Item name="policyText" label="政策文本" rules={[{ required: true }]}>
+          <Form.Item name="policyText" label={t('managementSystemPage.fieldPolicyText')} rules={[{ required: true }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
+          <Form.Item name="effectiveDate" label={t('managementSystemPage.fieldEffectiveDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="签署安全政策 (须为负责人 Accountable Manager)"
+        title={t('managementSystemPage.signPolicyModalTitle')}
         open={!!signPolicyModalId}
         onOk={handleSignPolicy}
         onCancel={() => setSignPolicyModalId(undefined)}
       >
         <Form form={signPolicyForm} layout="vertical">
-          <Form.Item name="personnelId" label="签署人" rules={[{ required: true }]}>
+          <Form.Item name="personnelId" label={t('managementSystemPage.fieldSigner')} rules={[{ required: true }]}>
             <Select
               showSearch
               optionFilterProp="label"
@@ -937,24 +949,24 @@ export function ManagementSystemPage() {
         </Form>
       </Modal>
 
-      <Modal title="发起变更管理 (MOC)" open={mocModalOpen} onOk={handleCreateMoc} onCancel={() => setMocModalOpen(false)}>
+      <Modal title={t('managementSystemPage.mocModalTitle')} open={mocModalOpen} onOk={handleCreateMoc} onCancel={() => setMocModalOpen(false)}>
         <Form form={mocForm} layout="vertical">
-          <Form.Item name="changeDescription" label="变更描述" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="如: 引进新型A320 FTD设备" />
+          <Form.Item name="changeDescription" label={t('managementSystemPage.fieldChangeDescription')} rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder={t('managementSystemPage.fieldChangeDescriptionPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="关联变更前风险评估"
+        title={t('managementSystemPage.attachMocRiskModalTitle')}
         open={!!mocRiskModalId}
         onOk={handleAttachMocRisk}
         onCancel={() => setMocRiskModalId(undefined)}
       >
         <Form form={mocRiskForm} layout="vertical">
-          <Form.Item name="riskAssessmentId" label="风险评估" rules={[{ required: true }]}>
+          <Form.Item name="riskAssessmentId" label={t('managementSystemPage.fieldRiskAssessment')} rules={[{ required: true }]}>
             <Select
-              placeholder={allRiskAssessments.length === 0 ? '请先在风险管理中完成一次风险评估' : undefined}
+              placeholder={allRiskAssessments.length === 0 ? t('managementSystemPage.fieldRiskAssessmentPlaceholder') : undefined}
               options={allRiskAssessments.map((r) => ({ value: r.id, label: r.label }))}
             />
           </Form.Item>
@@ -962,154 +974,154 @@ export function ManagementSystemPage() {
       </Modal>
 
       <Modal
-        title="标记MOC已实施"
+        title={t('managementSystemPage.implementMocModalTitle')}
         open={!!mocImplementModalId}
         onOk={handleImplementMoc}
         onCancel={() => setMocImplementModalId(undefined)}
       >
         <Form form={mocImplementForm} layout="vertical">
-          <Form.Item name="implementationPlan" label="实施计划/说明" rules={[{ required: true }]}>
+          <Form.Item name="implementationPlan" label={t('managementSystemPage.fieldImplementationPlan')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="MOC变更后验证" open={!!mocVerifyModalId} onOk={handleVerifyMoc} onCancel={() => setMocVerifyModalId(undefined)}>
+      <Modal title={t('managementSystemPage.verifyMocModalTitle')} open={!!mocVerifyModalId} onOk={handleVerifyMoc} onCancel={() => setMocVerifyModalId(undefined)}>
         <Form form={mocVerifyForm} layout="vertical">
-          <Form.Item name="verificationNotes" label="验证结论" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="如: 已运行两周, 各项指标正常" />
+          <Form.Item name="verificationNotes" label={t('managementSystemPage.fieldVerificationNotes')} rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder={t('managementSystemPage.fieldVerificationNotesPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记应急响应计划新版本"
+        title={t('managementSystemPage.erpModalTitle')}
         open={erpModalOpen}
         onOk={handleAddErpPlan}
         onCancel={() => setErpModalOpen(false)}
       >
         <Form form={erpForm} layout="vertical" initialValues={{ effectiveDate: dayjs() }}>
-          <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
-            <Input placeholder="如 v2.0" />
+          <Form.Item name="version" label={t('managementSystemPage.fieldVersion')} rules={[{ required: true }]}>
+            <Input placeholder={t('managementSystemPage.fieldVersionPlaceholder')} />
           </Form.Item>
-          <Form.Item name="planText" label="预案文本" rules={[{ required: true }]}>
+          <Form.Item name="planText" label={t('managementSystemPage.fieldPlanText')} rules={[{ required: true }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
+          <Form.Item name="effectiveDate" label={t('managementSystemPage.fieldEffectiveDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="记录应急演练" open={!!drillModalErpId} onOk={handleRecordDrill} onCancel={() => setDrillModalErpId(undefined)}>
+      <Modal title={t('managementSystemPage.drillModalTitle')} open={!!drillModalErpId} onOk={handleRecordDrill} onCancel={() => setDrillModalErpId(undefined)}>
         <Form form={drillForm} layout="vertical" initialValues={{ drilledAt: dayjs() }}>
-          <Form.Item name="drilledAt" label="演练日期" rules={[{ required: true }]}>
+          <Form.Item name="drilledAt" label={t('managementSystemPage.fieldDrilledAt')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="scenario" label="演练场景" rules={[{ required: true }]}>
-            <Input placeholder="如: 火灾疏散演练" />
+          <Form.Item name="scenario" label={t('managementSystemPage.fieldScenario')} rules={[{ required: true }]}>
+            <Input placeholder={t('managementSystemPage.fieldScenarioPlaceholder')} />
           </Form.Item>
-          <Form.Item name="outcome" label="演练结果">
-            <Input placeholder="如: 通过 / 发现问题" />
+          <Form.Item name="outcome" label={t('managementSystemPage.fieldOutcome')}>
+            <Input placeholder={t('managementSystemPage.fieldOutcomePlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="新增安全绩效指标 (SPI/SPT)"
+        title={t('managementSystemPage.indicatorModalTitle')}
         open={indicatorModalOpen}
         onOk={handleCreateIndicator}
         onCancel={() => setIndicatorModalOpen(false)}
       >
         <Form form={indicatorForm} layout="vertical" initialValues={{ direction: 'LOWER_IS_BETTER' }}>
-          <Form.Item name="name" label="指标名称" rules={[{ required: true }]}>
-            <Input placeholder="如: 每千小时事件率" />
+          <Form.Item name="name" label={t('managementSystemPage.fieldIndicatorName')} rules={[{ required: true }]}>
+            <Input placeholder={t('managementSystemPage.fieldIndicatorNamePlaceholder')} />
           </Form.Item>
-          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
+          <Form.Item name="direction" label={t('managementSystemPage.fieldDirection')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'LOWER_IS_BETTER', label: '越低越好 (如事件率)' },
-                { value: 'HIGHER_IS_BETTER', label: '越高越好 (如培训完成率)' },
+                { value: 'LOWER_IS_BETTER', label: t('managementSystemPage.directionLowerOption') },
+                { value: 'HIGHER_IS_BETTER', label: t('managementSystemPage.directionHigherOption') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="targetValue" label="目标值 (SPT)" rules={[{ required: true }]}>
+          <Form.Item name="targetValue" label={t('managementSystemPage.fieldTargetValue')} rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="description" label="指标说明">
+          <Form.Item name="description" label={t('managementSystemPage.fieldIndicatorDescription')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="录入采集值"
+        title={t('managementSystemPage.measurementModalTitle')}
         open={!!measurementModalIndicatorId}
         onOk={handleRecordMeasurement}
         onCancel={() => setMeasurementModalIndicatorId(undefined)}
       >
         <Form form={measurementForm} layout="vertical">
-          <Form.Item name="range" label="统计周期" rules={[{ required: true }]}>
+          <Form.Item name="range" label={t('managementSystemPage.fieldPeriod')} rules={[{ required: true }]}>
             <DatePicker.RangePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="value" label="采集值" rules={[{ required: true }]}>
+          <Form.Item name="value" label={t('managementSystemPage.fieldMeasurementValue')} rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="新增安全评审委员会会议"
+        title={t('managementSystemPage.srbModalTitle')}
         open={srbModalOpen}
         onOk={handleCreateSrbMeeting}
         onCancel={() => setSrbModalOpen(false)}
       >
         <Form form={srbForm} layout="vertical" initialValues={{ meetingDate: dayjs() }}>
-          <Form.Item name="meetingDate" label="会议日期" rules={[{ required: true }]}>
+          <Form.Item name="meetingDate" label={t('managementSystemPage.fieldMeetingDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="attendeeRoles" label="参会角色" rules={[{ required: true }]}>
+          <Form.Item name="attendeeRoles" label={t('managementSystemPage.fieldAttendeeRoles')} rules={[{ required: true }]}>
             <Select mode="multiple" options={ROLES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="agenda" label="议题" rules={[{ required: true }]}>
+          <Form.Item name="agenda" label={t('managementSystemPage.fieldAgenda')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="decisions" label="决议">
+          <Form.Item name="decisions" label={t('managementSystemPage.fieldDecisions')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="添加行动项"
+        title={t('managementSystemPage.srbActionModalTitle')}
         open={!!srbActionModalId}
         onOk={handleAddSrbAction}
         onCancel={() => setSrbActionModalId(undefined)}
       >
         <Form form={srbActionForm} layout="vertical">
-          <Form.Item name="description" label="行动描述" rules={[{ required: true }]}>
+          <Form.Item name="description" label={t('managementSystemPage.fieldActionDescription')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="dueDate" label="计划完成日期">
+          <Form.Item name="dueDate" label={t('managementSystemPage.fieldDueDate')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="新增承包记录 (3.2.5)"
+        title={t('managementSystemPage.contractModalTitle')}
         open={contractModalOpen}
         onOk={handleCreateContract}
         onCancel={() => setContractModalOpen(false)}
       >
         <Form form={contractForm} layout="vertical">
-          <Form.Item name="contractorName" label="承包方名称" rules={[{ required: true }]}>
+          <Form.Item name="contractorName" label={t('managementSystemPage.fieldContractorName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="scope" label="承包范围" rules={[{ required: true }]}>
+          <Form.Item name="scope" label={t('managementSystemPage.fieldScope')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="agreementRef" label="书面协议编号">
+          <Form.Item name="agreementRef" label={t('managementSystemPage.fieldAgreementRef')}>
             <Input />
           </Form.Item>
         </Form>
