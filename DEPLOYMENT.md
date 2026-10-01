@@ -1,5 +1,15 @@
 # 部署指南
 
+## 当前生产环境
+
+- 地址: https://training.feiken.group
+- 服务器: 腾讯云轻量应用服务器, 上海节点, 2核2G, Ubuntu 24.04
+- 备案: 沪ICP备2026041402号-1 (主域名 `feiken.group` 已备案并接入该服务器; 子域名按规则自动可用,
+  无需单独备案, 但首次启用时记得去轻量服务器的"防火墙"面板确认 443 端口已放行——这台服务器上
+  实际踩过一次坑: 安全组/防火墙默认只放行了80, 没放行443, 现象是域名和裸IP访问443都"连接被重置",
+  和证书、备案都无关, 排查时不要被误导)
+- 部署方式: tar 打包同步 (见下方"更新部署", 原因是该服务器访问 GitHub 不稳定)
+
 ## 一键部署 (Docker Compose)
 
 前置要求: Docker + Docker Compose。
@@ -36,14 +46,40 @@ docker compose run --rm -p 3000:3000 --service-ports api
 
 或临时给 `docker-compose.yml` 里的 `api` 服务加上 `ports: ['3000:3000']`。
 
+### 版本管理
+
+- 版本号遵循语义化版本 (`apps/api/package.json` 和 `apps/web/package.json` 的 `version` 字段), 每个正式发布版本对应一个 git tag (如 `v1.0.0`), 变更内容记录在 [CHANGELOG.md](CHANGELOG.md)。
+- 打标签: `git tag -a v1.1.0 -m "简述这个版本的主要变化" && git push origin v1.1.0`。
+
 ### 更新部署
+
+**如果部署服务器能稳定访问 GitHub**, 走标准流程:
 
 ```bash
 git pull
 docker compose up -d --build
 ```
 
+**如果服务器在中国大陆且访问 GitHub 不稳定**(本项目当前的生产环境就是这种情况, 实测 `git clone`/`git pull` 会超时), 改为从本地开发机把代码同步过去再部署:
+
+```bash
+# 在本地仓库根目录执行, 把代码打包推送到服务器上已有的 ~/tcms 目录并重新部署
+tar --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='uploads' --exclude='*.tsbuildinfo' -czf - . | \
+  ssh <部署用户>@<服务器IP> "tar -xzf - -C ~/tcms"
+ssh <部署用户>@<服务器IP> "cd ~/tcms && sudo docker compose up -d --build"
+```
+
 `migrate` 服务会在每次 `up` 时自动重新运行 `prisma migrate deploy` (对已应用的迁移是幂等的, 只会应用新增的迁移)。
+
+### 回滚
+
+两种情况都适用: 先确认要回滚到哪个 git tag/commit, 然后:
+
+```bash
+git checkout v1.0.0   # 或具体的 commit hash
+```
+
+再按上面"更新部署"的方式重新打包/拉取并 `docker compose up -d --build` 即可。数据库迁移是只增不减的, 回滚代码版本通常不需要也不应该回滚数据库结构 (除非该版本本身就包含需要撤销的迁移, 这种情况需要手动评估, Prisma 没有自动"降级迁移"的机制)。
 
 ## 环境变量参考
 
@@ -75,9 +111,8 @@ S3_FORCE_PATH_STYLE=true       # 自建 MinIO / 部分非AWS的S3兼容服务需
 (仅 OWNER/ADMIN) 手动立即触发一次, 不必等下一次整点。同一条记录只会通知一次, 不会每小时重复打扰。
 
 - **站内通知**: 默认开启, 无需配置。通知会送到该机构"安全经理(SAFETY_MANAGER)"角色任命对应的登录
-  账户收件箱 (`GET /notifications`)。**已知缺口**: 系统目前没有公开 API 把登录账户(User)关联到人员
-  档案(Personnel)——`User.personnelId` 字段存在但暂无端点可写，需要直接操作数据库或等后续补上关联
-  入口，否则人员即便有登录账户也收不到站内通知。
+  账户收件箱 (`GET /notifications`)。登录账户需要先关联到人员档案才能收到——在"用户与权限"页面给
+  对应账户点"关联人员"即可 (`POST /users/:id/link-personnel`)。
 - **短信通知**: 默认 `SMS_PROVIDER=log`, 只把短信内容打到后端日志里, 不真实发送(开发/测试环境不需要
   短信账号)。要真实发送, 设置:
   ```bash

@@ -34,7 +34,7 @@ services:
       DATABASE_URL: postgresql://tcms_app:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/tcms
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       PORT: 3000
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://${DOMAIN:-localhost}}
       # 默认本地磁盘存储 (STORAGE_DRIVER=local), 文件落在下面的 api_uploads volume 里。
       # 要切到 S3/OSS/R2, 在 .env 里设置 STORAGE_DRIVER=s3 及 S3_* 变量, 见 DEPLOYMENT.md。
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
@@ -58,15 +58,35 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # 不直接对公网暴露端口 - 由下面的 caddy 服务做 TLS 终止后反代进来, web 自己的 nginx 继续只管
+  # 静态文件 + /api/* 内部转发, 跟直接裸 HTTP 部署时完全一样的配置, 不需要为了套 HTTPS 而改。
   web:
     build:
       context: ./apps/web
-    ports:
-      - '${WEB_PORT:-8080}:80'
     depends_on:
       - api
+    restart: unless-stopped
+
+  # 自动申请/续期 Let's Encrypt 证书。DOMAIN 是真实域名(如 training.feiken.group)时才会真的走 ACME
+  # 签发流程; 如果 DOMAIN 留空用默认值 localhost 或填了裸IP, Caddy 会自动退化成不签证书的纯 HTTP,
+  # 本地/内网没有域名时也能直接用同一份 compose 文件, 不需要另外维护一套配置。
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      - web
     restart: unless-stopped
 
 volumes:
   postgres_data:
   api_uploads:
+  caddy_data:
+  caddy_config:
