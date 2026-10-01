@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "Training Center Management System",
-    "subtitle": "EASA ATO Compliance Platform (MVP)"
+    "subtitle": "ATO Compliance Platform"
   },
   "language": {
     "zh": "中文",
@@ -192,7 +192,21 @@
     "fieldTaskCode": "Training Task (checks device is qualified for this task)",
     "fieldTaskCodePlaceholder": "Leave empty to skip task validation",
     "fieldStudent": "Student (checks medical certificate validity, ORA.ATO.145)",
-    "fieldStudentPlaceholder": "Leave empty to skip student prerequisite validation"
+    "fieldStudentPlaceholder": "Leave empty to skip student prerequisite validation",
+    "downloadTemplate": "Download Excel Template",
+    "importExcel": "Import Excel",
+    "importing": "Importing...",
+    "importResultTitle": "Import Results",
+    "importSuccessSummary": "{{created}} created, {{failed}} failed",
+    "importAllSuccess": "All {{created}} row(s) imported successfully",
+    "importErrorRow": "Row {{row}}: {{message}}",
+    "importFailed": "Import failed",
+    "columnCustomer": "Airline / Customer",
+    "columnPilot": "Pilot",
+    "columnInstructor": "Instructor",
+    "columnRevenue": "Revenue",
+    "columnPhone": "Contact Phone",
+    "columnNotes": "Notes"
   },
   "kiosk": {
     "submittedTitle": "Discrepancy recorded",
@@ -809,7 +823,13 @@
       "fieldRelatedDiscrepancy": "Related Discrepancy (optional)",
       "fieldRelatedDiscrepancyPlaceholder": "Link a discrepancy if this part is being used to resolve one",
       "fieldNote": "Note",
-      "fieldNotePlaceholder": "e.g. For FFS-01 repair / purchase order received"
+      "fieldNotePlaceholder": "e.g. For FFS-01 repair / purchase order received",
+      "columnLocation": "Storage Location",
+      "fieldLocation": "Storage Location (shelf/bin number)",
+      "fieldLocationPlaceholder": "e.g. Zone A - Shelf 03 - Level 2",
+      "editButton": "Edit",
+      "editModalTitle": "Edit Part",
+      "updateSuccess": "Part updated"
     },
     "tools": {
       "dueSoonWarning": "{{count}} tool(s) have calibration due soon or never calibrated",

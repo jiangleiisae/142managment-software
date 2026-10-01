@@ -22,6 +22,7 @@ import { useAuth } from '../auth/AuthContext'
 import { NotificationBell } from '../components/NotificationBell'
 import { setLanguage, type SupportedLanguage } from '../i18n'
 import type { Permission } from '../api/users'
+import feikenLogoWhite from '../assets/feiken-logo-white.png'
 
 const { Header, Sider, Content } = Layout
 
@@ -61,7 +62,10 @@ export function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider breakpoint="lg" collapsedWidth="0">
-        <div style={{ color: '#fff', textAlign: 'center', padding: 16, fontWeight: 600 }}>{t('app.title')}</div>
+        <div style={{ textAlign: 'center', padding: '16px 12px 8px' }}>
+          <img src={feikenLogoWhite} alt="Feiken Aviation" style={{ width: '100%', maxWidth: 120 }} />
+        </div>
+        <div style={{ color: '#fff', textAlign: 'center', padding: '0 16px 12px', fontSize: 13, opacity: 0.85 }}>{t('app.title')}</div>
         <Menu
           theme="dark"
           mode="inline"

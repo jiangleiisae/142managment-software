@@ -16,4 +16,16 @@ export const bookingsApi = {
   }) => apiClient.post<Booking>('/bookings', data).then((r) => r.data),
 
   cancel: (id: string) => apiClient.post(`/bookings/${id}/cancel`).then((r) => r.data),
+
+  importExcel: (organizationId: string, file: File) => {
+    const form = new FormData()
+    form.append('organizationId', organizationId)
+    form.append('file', file)
+    return apiClient
+      .post<{ createdCount: number; errorCount: number; errors: { row: number; message: string }[] }>(
+        '/bookings/import-excel',
+        form,
+      )
+      .then((r) => r.data)
+  },
 }

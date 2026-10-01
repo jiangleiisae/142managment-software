@@ -1,5 +1,5 @@
 import { BookingResourceType } from '@prisma/client';
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateBookingDto {
   @IsString()
@@ -30,4 +30,29 @@ export class CreateBookingDto {
   @IsOptional()
   @IsString()
   taskCode?: string;
+
+  @IsOptional()
+  @IsString()
+  customerName?: string;
+
+  @IsOptional()
+  @IsString()
+  pilotName?: string;
+
+  @IsOptional()
+  @IsString()
+  instructorName?: string;
+
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  revenue?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

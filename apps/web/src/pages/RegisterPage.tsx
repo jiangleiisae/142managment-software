@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { setLanguage, type SupportedLanguage } from '../i18n'
+import feikenLogo from '../assets/feiken-logo.png'
 
 export function RegisterPage() {
   const { t, i18n } = useTranslation()
@@ -39,7 +40,10 @@ export function RegisterPage() {
         ]}
       />
       <Card style={{ width: 380 }}>
-        <Typography.Title level={3} style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <img src={feikenLogo} alt="Feiken Aviation" style={{ height: 72 }} />
+        </div>
+        <Typography.Title level={4} style={{ textAlign: 'center', marginTop: 0 }}>
           {t('auth.register.title')}
         </Typography.Title>
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}

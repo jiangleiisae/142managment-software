@@ -202,12 +202,27 @@ export const inventoryApi = {
     compatibleWith?: string
     partCategory?: PartCategory
     minQuantity?: number
+    location?: string
     requiresInspection?: boolean
     inspectionIntervalMonths?: number
   }) => apiClient.post<SparePart>('/inventory/spare-parts', data).then((r) => r.data),
 
   listSpareParts: (organizationId: string) =>
     apiClient.get<SparePart[]>('/inventory/spare-parts', { params: { organizationId } }).then((r) => r.data),
+
+  updateSparePart: (
+    id: string,
+    data: {
+      name?: string
+      compatibleWith?: string
+      partCategory?: PartCategory
+      unit?: string
+      minQuantity?: number
+      location?: string
+      requiresInspection?: boolean
+      inspectionIntervalMonths?: number
+    },
+  ) => apiClient.post<SparePart>(`/inventory/spare-parts/${id}`, data).then((r) => r.data),
 
   listLowStock: () => apiClient.get<LowStockItem[]>('/inventory/spare-parts/low-stock').then((r) => r.data),
 

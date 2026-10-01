@@ -1593,6 +1593,12 @@ model Booking {
   startAt        DateTime
   endAt          DateTime
   status         String              @default("confirmed") // confirmed / cancelled
+  customerName   String? // 航司/客户名称 (商业排班场景, 如外部航司包机培训); 可选, 与上面校验逻辑无关
+  pilotName      String? // 飞行员姓名, 自由文本 (不要求关联 Personnel 档案)
+  instructorName String? // 教员姓名, 自由文本 (不要求关联 Personnel 档案)
+  contactPhone   String?
+  revenue        Decimal? @db.Decimal(12, 2) // 该次排班产生的收入, 自由填写 (不做财务对账用途)
+  notes          String?
   createdAt      DateTime            @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])

@@ -31,6 +31,26 @@ describe('mass-assignment protection', () => {
     expect(part.body.currentQuantity).toBe(0);
   });
 
+  it('SparePart: currentQuantity/organizationId/partNumber 不能通过更新接口被改写', async () => {
+    const part = await call('POST', '/inventory/spare-parts', {
+      organizationId: org.id,
+      partNumber: `EXPLOIT-UPDATE-${Date.now()}`,
+      name: 'Mass assignment update exploit test',
+    }, token);
+    const otherOrg = await createOrg(call, token);
+    const updated = await call('POST', `/inventory/spare-parts/${part.body.id}`, {
+      location: 'A区-01货架',
+      currentQuantity: 999999,
+      organizationId: otherOrg.id,
+      partNumber: 'HIJACKED-PART-NUMBER',
+    }, token);
+    expect(updated.status).toBe(201);
+    expect(updated.body.currentQuantity).toBe(0);
+    expect(updated.body.organizationId).toBe(org.id);
+    expect(updated.body.partNumber).toBe(part.body.partNumber);
+    expect(updated.body.location).toBe('A区-01货架');
+  });
+
   it('Course: isApproved/approvedAt 不能在创建时被设置', async () => {
     const course = await call('POST', '/courses', {
       organizationId: org.id,

@@ -79,8 +79,10 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
   const [typeConfigs, setTypeConfigs] = useState<PartTypeConfig[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [partModalOpen, setPartModalOpen] = useState(false)
+  const [editModalPartId, setEditModalPartId] = useState<string>()
   const [movementModalPartId, setMovementModalPartId] = useState<string>()
   const [partForm] = Form.useForm()
+  const [editForm] = Form.useForm()
   const [movementForm] = Form.useForm()
 
   const load = () => {
@@ -105,6 +107,28 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
     message.success(t('inventoryPage.parts.createSuccess'))
     setPartModalOpen(false)
     partForm.resetFields()
+    load()
+  }
+
+  const openEditModal = (p: SparePart) => {
+    editForm.setFieldsValue({
+      name: p.name,
+      compatibleWith: p.compatibleWith,
+      partCategory: p.partCategory,
+      minQuantity: p.minQuantity,
+      location: p.location,
+      requiresInspection: p.requiresInspection,
+      inspectionIntervalMonths: p.inspectionIntervalMonths,
+    })
+    setEditModalPartId(p.id)
+  }
+
+  const handleEditPart = async () => {
+    if (!editModalPartId) return
+    const values = await editForm.validateFields()
+    await inventoryApi.updateSparePart(editModalPartId, values)
+    message.success(t('inventoryPage.parts.updateSuccess'))
+    setEditModalPartId(undefined)
     load()
   }
 
@@ -169,12 +193,18 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
                 '-'
               ),
           },
+          { title: t('inventoryPage.parts.columnLocation'), dataIndex: 'location', render: (v?: string | null) => v ?? '-' },
           {
             title: t('inventoryPage.parts.columnActions'),
             render: (_, p) => (
-              <Button size="small" onClick={() => setMovementModalPartId(p.id)}>
-                {t('inventoryPage.parts.recordMovement')}
-              </Button>
+              <Space>
+                <Button size="small" onClick={() => openEditModal(p)}>
+                  {t('inventoryPage.parts.editButton')}
+                </Button>
+                <Button size="small" onClick={() => setMovementModalPartId(p.id)}>
+                  {t('inventoryPage.parts.recordMovement')}
+                </Button>
+              </Space>
             ),
           },
         ]}
@@ -231,7 +261,50 @@ function SparePartsTab({ organizationId }: { organizationId: string }) {
           <Form.Item name="minQuantity" label={t('inventoryPage.parts.fieldMinQuantity')} initialValue={0} rules={[{ required: true }]}>
             <InputNumber min={0} style={{ width: '100%' }} />
           </Form.Item>
+          <Form.Item name="location" label={t('inventoryPage.parts.fieldLocation')}>
+            <Input placeholder={t('inventoryPage.parts.fieldLocationPlaceholder')} />
+          </Form.Item>
           <Form.Item name="requiresInspection" label={t('inventoryPage.parts.fieldRequiresInspection')} initialValue={false}>
+            <Select
+              options={[
+                { value: false, label: t('inventoryPage.parts.requiresInspectionNo') },
+                { value: true, label: t('inventoryPage.parts.requiresInspectionYes') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.requiresInspection !== cur.requiresInspection}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('requiresInspection') && (
+                <Form.Item name="inspectionIntervalMonths" label={t('inventoryPage.parts.fieldInspectionInterval')} rules={[{ required: true }]}>
+                  <InputNumber min={1} style={{ width: '100%' }} />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={t('inventoryPage.parts.editModalTitle')} open={!!editModalPartId} onOk={handleEditPart} onCancel={() => setEditModalPartId(undefined)}>
+        <Form form={editForm} layout="vertical">
+          <Form.Item name="name" label={t('inventoryPage.parts.fieldName')} rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="compatibleWith" label={t('inventoryPage.parts.fieldCompatibleWith')}>
+            <Input placeholder={t('inventoryPage.parts.fieldCompatibleWithPlaceholder')} />
+          </Form.Item>
+          <Form.Item name="partCategory" label={t('inventoryPage.parts.fieldCategory')} rules={[{ required: true }]}>
+            <Select options={typeConfigs.map((c) => ({ value: c.code, label: c.label }))} />
+          </Form.Item>
+          <Form.Item name="minQuantity" label={t('inventoryPage.parts.fieldMinQuantity')} rules={[{ required: true }]}>
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="location" label={t('inventoryPage.parts.fieldLocation')}>
+            <Input placeholder={t('inventoryPage.parts.fieldLocationPlaceholder')} />
+          </Form.Item>
+          <Form.Item name="requiresInspection" label={t('inventoryPage.parts.fieldRequiresInspection')}>
             <Select
               options={[
                 { value: false, label: t('inventoryPage.parts.requiresInspectionNo') },

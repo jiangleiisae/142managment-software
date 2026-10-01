@@ -24,6 +24,7 @@ import { ReportFaultyPartDto } from './dto/report-faulty-part.dto.js';
 import { RequestScrapDto } from './dto/request-scrap.dto.js';
 import { UpdateFaultyPartStatusDto } from './dto/update-faulty-part-status.dto.js';
 import { UpdatePartTypeConfigLabelDto } from './dto/update-part-type-config-label.dto.js';
+import { UpdateSparePartDto } from './dto/update-spare-part.dto.js';
 import { InventoryService } from './inventory.service.js';
 
 @Controller('inventory')
@@ -41,6 +42,11 @@ export class InventoryController {
   @Get('spare-parts')
   listSpareParts(@Query('organizationId') organizationId: string) {
     return this.service.listSpareParts(organizationId);
+  }
+
+  @Post('spare-parts/:id')
+  updateSparePart(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateSparePartDto) {
+    return this.service.updateSparePart(id, user.tenantId, dto);
   }
 
   @Get('spare-parts/low-stock')

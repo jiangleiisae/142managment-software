@@ -116,4 +116,10 @@ export interface Booking {
   status: string
   studentId?: string | null
   taskCode?: string | null
+  customerName?: string | null
+  pilotName?: string | null
+  instructorName?: string | null
+  contactPhone?: string | null
+  revenue?: string | null
+  notes?: string | null
 }

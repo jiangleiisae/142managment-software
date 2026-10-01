@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "培训中心管理系统",
-    "subtitle": "EASA ATO 合规管理平台 (MVP)"
+    "subtitle": "ATO 合规管理平台"
   },
   "language": {
     "zh": "中文",
@@ -192,7 +192,21 @@
     "fieldTaskCode": "训练科目 (校验设备是否已鉴定该科目)",
     "fieldTaskCodePlaceholder": "不选则不校验具体科目",
     "fieldStudent": "学员 (校验体检证有效性, ORA.ATO.145)",
-    "fieldStudentPlaceholder": "不选则不校验学员前置条件"
+    "fieldStudentPlaceholder": "不选则不校验学员前置条件",
+    "downloadTemplate": "下载Excel模板",
+    "importExcel": "导入Excel",
+    "importing": "正在导入...",
+    "importResultTitle": "导入结果",
+    "importSuccessSummary": "成功创建 {{created}} 条, {{failed}} 条失败",
+    "importAllSuccess": "全部 {{created}} 条已成功创建",
+    "importErrorRow": "第 {{row}} 行: {{message}}",
+    "importFailed": "导入失败",
+    "columnCustomer": "航司/客户",
+    "columnPilot": "飞行员",
+    "columnInstructor": "教员",
+    "columnRevenue": "收入",
+    "columnPhone": "联系电话",
+    "columnNotes": "备注"
   },
   "kiosk": {
     "submittedTitle": "缺陷已登记",
@@ -809,7 +823,13 @@
       "fieldRelatedDiscrepancy": "关联缺陷 (可选)",
       "fieldRelatedDiscrepancyPlaceholder": "若本次领用是为了排除某个缺陷, 可关联该缺陷",
       "fieldNote": "备注",
-      "fieldNotePlaceholder": "如: 用于FFS-01维修 / 采购到货"
+      "fieldNotePlaceholder": "如: 用于FFS-01维修 / 采购到货",
+      "columnLocation": "存储位置",
+      "fieldLocation": "存储位置 (货架/仓位编号)",
+      "fieldLocationPlaceholder": "如: A区-03货架-2层",
+      "editButton": "编辑",
+      "editModalTitle": "编辑备件信息",
+      "updateSuccess": "备件信息已更新"
     },
     "tools": {
       "dueSoonWarning": "有 {{count}} 件工具的校准即将到期或从未校准过",

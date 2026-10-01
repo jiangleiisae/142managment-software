@@ -1,8 +1,76 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BookingResourceType } from '@prisma/client';
+import ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { FstdService } from '../fstd/fstd.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+/// Excel 导入排班表固定列顺序(对应 scripts/生成的"排班登记表模板.xlsx"的"排班登记 Schedule"工作表):
+/// A日期 B开始时间 C结束时间 D模拟机/设备编号 E训练科目 F航司/客户名称 G飞行员姓名 H教员姓名 I联系电话 J收入 K备注
+const EXCEL_COLUMNS = {
+  date: 1,
+  startTime: 2,
+  endTime: 3,
+  deviceCode: 4,
+  taskCode: 5,
+  customerName: 6,
+  pilotName: 7,
+  instructorName: 8,
+  contactPhone: 9,
+  revenue: 10,
+  notes: 11,
+} as const;
+
+function excelSerialToUtcDate(serial: number): Date {
+  const epoch = Date.UTC(1899, 11, 30);
+  return new Date(epoch + serial * 86400000);
+}
+
+function parseExcelDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return excelSerialToUtcDate(value);
+  if (typeof value === 'string' && value.trim()) {
+    const d = new Date(value.trim());
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return undefined;
+}
+
+function parseExcelTime(value: unknown): { hours: number; minutes: number } | undefined {
+  if (value instanceof Date) return { hours: value.getUTCHours(), minutes: value.getUTCMinutes() };
+  if (typeof value === 'number') {
+    const totalMinutes = Math.round(value * 24 * 60);
+    return { hours: Math.floor(totalMinutes / 60) % 24, minutes: totalMinutes % 60 };
+  }
+  if (typeof value === 'string') {
+    const m = value.trim().match(/^(\d{1,2}):(\d{2})/);
+    if (m) return { hours: Number(m[1]), minutes: Number(m[2]) };
+  }
+  return undefined;
+}
+
+function cellText(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'object') {
+    // exceljs 富文本单元格 { richText: [...] } 或 { text, hyperlink }
+    const text = (value as { text?: unknown }).text;
+    return typeof text === 'string' ? text.trim() || undefined : undefined;
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const s = String(value).trim();
+    return s || undefined;
+  }
+  return undefined;
+}
+
+function cellNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number(value.replace(/[,\s]/g, ''));
+    if (!Number.isNaN(n)) return n;
+  }
+  return undefined;
+}
 
 @Injectable()
 export class SchedulingService {
@@ -119,6 +187,12 @@ export class SchedulingService {
       courseId?: string;
       studentId?: string;
       taskCode?: string;
+      customerName?: string;
+      pilotName?: string;
+      instructorName?: string;
+      contactPhone?: string;
+      revenue?: number;
+      notes?: string;
     },
   ) {
     const startAt = new Date(data.startAt);
@@ -139,6 +213,12 @@ export class SchedulingService {
         courseId: data.courseId,
         studentId: data.studentId,
         taskCode: data.taskCode,
+        customerName: data.customerName,
+        pilotName: data.pilotName,
+        instructorName: data.instructorName,
+        contactPhone: data.contactPhone,
+        revenue: data.revenue,
+        notes: data.notes,
       },
     });
     await this.auditLog.write(tenantId, 'Booking', booking.id, 'create', null, booking);
@@ -158,5 +238,84 @@ export class SchedulingService {
     const updated = await this.prisma.booking.update({ where: { id }, data: { status: 'cancelled' } });
     await this.auditLog.write(tenantId, 'Booking', id, 'status_change:confirmed->cancelled', booking, updated);
     return updated;
+  }
+
+  /// 排班 Excel 批量导入(用户反馈现有排班 UI 不好用, 改为按固定模板表格逐行导入)。
+  /// 逐行走 create() 的全部校验逻辑(设备状态/科目能力/MMI阻断/学员体检证), 单行失败不影响其他行,
+  /// 失败原因逐行回传给前端展示, 便于用户对照 Excel 修正后重新导入。
+  async importFromExcel(tenantId: string, organizationId: string, buffer: Buffer) {
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org || org.tenantId !== tenantId) throw new BadRequestException(`机构 ${organizationId} 不属于该租户`);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const sheet =
+      workbook.worksheets.find((ws) => /schedule|排班/i.test(ws.name)) ?? workbook.worksheets[workbook.worksheets.length - 1];
+    if (!sheet) throw new BadRequestException('Excel 文件中未找到可识别的工作表');
+
+    const fstds = await this.prisma.fstd.findMany({ where: { organizationId } });
+    const fstdByCode = new Map(fstds.map((f) => [f.deviceCode.trim().toLowerCase(), f]));
+
+    const errors: { row: number; message: string }[] = [];
+    let createdCount = 0;
+    const totalRows = sheet.rowCount;
+
+    for (let rowNumber = 2; rowNumber <= totalRows; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      const deviceCodeRaw = cellText(row.getCell(EXCEL_COLUMNS.deviceCode).value);
+      const customerName = cellText(row.getCell(EXCEL_COLUMNS.customerName).value);
+      const pilotName = cellText(row.getCell(EXCEL_COLUMNS.pilotName).value);
+      const notes = cellText(row.getCell(EXCEL_COLUMNS.notes).value);
+
+      // 整行为空(含模板里的示例行提示文字)则跳过, 不计入错误
+      if (!deviceCodeRaw && !customerName && !pilotName) continue;
+      if (notes && /示例行|sample row/i.test(notes)) continue;
+
+      try {
+        if (!deviceCodeRaw) throw new BadRequestException('模拟机/设备编号 为必填');
+        const fstd = fstdByCode.get(deviceCodeRaw.trim().toLowerCase());
+        if (!fstd) throw new BadRequestException(`找不到设备编号 "${deviceCodeRaw}", 请检查是否与「模拟机」模块中的设备编号一致`);
+
+        const dateVal = parseExcelDate(row.getCell(EXCEL_COLUMNS.date).value);
+        const startTime = parseExcelTime(row.getCell(EXCEL_COLUMNS.startTime).value);
+        const endTime = parseExcelTime(row.getCell(EXCEL_COLUMNS.endTime).value);
+        if (!dateVal) throw new BadRequestException('日期 格式无法识别');
+        if (!startTime) throw new BadRequestException('开始时间 格式无法识别 (应为 HH:mm, 如 09:00)');
+        if (!endTime) throw new BadRequestException('结束时间 格式无法识别 (应为 HH:mm, 如 11:00)');
+
+        // Excel 里填的日期/时间是训练中心当地时间(中国大陆, UTC+8, 不实行夏令时), 不是UTC,
+        // 所以这里要先按UTC+8算出对应的UTC时刻, 否则会出现导入后时间整体偏移8小时的问题。
+        const CHINA_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+        const startAt = new Date(
+          Date.UTC(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate(), startTime.hours, startTime.minutes) -
+            CHINA_UTC_OFFSET_MS,
+        );
+        const endAt = new Date(
+          Date.UTC(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate(), endTime.hours, endTime.minutes) -
+            CHINA_UTC_OFFSET_MS,
+        );
+
+        await this.create(tenantId, {
+          organizationId,
+          resourceType: 'FSTD',
+          resourceId: fstd.id,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          taskCode: cellText(row.getCell(EXCEL_COLUMNS.taskCode).value),
+          customerName,
+          pilotName,
+          instructorName: cellText(row.getCell(EXCEL_COLUMNS.instructorName).value),
+          contactPhone: cellText(row.getCell(EXCEL_COLUMNS.contactPhone).value),
+          revenue: cellNumber(row.getCell(EXCEL_COLUMNS.revenue).value),
+          notes,
+        });
+        createdCount++;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        errors.push({ row: rowNumber, message });
+      }
+    }
+
+    return { createdCount, errorCount: errors.length, errors };
   }
 }

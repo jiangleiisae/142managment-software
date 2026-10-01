@@ -64,6 +64,45 @@ export class InventoryService {
     return this.prisma.sparePart.findMany({ where: { organizationId }, orderBy: { partNumber: 'asc' } });
   }
 
+  async updateSparePart(
+    id: string,
+    tenantId: string,
+    data: {
+      name?: string;
+      compatibleWith?: string;
+      partCategory?: string;
+      unit?: string;
+      minQuantity?: number;
+      location?: string;
+      requiresInspection?: boolean;
+      inspectionIntervalMonths?: number;
+    },
+  ) {
+    const part = await this.findSparePartOrThrow(id, tenantId);
+    if (data.partCategory) {
+      const configs = await this.listPartTypeConfigs(part.organizationId);
+      if (!configs.some((c) => c.code === data.partCategory)) {
+        throw new BadRequestException(`未知的备件分类 "${data.partCategory}", 请先在备件信息配置中添加该分类`);
+      }
+    }
+    // 逐字段显式列出, 不要 {...data} 展开: currentQuantity/organizationId/partNumber 不能通过此接口修改
+    const updated = await this.prisma.sparePart.update({
+      where: { id },
+      data: {
+        name: data.name,
+        compatibleWith: data.compatibleWith,
+        partCategory: data.partCategory,
+        unit: data.unit,
+        minQuantity: data.minQuantity,
+        location: data.location,
+        requiresInspection: data.requiresInspection,
+        inspectionIntervalMonths: data.inspectionIntervalMonths,
+      },
+    });
+    await this.auditLog.write(tenantId, 'SparePart', id, 'update', part, updated);
+    return updated;
+  }
+
   async listMovements(sparePartId: string, tenantId: string) {
     await this.findSparePartOrThrow(sparePartId, tenantId);
     return this.prisma.partMovement.findMany({

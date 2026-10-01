@@ -1,5 +1,5 @@
-import { PlusOutlined } from '@ant-design/icons'
-import { App, Button, DatePicker, Empty, Form, Modal, Select, Space, Table, Tag } from 'antd'
+import { DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { App, Button, DatePicker, Empty, Form, List, Modal, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { bookingsApi } from '../api/bookings'
@@ -22,6 +22,8 @@ export function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ createdCount: number; errorCount: number; errors: { row: number; message: string }[] }>()
   const [form] = Form.useForm()
 
   useEffect(() => {
@@ -76,6 +78,22 @@ export function BookingsPage() {
     load()
   }
 
+  const handleImport = async (file: File) => {
+    if (!selectedId) return false
+    setImporting(true)
+    try {
+      const result = await bookingsApi.importExcel(selectedId, file)
+      setImportResult(result)
+      load()
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } } }
+      message.error(err.response?.data?.message ?? t('bookings.importFailed'))
+    } finally {
+      setImporting(false)
+    }
+    return false
+  }
+
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
@@ -96,16 +114,29 @@ export function BookingsPage() {
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               {t('bookings.addButton')}
             </Button>
+            <Button icon={<DownloadOutlined />} href="/templates/schedule-template.xlsx" download>
+              {t('bookings.downloadTemplate')}
+            </Button>
+            <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={handleImport}>
+              <Button icon={<UploadOutlined />} loading={importing}>
+                {t('bookings.importExcel')}
+              </Button>
+            </Upload>
           </Space>
 
           <Table<Booking>
             rowKey="id"
             loading={loading}
             dataSource={bookings}
+            scroll={{ x: 'max-content' }}
             columns={[
               { title: t('bookings.columnStartAt'), dataIndex: 'startAt', render: (v: string) => new Date(v).toLocaleString() },
               { title: t('bookings.columnEndAt'), dataIndex: 'endAt', render: (v: string) => new Date(v).toLocaleString() },
               { title: t('bookings.columnTaskCode'), dataIndex: 'taskCode', render: (v?: string) => (v ? <Tag color="blue">{v}</Tag> : '-') },
+              { title: t('bookings.columnCustomer'), dataIndex: 'customerName', render: (v?: string | null) => v ?? '-' },
+              { title: t('bookings.columnPilot'), dataIndex: 'pilotName', render: (v?: string | null) => v ?? '-' },
+              { title: t('bookings.columnInstructor'), dataIndex: 'instructorName', render: (v?: string | null) => v ?? '-' },
+              { title: t('bookings.columnRevenue'), dataIndex: 'revenue', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnStatus'), dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> },
               {
                 title: t('bookings.columnActions'),
@@ -116,6 +147,15 @@ export function BookingsPage() {
                 ),
               },
             ]}
+            expandable={{
+              rowExpandable: (record) => !!(record.contactPhone || record.notes),
+              expandedRowRender: (record) => (
+                <Space direction="vertical" size={0}>
+                  {record.contactPhone && <div>{t('bookings.columnPhone')}: {record.contactPhone}</div>}
+                  {record.notes && <div>{t('bookings.columnNotes')}: {record.notes}</div>}
+                </Space>
+              ),
+            }}
           />
         </>
       )}
@@ -142,6 +182,35 @@ export function BookingsPage() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={t('bookings.importResultTitle')}
+        open={!!importResult}
+        onOk={() => setImportResult(undefined)}
+        onCancel={() => setImportResult(undefined)}
+        cancelButtonProps={{ style: { display: 'none' } }}
+      >
+        {importResult && (
+          <>
+            <Typography.Paragraph>
+              {importResult.errorCount === 0
+                ? t('bookings.importAllSuccess', { created: importResult.createdCount })
+                : t('bookings.importSuccessSummary', { created: importResult.createdCount, failed: importResult.errorCount })}
+            </Typography.Paragraph>
+            {importResult.errors.length > 0 && (
+              <List
+                size="small"
+                dataSource={importResult.errors}
+                renderItem={(err) => (
+                  <List.Item>
+                    <Typography.Text type="danger">{t('bookings.importErrorRow', { row: err.row, message: err.message })}</Typography.Text>
+                  </List.Item>
+                )}
+              />
+            )}
+          </>
+        )}
       </Modal>
     </div>
   )
