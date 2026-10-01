@@ -1,4 +1,5 @@
 import { Select, Space, Typography } from 'antd'
+import { useTranslation } from 'react-i18next'
 import type { Organization } from '../api/types'
 
 interface Props {
@@ -8,13 +9,14 @@ interface Props {
 }
 
 export function OrganizationSelector({ organizations, selectedId, onChange }: Props) {
+  const { t } = useTranslation()
   return (
     <Space style={{ marginBottom: 16 }}>
-      <Typography.Text>当前机构:</Typography.Text>
+      <Typography.Text>{t('common.currentOrganization')}</Typography.Text>
       <Select
         style={{ width: 280 }}
         value={selectedId}
-        placeholder="请选择机构 (先到「机构与证书」创建)"
+        placeholder={t('common.selectOrganizationPlaceholder')}
         options={organizations.map((o) => ({ value: o.id, label: o.name }))}
         onChange={onChange}
       />

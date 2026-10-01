@@ -194,7 +194,10 @@ export function ManagementSystemPage() {
   }
 
   const allRiskAssessments = hazards.flatMap((h) =>
-    (h.riskAssessments ?? []).map((r) => ({ id: r.id, label: `${h.description} - 风险评分${r.riskScore}` })),
+    (h.riskAssessments ?? []).map((r) => ({
+      id: r.id,
+      label: t('managementSystemPage.riskAssessmentOptionLabel', { description: h.description, score: r.riskScore }),
+    })),
   )
 
   const handleAddPolicy = async () => {

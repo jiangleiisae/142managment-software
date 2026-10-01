@@ -390,16 +390,16 @@ export function OrganizationDetailPage() {
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="courseTypesJson" label={t('organizations.detail.courseTypesLabel')}>
-            <Select mode="tags" placeholder="如 PPL, CPL" />
+            <Select mode="tags" placeholder={t('organizations.detail.courseTypesPlaceholder')} />
           </Form.Item>
           <Form.Item name="trainingSitesJson" label={t('organizations.detail.trainingSitesLabel')}>
             <Select mode="tags" placeholder={t('organizations.detail.trainingSitesPlaceholder')} />
           </Form.Item>
           <Form.Item name="aircraftListJson" label={t('organizations.detail.aircraftLabel')}>
-            <Select mode="tags" placeholder="如 A320/B-1234" />
+            <Select mode="tags" placeholder={t('organizations.detail.aircraftPlaceholder')} />
           </Form.Item>
           <Form.Item name="fstdListJson" label={t('organizations.detail.fstdListLabel')}>
-            <Select mode="tags" placeholder="设备编号" />
+            <Select mode="tags" placeholder={t('organizations.detail.fstdListPlaceholder')} />
           </Form.Item>
           <Form.Item name="operationsManualRef" label={t('organizations.detail.opsManualRefLabel')}>
             <Input />

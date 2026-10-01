@@ -135,7 +135,10 @@
       "aircraftLabel": "航空器清单",
       "fstdListLabel": "FSTD清单",
       "opsManualRefLabel": "运行手册引用",
-      "trainingManualRefLabel": "训练手册引用"
+      "trainingManualRefLabel": "训练手册引用",
+      "courseTypesPlaceholder": "如 PPL, CPL",
+      "aircraftPlaceholder": "如 A320/B-1234",
+      "fstdListPlaceholder": "设备编号"
     }
   },
   "personnel": {
@@ -727,7 +730,8 @@
     "srbCreateSuccess": "安全评审委员会会议记录已创建",
     "srbActionAddSuccess": "行动项已添加",
     "srbActionCloseSuccess": "行动项已关闭",
-    "contractCreateSuccess": "承包记录已创建"
+    "contractCreateSuccess": "承包记录已创建",
+    "riskAssessmentOptionLabel": "{{description}} - 风险评分{{score}}"
   },
   "inventoryPage": {
     "selectOrgFirst": "请先创建并选择一个机构",
@@ -1327,5 +1331,12 @@
     "fieldLostTrainingHours": "损失训练时间(h)",
     "fieldDiscrepancyCount": "缺陷次数",
     "fieldInterruptionCount": "中断次数"
+  },
+  "common": {
+    "currentOrganization": "当前机构:",
+    "selectOrganizationPlaceholder": "请选择机构 (先到「机构与证书」创建)",
+    "noAccessTitle": "无访问权限",
+    "noAccessSubtitle": "您的账户没有该模块的访问权限, 请联系管理员",
+    "noAccessAdminOnlySubtitle": "仅管理账户(OWNER/ADMIN)可访问该页面"
   }
 }

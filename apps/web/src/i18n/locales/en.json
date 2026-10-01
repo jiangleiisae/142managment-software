@@ -135,7 +135,10 @@
       "aircraftLabel": "Aircraft List",
       "fstdListLabel": "FSTD List",
       "opsManualRefLabel": "Operations Manual Reference",
-      "trainingManualRefLabel": "Training Manual Reference"
+      "trainingManualRefLabel": "Training Manual Reference",
+      "courseTypesPlaceholder": "e.g. PPL, CPL",
+      "aircraftPlaceholder": "e.g. A320/B-1234",
+      "fstdListPlaceholder": "Device code"
     }
   },
   "personnel": {
@@ -727,7 +730,8 @@
     "srbCreateSuccess": "Safety Review Board meeting record created",
     "srbActionAddSuccess": "Action item added",
     "srbActionCloseSuccess": "Action item closed",
-    "contractCreateSuccess": "Contract record created"
+    "contractCreateSuccess": "Contract record created",
+    "riskAssessmentOptionLabel": "{{description}} - risk score {{score}}"
   },
   "inventoryPage": {
     "selectOrgFirst": "Please create and select an organization first",
@@ -1327,5 +1331,12 @@
     "fieldLostTrainingHours": "Lost Training Time (h)",
     "fieldDiscrepancyCount": "Discrepancy Count",
     "fieldInterruptionCount": "Interruption Count"
+  },
+  "common": {
+    "currentOrganization": "Current organization:",
+    "selectOrganizationPlaceholder": "Select an organization (create one under Organizations & Certificates first)",
+    "noAccessTitle": "Access Denied",
+    "noAccessSubtitle": "Your account does not have access to this module. Please contact an administrator.",
+    "noAccessAdminOnlySubtitle": "Only administrator accounts (OWNER/ADMIN) can access this page"
   }
 }
