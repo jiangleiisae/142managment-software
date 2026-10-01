@@ -2,6 +2,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   InfoAssetCriticality,
   InformationAsset,
@@ -34,6 +35,7 @@ function riskColor(score: number) {
 
 /// 3.2.4 ISMS ((EU) 2023/203, 2026-02-22起适用): 信息资产清单/风险评估/事件响应, 独立于Part-ORA的SMS但复用同样的风险矩阵体验
 export function IsmsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [assets, setAssets] = useState<InformationAsset[]>([])
@@ -75,7 +77,7 @@ export function IsmsPage() {
     if (!selectedId) return
     const values = await assetForm.validateFields()
     await ismsApi.createAsset({ organizationId: selectedId, ...values })
-    message.success('信息资产已登记')
+    message.success(t('isms.assetCreated'))
     setAssetModalOpen(false)
     assetForm.resetFields()
     load()
@@ -85,7 +87,7 @@ export function IsmsPage() {
     if (!riskModalAssetId) return
     const values = await riskForm.validateFields()
     await ismsApi.assessRisk(riskModalAssetId, values)
-    message.success('风险评估已提交')
+    message.success(t('isms.riskAssessed'))
     setRiskModalAssetId(undefined)
     riskForm.resetFields()
     load()
@@ -98,7 +100,7 @@ export function IsmsPage() {
       ...values,
       dueDate: values.dueDate ? values.dueDate.format('YYYY-MM-DD') : undefined,
     })
-    message.success('缓解措施已添加')
+    message.success(t('isms.mitigationAdded'))
     setMitigationModalRiskId(undefined)
     mitigationForm.resetFields()
     load()
@@ -106,7 +108,7 @@ export function IsmsPage() {
 
   const closeMitigation = async (id: string) => {
     await ismsApi.closeMitigationAction(id)
-    message.success('缓解措施已关闭')
+    message.success(t('isms.mitigationClosed'))
     load()
   }
 
@@ -118,7 +120,7 @@ export function IsmsPage() {
       ...values,
       discoveredAt: values.discoveredAt.toISOString(),
     })
-    message.success('信息安全事件已登记')
+    message.success(t('isms.incidentReported'))
     setIncidentModalOpen(false)
     incidentForm.resetFields()
     load()
@@ -129,24 +131,24 @@ export function IsmsPage() {
     const values = await containForm.validateFields()
     try {
       await ismsApi.containIncident(containModalIncidentId, values.responseActions)
-      message.success('事件已遏制')
+      message.success(t('isms.incidentContained'))
       setContainModalIncidentId(undefined)
       containForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('isms.operationFailed'))
     }
   }
 
   const resolveIncident = async (id: string) => {
     try {
       await ismsApi.resolveIncident(id)
-      message.success('事件已解决')
+      message.success(t('isms.incidentResolved'))
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败, 须先完成遏制')
+      message.error(err.response?.data?.message ?? t('isms.resolveFailedMustContainFirst'))
     }
   }
 
@@ -155,22 +157,22 @@ export function IsmsPage() {
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('isms.selectOrgFirst')} />
       ) : (
         <>
           <Alert
             style={{ marginBottom: 16 }}
             type="info"
             showIcon
-            message="信息安全管理体系 ISMS ((EU) 2023/203, 2026-02-22起适用)"
-            description="独立于Part-ORA的SMS/合规监督体系, 管理可能影响航空训练安全的信息安全风险: 信息资产清单 → 风险评估 → 事件响应。"
+            message={t('isms.introMessage')}
+            description={t('isms.introDescription')}
           />
           {openHighRiskCount > 0 && (
             <Alert
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${openHighRiskCount} 项高危信息安全风险(评分≥12)尚未完成缓解措施`}
+              message={t('isms.highRiskWarning', { count: openHighRiskCount })}
             />
           )}
           {openIncidentCount > 0 && (
@@ -178,16 +180,16 @@ export function IsmsPage() {
               style={{ marginBottom: 16 }}
               type="error"
               showIcon
-              message={`有 ${openIncidentCount} 起信息安全事件尚未解决 (OPEN/CONTAINED)`}
+              message={t('isms.openIncidentWarning', { count: openIncidentCount })}
             />
           )}
 
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setAssetModalOpen(true)}>
-              登记信息资产
+              {t('isms.registerAsset')}
             </Button>
             <Button icon={<PlusOutlined />} onClick={() => setIncidentModalOpen(true)}>
-              登记安全事件
+              {t('isms.reportIncident')}
             </Button>
           </Space>
 
@@ -195,20 +197,20 @@ export function IsmsPage() {
             rowKey="id"
             loading={loading}
             dataSource={assets}
-            title={() => '信息资产清单'}
+            title={() => t('isms.assetsTableTitle')}
             columns={[
-              { title: '资产名称', dataIndex: 'name' },
-              { title: '类别', dataIndex: 'category' },
+              { title: t('isms.columnAssetName'), dataIndex: 'name' },
+              { title: t('isms.columnCategory'), dataIndex: 'category' },
               {
-                title: '关键程度',
+                title: t('isms.columnCriticality'),
                 dataIndex: 'criticality',
                 render: (v: InfoAssetCriticality) => <Tag color={CRITICALITY_COLOR[v]}>{v}</Tag>,
               },
               {
-                title: '操作',
+                title: t('isms.columnActions'),
                 render: (_, asset) => (
                   <Button size="small" onClick={() => setRiskModalAssetId(asset.id)}>
-                    做风险评估
+                    {t('isms.assessRisk')}
                   </Button>
                 ),
               },
@@ -218,18 +220,18 @@ export function IsmsPage() {
                 <List
                   size="small"
                   dataSource={asset.riskAssessments ?? []}
-                  locale={{ emptyText: '尚未做风险评估' }}
+                  locale={{ emptyText: t('isms.noRiskAssessments') }}
                   renderItem={(risk: InfoSecurityRiskAssessment) => (
                     <List.Item
                       actions={[
                         <Button key="add" size="small" onClick={() => setMitigationModalRiskId(risk.id)}>
-                          添加缓解措施
+                          {t('isms.addMitigation')}
                         </Button>,
                       ]}
                     >
                       <Space direction="vertical" style={{ width: '100%' }}>
                         <Tag color={riskColor(risk.riskScore)}>
-                          风险评分 {risk.riskScore} (可能性{risk.likelihoodLevel} × 影响{risk.impactLevel})
+                          {t('isms.riskScoreTag', { score: risk.riskScore, likelihood: risk.likelihoodLevel, impact: risk.impactLevel })}
                         </Tag>
                         <Space wrap>
                           {(risk.mitigations ?? []).map((m) => (
@@ -239,7 +241,7 @@ export function IsmsPage() {
                               onClick={() => m.status !== 'closed' && closeMitigation(m.id)}
                               style={{ cursor: m.status !== 'closed' ? 'pointer' : 'default' }}
                             >
-                              {m.description} [{m.status === 'closed' ? '已关闭' : '点击关闭'}]
+                              {m.description} [{m.status === 'closed' ? t('isms.mitigationClosedTag') : t('isms.mitigationClickToClose')}]
                             </Tag>
                           ))}
                         </Space>
@@ -255,29 +257,29 @@ export function IsmsPage() {
             rowKey="id"
             style={{ marginTop: 16 }}
             dataSource={incidents}
-            title={() => '信息安全事件响应 (OPEN → CONTAINED → RESOLVED)'}
+            title={() => t('isms.incidentsTableTitle')}
             columns={[
-              { title: '发现时间', dataIndex: 'discoveredAt', render: (v: string) => new Date(v).toLocaleString() },
-              { title: '事件类型', dataIndex: 'incidentType' },
-              { title: '描述', dataIndex: 'description' },
-              { title: '严重度', dataIndex: 'severity', render: (v: number) => `${v}/5` },
+              { title: t('isms.columnDiscoveredAt'), dataIndex: 'discoveredAt', render: (v: string) => new Date(v).toLocaleString() },
+              { title: t('isms.columnIncidentType'), dataIndex: 'incidentType' },
+              { title: t('isms.columnDescription'), dataIndex: 'description' },
+              { title: t('isms.columnSeverity'), dataIndex: 'severity', render: (v: number) => `${v}/5` },
               {
-                title: '状态',
+                title: t('isms.columnStatus'),
                 dataIndex: 'status',
                 render: (v: InfoSecurityIncident['status']) => <Tag color={INCIDENT_STATUS_COLOR[v]}>{v}</Tag>,
               },
               {
-                title: '操作',
+                title: t('isms.columnActions'),
                 render: (_, incident) => (
                   <Space>
                     {incident.status === 'OPEN' && (
                       <Button size="small" onClick={() => setContainModalIncidentId(incident.id)}>
-                        遏制
+                        {t('isms.contain')}
                       </Button>
                     )}
                     {incident.status === 'CONTAINED' && (
                       <Button size="small" type="primary" onClick={() => resolveIncident(incident.id)}>
-                        标记已解决
+                        {t('isms.markResolved')}
                       </Button>
                     )}
                   </Space>
@@ -288,95 +290,95 @@ export function IsmsPage() {
         </>
       )}
 
-      <Modal title="登记信息资产" open={assetModalOpen} onOk={handleCreateAsset} onCancel={() => setAssetModalOpen(false)}>
+      <Modal title={t('isms.assetModalTitle')} open={assetModalOpen} onOk={handleCreateAsset} onCancel={() => setAssetModalOpen(false)}>
         <Form form={assetForm} layout="vertical" initialValues={{ criticality: 'MEDIUM' }}>
-          <Form.Item name="name" label="资产名称" rules={[{ required: true }]}>
-            <Input placeholder="如: 学员记录数据库" />
+          <Form.Item name="name" label={t('isms.fieldAssetName')} rules={[{ required: true }]}>
+            <Input placeholder={t('isms.fieldAssetNamePlaceholder')} />
           </Form.Item>
-          <Form.Item name="category" label="类别" rules={[{ required: true }]}>
-            <Input placeholder="如: 数据库 / 网络设备 / 云服务 / 第三方系统" />
+          <Form.Item name="category" label={t('isms.fieldCategory')} rules={[{ required: true }]}>
+            <Input placeholder={t('isms.fieldCategoryPlaceholder')} />
           </Form.Item>
-          <Form.Item name="criticality" label="关键程度" rules={[{ required: true }]}>
+          <Form.Item name="criticality" label={t('isms.fieldCriticality')} rules={[{ required: true }]}>
             <Select options={CRITICALITY_OPTIONS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="description" label="说明">
+          <Form.Item name="description" label={t('isms.fieldDescription')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="信息安全风险评估 (可能性 x 影响矩阵)"
+        title={t('isms.riskModalTitle')}
         open={!!riskModalAssetId}
         onOk={handleAssessRisk}
         onCancel={() => setRiskModalAssetId(undefined)}
       >
         <Form form={riskForm} layout="vertical">
-          <Form.Item name="likelihoodLevel" label="可能性等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+          <Form.Item name="likelihoodLevel" label={t('isms.fieldLikelihoodLevel')} rules={[{ required: true }]}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="impactLevel" label="影响等级 (1-5, 5为最高)" rules={[{ required: true }]}>
+          <Form.Item name="impactLevel" label={t('isms.fieldImpactLevel')} rules={[{ required: true }]}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="existingControls" label="现有控制措施说明">
+          <Form.Item name="existingControls" label={t('isms.fieldExistingControls')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="添加缓解措施"
+        title={t('isms.mitigationModalTitle')}
         open={!!mitigationModalRiskId}
         onOk={handleAddMitigation}
         onCancel={() => setMitigationModalRiskId(undefined)}
       >
         <Form form={mitigationForm} layout="vertical">
-          <Form.Item name="description" label="措施描述" rules={[{ required: true }]}>
+          <Form.Item name="description" label={t('isms.fieldMitigationDescription')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="dueDate" label="计划完成日期">
+          <Form.Item name="dueDate" label={t('isms.fieldDueDate')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记信息安全事件"
+        title={t('isms.incidentModalTitle')}
         open={incidentModalOpen}
         onOk={handleReportIncident}
         onCancel={() => setIncidentModalOpen(false)}
       >
         <Form form={incidentForm} layout="vertical" initialValues={{ discoveredAt: dayjs(), severity: 3 }}>
-          <Form.Item name="incidentType" label="事件类型" rules={[{ required: true }]}>
-            <Input placeholder="如: 未授权访问 / 数据泄露 / 勒索软件 / 系统中断" />
+          <Form.Item name="incidentType" label={t('isms.fieldIncidentType')} rules={[{ required: true }]}>
+            <Input placeholder={t('isms.fieldIncidentTypePlaceholder')} />
           </Form.Item>
-          <Form.Item name="description" label="描述" rules={[{ required: true }]}>
+          <Form.Item name="description" label={t('isms.fieldIncidentDescription')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="affectedAssetId" label="受影响资产">
+          <Form.Item name="affectedAssetId" label={t('isms.fieldAffectedAsset')}>
             <Select
               allowClear
               options={assets.map((a) => ({ value: a.id, label: a.name }))}
             />
           </Form.Item>
-          <Form.Item name="severity" label="严重度 (1-5, 5为最高)" rules={[{ required: true }]}>
+          <Form.Item name="severity" label={t('isms.fieldSeverity')} rules={[{ required: true }]}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="discoveredAt" label="发现时间" rules={[{ required: true }]}>
+          <Form.Item name="discoveredAt" label={t('isms.fieldDiscoveredAt')} rules={[{ required: true }]}>
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="遏制事件 (Contain)"
+        title={t('isms.containModalTitle')}
         open={!!containModalIncidentId}
         onOk={handleContainIncident}
         onCancel={() => setContainModalIncidentId(undefined)}
       >
         <Form form={containForm} layout="vertical">
-          <Form.Item name="responseActions" label="已采取的响应措施" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="如: 已撤销会话, 强制重置密码" />
+          <Form.Item name="responseActions" label={t('isms.fieldResponseActions')} rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder={t('isms.fieldResponseActionsPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
