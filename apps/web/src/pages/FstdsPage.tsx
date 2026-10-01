@@ -2,6 +2,7 @@ import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '
 import { Alert, App, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   Discrepancy,
   EquipmentSpecificationList,
@@ -35,26 +36,21 @@ import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 
-const RETENTION_CATEGORY_LABEL: Record<RetentionCategory, { text: string; color: string }> = {
-  CATEGORY_I: { text: 'Category I (需在下次飞行前修复)', color: 'red' },
-  CATEGORY_II: { text: 'Category II (限期内修复, 可带故障运行)', color: 'orange' },
-  CATEGORY_III: { text: 'Category III (可长期保留)', color: 'gold' },
+const RETENTION_CATEGORY_COLOR: Record<RetentionCategory, string> = {
+  CATEGORY_I: 'red',
+  CATEGORY_II: 'orange',
+  CATEGORY_III: 'gold',
 }
 
 const PM_CHECK_LEVELS: PmCheckLevel[] = ['WEEKLY', 'MONTHLY', 'SEMI_ANNUAL', 'ANNUAL']
-const PM_CHECK_LEVEL_LABEL: Record<PmCheckLevel, string> = {
-  WEEKLY: '周检',
-  MONTHLY: '月检',
-  SEMI_ANNUAL: '半年检',
-  ANNUAL: '年检',
-}
-const PM_TASK_STATUS_LABEL: Record<PmTask['status'], { text: string; color: string }> = {
-  PENDING_REVIEW: { text: '待审核', color: 'orange' },
-  APPROVED: { text: '审核通过', color: 'green' },
-  REJECTED: { text: '审核不通过', color: 'red' },
+const PM_TASK_STATUS_COLOR: Record<PmTask['status'], string> = {
+  PENDING_REVIEW: 'orange',
+  APPROVED: 'green',
+  REJECTED: 'red',
 }
 
 const DEVICE_TYPES: FstdDeviceType[] = ['FFS', 'FTD', 'FNPT', 'BITD']
+// 注意: 这些是写入后端的实际数据值(item字段), 不是纯UI文案, 保持固定不随语言切换翻译, 以免新旧记录的item名称不一致
 const SAFETY_CHECK_ITEMS = ['急停按钮', '应急照明', '灭火器', '舱内通讯系统']
 const QTG_DOCUMENT_TYPES: QtgDocumentType[] = ['SOC', 'VDR', 'MQTG']
 const LEGACY_LEVELS: LegacyLevel[] = [
@@ -85,6 +81,7 @@ const emptyEslEntryState = (): EslEntryState =>
   Object.fromEntries(FCS_CHARACTERISTICS.map((c) => [c, { fidelityLevel: undefined, equipmentDescription: '', limitations: '' }])) as EslEntryState
 
 export function FstdsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<FstdDetail[]>([])
@@ -185,7 +182,7 @@ export function FstdsPage() {
     if (!selectedId) return
     const values = await form.validateFields()
     await fstdsApi.create({ organizationId: selectedId, ...values })
-    message.success('模拟机创建成功')
+    message.success(t('fstdsPage.createSuccess'))
     setModalOpen(false)
     form.resetFields()
     load()
@@ -202,9 +199,7 @@ export function FstdsPage() {
       extensionMonths: values.useExtension ? values.extensionMonths : undefined,
     })
     message.success(
-      result.isWithinWindow === false
-        ? '周期性评估记录已保存, 下次到期日已自动计算 (注意: 本次评估晚于评估窗口, 不视为按时完成)'
-        : '周期性评估记录已保存, 下次到期日已自动计算',
+      result.isWithinWindow === false ? t('fstdsPage.evalRecordedLate') : t('fstdsPage.evalRecorded'),
     )
     setEvalModalFstdId(undefined)
     evalForm.resetFields()
@@ -215,7 +210,7 @@ export function FstdsPage() {
     if (!discrepancyModalFstdId) return
     const values = await discrepancyForm.validateFields()
     await fstdsApi.reportDiscrepancy(discrepancyModalFstdId, values)
-    message.success('缺陷已登记, 30天修复时限倒计时已启动 (3.3.7)')
+    message.success(t('fstdsPage.discrepancyReported'))
     setDiscrepancyModalFstdId(undefined)
     discrepancyForm.resetFields()
     load()
@@ -225,7 +220,7 @@ export function FstdsPage() {
     if (!correctModalDiscrepancyId) return
     const values = await correctForm.validateFields()
     await fstdsApi.correctDiscrepancy(correctModalDiscrepancyId, values)
-    message.success('缺陷已标记为已纠正')
+    message.success(t('fstdsPage.discrepancyCorrected'))
     setCorrectModalDiscrepancyId(undefined)
     correctForm.resetFields()
     load()
@@ -238,7 +233,7 @@ export function FstdsPage() {
       ...values,
       expiresAt: values.expiresAt ? values.expiresAt.format('YYYY-MM-DD') : undefined,
     })
-    message.success('故障保留分级已设置, 该缺陷暂不再阻断相关科目排课')
+    message.success(t('fstdsPage.retentionSet'))
     setRetentionModalDiscrepancyId(undefined)
     retentionForm.resetFields()
     load()
@@ -246,7 +241,7 @@ export function FstdsPage() {
 
   const handleClearRetention = async (discrepancyId: string) => {
     await fstdsApi.clearDiscrepancyRetention(discrepancyId)
-    message.success('故障保留分级已取消')
+    message.success(t('fstdsPage.retentionCleared'))
     load()
   }
 
@@ -272,7 +267,7 @@ export function FstdsPage() {
         notes: !safetyCheckItemState[item] ? values.notes : undefined,
       })),
     })
-    message.success('安全设施年检记录已保存 (3.3.8)')
+    message.success(t('fstdsPage.safetyCheckRecorded'))
     setSafetyCheckModalFstdId(undefined)
     load()
   }
@@ -286,7 +281,7 @@ export function FstdsPage() {
       effectiveDate: values.effectiveDate.format('YYYY-MM-DD'),
       file: fileList?.[0]?.originFileObj,
     })
-    message.success('QTG文档版本已登记, 同类型旧版本已自动标记为已替代')
+    message.success(t('fstdsPage.qtgDocRegistered'))
     setQtgDocModalFstdId(undefined)
     qtgDocForm.resetFields()
     load()
@@ -296,7 +291,7 @@ export function FstdsPage() {
     try {
       await fstdsApi.downloadQtgDocumentFile(doc)
     } catch {
-      message.error('下载失败, 该记录可能没有已上传的文件 (仅登记了外部引用链接)')
+      message.error(t('fstdsPage.qtgDownloadFailed'))
     }
   }
 
@@ -307,7 +302,7 @@ export function FstdsPage() {
       ...values,
       completedAt: values.completedAt.format('YYYY-MM-DD'),
     })
-    message.success('季度QTG运行记录已保存')
+    message.success(t('fstdsPage.qtgRunRecorded'))
     setQtgRunModalFstdId(undefined)
     qtgRunForm.resetFields()
     load()
@@ -318,13 +313,13 @@ export function FstdsPage() {
     const values = await fcsCapForm.validateFields()
     try {
       await fstdsApi.setFcsCapability(fcsCapModalFstdId, values)
-      message.success('FCS能力已登记')
+      message.success(t('fstdsPage.fcsCapabilitySet'))
       setFcsCapModalFstdId(undefined)
       fcsCapForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('fstdsPage.operationFailed'))
     }
   }
 
@@ -338,7 +333,7 @@ export function FstdsPage() {
   const handleAddTrainingMatrixEntry = async () => {
     const values = await trainingMatrixForm.validateFields()
     await fstdsApi.addTrainingMatrixEntry(values)
-    message.success('训练矩阵条目已登记')
+    message.success(t('fstdsPage.trainingMatrixEntryAdded'))
     trainingMatrixForm.resetFields()
     fstdsApi.listTrainingMatrixEntries().then(setTrainingMatrixEntries)
   }
@@ -348,7 +343,7 @@ export function FstdsPage() {
     const values = await pmTemplateForm.validateFields()
     const itemsJson = (values.items as { item: string }[]).filter((i) => i?.item)
     await fstdsApi.setPmChecklistTemplate({ organizationId: selectedId, level: values.level, itemsJson })
-    message.success('检查单模板已保存')
+    message.success(t('fstdsPage.pmTemplateSaved'))
     setPmTemplateModalOpen(false)
     pmTemplateForm.resetFields()
     load()
@@ -371,12 +366,12 @@ export function FstdsPage() {
         responsibleIds: values.responsibleIds ?? [],
         itemResultsJson: (values.items as { item: string; passed: boolean; notes?: string }[]) ?? [],
       })
-      message.success('PM任务已登记, 待审核')
+      message.success(t('fstdsPage.pmTaskCreated'))
       setPmTaskModalFstdId(undefined)
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('fstdsPage.operationFailed'))
     }
   }
 
@@ -385,13 +380,13 @@ export function FstdsPage() {
     const values = await pmReviewForm.validateFields()
     try {
       await fstdsApi.reviewPmTask(pmReviewModal.id, { approve, reviewedById: values.reviewedById, reviewNotes: values.reviewNotes })
-      message.success(approve ? '已审核通过' : '已标记为审核不通过')
+      message.success(approve ? t('fstdsPage.pmReviewApproved') : t('fstdsPage.pmReviewRejected'))
       setPmReviewModal(undefined)
       pmReviewForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('fstdsPage.operationFailed'))
     }
   }
 
@@ -423,7 +418,7 @@ export function FstdsPage() {
       revisionDate: values.revisionDate.format('YYYY-MM-DD'),
       entries,
     })
-    message.success('ESL装备规格清单版本已登记, 旧版本已自动标记为已替代')
+    message.success(t('fstdsPage.eslRevisionCreated'))
     setEslModalFstdId(undefined)
     load()
   }
@@ -433,13 +428,13 @@ export function FstdsPage() {
     const values = await eslDeclareForm.validateFields()
     try {
       await fstdsApi.declareEsl(eslDeclareModalId, values.personnelId)
-      message.success('ESL已声明确认')
+      message.success(t('fstdsPage.eslDeclared'))
       setEslDeclareModalId(undefined)
       eslDeclareForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '声明失败 (须为组织指定的合规负责人 NOMINATED_PERSON_COMPLIANCE)')
+      message.error(err.response?.data?.message ?? t('fstdsPage.eslDeclareFailed'))
     }
   }
 
@@ -452,7 +447,7 @@ export function FstdsPage() {
       month: values.period.month() + 1,
       period: undefined,
     })
-    message.success('FSTD性能指标已登记 (同年月已存在记录将被更新)')
+    message.success(t('fstdsPage.perfMetricRecorded'))
     setPerfMetricModalFstdId(undefined)
     perfMetricForm.resetFields()
     load()
@@ -464,9 +459,9 @@ export function FstdsPage() {
 
       <div style={{ marginBottom: 16 }}>
         <Space style={{ marginBottom: 8 }}>
-          <span style={{ fontWeight: 600 }}>训练矩阵 (3.3.3, Part-FCL Appendix 9训练科目 x 14特征, 全局配置, 非机构范围)</span>
+          <span style={{ fontWeight: 600 }}>{t('fstdsPage.trainingMatrixTitle')}</span>
           <Button size="small" icon={<PlusOutlined />} onClick={() => setTrainingMatrixModalOpen(true)}>
-            登记条目
+            {t('fstdsPage.registerEntry')}
           </Button>
         </Space>
         <Table<TrainingMatrixEntry>
@@ -474,24 +469,24 @@ export function FstdsPage() {
           size="small"
           dataSource={trainingMatrixEntries}
           pagination={false}
-          locale={{ emptyText: '尚未登记训练矩阵条目 (官方Part-FCL Appendix 9完整清单未随需求分析获取, 按需登记)' }}
+          locale={{ emptyText: t('fstdsPage.noTrainingMatrixEntries') }}
           columns={[
-            { title: '科目编号', dataIndex: 'taskCode' },
-            { title: '科目名称', dataIndex: 'taskName' },
-            { title: '特征', dataIndex: 'characteristic', render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
-            { title: 'T阈值(可开始训练)', dataIndex: 'thresholdT', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
-            { title: 'TP阈值(完成训练)', dataIndex: 'thresholdTP', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
+            { title: t('fstdsPage.columnTaskCode'), dataIndex: 'taskCode' },
+            { title: t('fstdsPage.columnTaskName'), dataIndex: 'taskName' },
+            { title: t('fstdsPage.columnCharacteristic'), dataIndex: 'characteristic', render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
+            { title: t('fstdsPage.columnThresholdT'), dataIndex: 'thresholdT', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
+            { title: t('fstdsPage.columnThresholdTP'), dataIndex: 'thresholdTP', render: (v: FcsFidelityLevel) => <Tag color={FIDELITY_COLOR[v]}>{v}</Tag> },
           ]}
         />
       </div>
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('fstdsPage.selectOrgFirst')} />
       ) : (
         <>
           <div style={{ marginBottom: 16 }}>
             <Space style={{ marginBottom: 8 }}>
-              <span style={{ fontWeight: 600 }}>常规维护(PM)检查单模板 (3.3.10, AMC1 ORA.FSTD.105(a)(1), 机构范围配置)</span>
+              <span style={{ fontWeight: 600 }}>{t('fstdsPage.pmTemplateTitle')}</span>
               <Button
                 size="small"
                 icon={<PlusOutlined />}
@@ -500,7 +495,7 @@ export function FstdsPage() {
                   setPmTemplateModalOpen(true)
                 }}
               >
-                配置模板
+                {t('fstdsPage.configureTemplate')}
               </Button>
             </Space>
             <Table<PmChecklistTemplate>
@@ -508,11 +503,11 @@ export function FstdsPage() {
               size="small"
               dataSource={pmTemplates}
               pagination={false}
-              locale={{ emptyText: '尚未配置任何层级的检查单模板' }}
+              locale={{ emptyText: t('fstdsPage.noPmTemplates') }}
               columns={[
-                { title: '层级', dataIndex: 'level', render: (v: PmCheckLevel) => <Tag>{PM_CHECK_LEVEL_LABEL[v]}</Tag> },
-                { title: '检查项', render: (_, t) => t.itemsJson.map((i) => i.item).join('、') },
-                { title: '更新时间', dataIndex: 'updatedAt', render: (v: string) => new Date(v).toLocaleString() },
+                { title: t('fstdsPage.columnLevel'), dataIndex: 'level', render: (v: PmCheckLevel) => <Tag>{t(`fstdsPage.pmCheckLevels.${v}`)}</Tag> },
+                { title: t('fstdsPage.columnCheckItems'), render: (_, tpl) => tpl.itemsJson.map((i) => i.item).join('、') },
+                { title: t('fstdsPage.columnUpdatedAt'), dataIndex: 'updatedAt', render: (v: string) => new Date(v).toLocaleString() },
               ]}
             />
           </div>
@@ -522,8 +517,8 @@ export function FstdsPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${pmDueSoon.length} 项常规维护(PM)任务即将到期或从未执行过 (3.3.10)`}
-              description={pmDueSoon.map((d) => `${d.deviceCode}(${PM_CHECK_LEVEL_LABEL[d.level]})`).join('、')}
+              message={t('fstdsPage.pmDueSoonWarning', { count: pmDueSoon.length })}
+              description={pmDueSoon.map((d) => `${d.deviceCode}(${t(`fstdsPage.pmCheckLevels.${d.level}`)})`).join('、')}
             />
           )}
           {dueSoon.length > 0 && (
@@ -531,7 +526,7 @@ export function FstdsPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${dueSoon.length} 台设备的周期性评估即将到期或从未评估过, 请尽快安排 (需求清单3.3.5)`}
+              message={t('fstdsPage.evalDueSoonWarning', { count: dueSoon.length })}
               description={dueSoon.map((d) => d.deviceCode).join('、')}
             />
           )}
@@ -540,7 +535,7 @@ export function FstdsPage() {
               style={{ marginBottom: 16 }}
               type="error"
               showIcon
-              message={`有 ${overdueDiscrepancies.length} 项缺陷已超过30天修复时限仍未纠正 (3.3.7, 吸收FAA §60.25规则)`}
+              message={t('fstdsPage.overdueDiscrepancyWarning', { count: overdueDiscrepancies.length })}
               description={overdueDiscrepancies.map((d) => `${d.fstd?.deviceCode ?? d.fstdId}: ${d.description}`).join('; ')}
             />
           )}
@@ -549,7 +544,7 @@ export function FstdsPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${safetyCheckDueSoon.length} 台设备的安全设施年检即将到期或从未检查过 (3.3.8, ORA.FSTD.115(b))`}
+              message={t('fstdsPage.safetyCheckDueSoonWarning', { count: safetyCheckDueSoon.length })}
               description={safetyCheckDueSoon.map((d) => d.deviceCode).join('、')}
             />
           )}
@@ -558,16 +553,16 @@ export function FstdsPage() {
               style={{ marginBottom: 16 }}
               type="error"
               showIcon
-              message={`有 ${qtgIssues.length} 项季度QTG运行问题 (3.3.4, 不允许年检前突击补测)`}
+              message={t('fstdsPage.qtgIssuesWarning', { count: qtgIssues.length })}
               description={qtgIssues
-                .map((i) => `${i.deviceCode} ${i.year}Q${i.quarter}: ${i.issueType === 'overdue' ? '逾期未测' : '完成日期不在所属季度内(疑似突击补测)'}`)
+                .map((i) => `${i.deviceCode} ${i.year}Q${i.quarter}: ${i.issueType === 'overdue' ? t('fstdsPage.qtgIssueOverdue') : t('fstdsPage.qtgIssueBurstTested')}`)
                 .join('; ')}
             />
           )}
 
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-              新增模拟机
+              {t('fstdsPage.addFstd')}
             </Button>
           </Space>
 
@@ -576,21 +571,21 @@ export function FstdsPage() {
             loading={loading}
             dataSource={fstds}
             columns={[
-              { title: '设备编号', dataIndex: 'deviceCode' },
-              { title: '代表机型', dataIndex: 'representedAircraft' },
-              { title: '设备类型', dataIndex: 'deviceType' },
+              { title: t('fstdsPage.columnDeviceCode'), dataIndex: 'deviceCode' },
+              { title: t('fstdsPage.columnRepresentedAircraft'), dataIndex: 'representedAircraft' },
+              { title: t('fstdsPage.columnDeviceType'), dataIndex: 'deviceType' },
               {
-                title: '鉴定基础',
+                title: t('fstdsPage.columnQualificationBasis'),
                 dataIndex: 'qualificationBasisType',
                 render: (v: FstdQualificationBasisType) => <Tag color={v === 'EASA_FCS' ? 'purple' : 'blue'}>{v}</Tag>,
               },
               {
-                title: 'EASA 等级 (legacy)',
+                title: t('fstdsPage.columnLegacyLevel'),
                 dataIndex: 'legacyLevel',
                 render: (v: Fstd['legacyLevel']) => (v ? <Tag color="blue">{v.level}</Tag> : '-'),
               },
               {
-                title: '操作',
+                title: t('fstdsPage.columnActions'),
                 render: (_, fstd) => (
                   <Space>
                     <Button
@@ -602,22 +597,22 @@ export function FstdsPage() {
                         setEvalModalFstdId(fstd.id)
                       }}
                     >
-                      记录周期评估
+                      {t('fstdsPage.recordEvaluation')}
                     </Button>
                     <Button size="small" danger onClick={() => setDiscrepancyModalFstdId(fstd.id)}>
-                      报告缺陷
+                      {t('fstdsPage.reportDiscrepancy')}
                     </Button>
                     <Button size="small" onClick={() => openSafetyCheckModal(fstd.id)}>
-                      记录年检
+                      {t('fstdsPage.recordSafetyCheck')}
                     </Button>
                     <Button size="small" onClick={() => setQtgDocModalFstdId(fstd.id)}>
-                      QTG文档
+                      {t('fstdsPage.qtgDocuments')}
                     </Button>
                     <Button size="small" onClick={() => setQtgRunModalFstdId(fstd.id)}>
-                      季度QTG记录
+                      {t('fstdsPage.qtgQuarterlyRecord')}
                     </Button>
                     <Button size="small" onClick={() => openEslModal(fstd)}>
-                      ESL装备规格清单
+                      {t('fstdsPage.eslList')}
                     </Button>
                     <Button
                       size="small"
@@ -626,11 +621,11 @@ export function FstdsPage() {
                         setPerfMetricModalFstdId(fstd.id)
                       }}
                     >
-                      性能指标
+                      {t('fstdsPage.performanceMetrics')}
                     </Button>
                     {fstd.qualificationBasisType === 'EASA_FCS' && (
                       <Button size="small" onClick={() => setFcsCapModalFstdId(fstd.id)}>
-                        登记FCS能力
+                        {t('fstdsPage.registerFcsCapability')}
                       </Button>
                     )}
                     <Button
@@ -641,7 +636,7 @@ export function FstdsPage() {
                         setCheckTaskModalFstdId(fstd.id)
                       }}
                     >
-                      科目能力检查
+                      {t('fstdsPage.taskCapabilityCheck')}
                     </Button>
                   </Space>
                 ),
@@ -652,25 +647,25 @@ export function FstdsPage() {
                 <Space direction="vertical" style={{ width: '100%' }}>
                   {fstd.qualificationBasisType === 'EASA_FCS' && (
                     <List
-                      header="FCS能力矩阵 (3.3.2, 14特征 x 4保真度: N < G < R < S)"
+                      header={t('fstdsPage.fcsMatrixHeader')}
                       size="small"
                       dataSource={fstd.fcsCapabilities ?? []}
-                      locale={{ emptyText: '尚未登记任何FCS能力' }}
+                      locale={{ emptyText: t('fstdsPage.noFcsCapabilities') }}
                       renderItem={(c) => (
                         <List.Item>
                           <Tag>{c.characteristic}</Tag>
                           {c.subsystem && <Tag color="cyan">{c.subsystem}</Tag>}
                           <Tag color={FIDELITY_COLOR[c.fidelityLevel]}>{c.fidelityLevel}</Tag>
-                          {c.isAssigned && <Tag color="gold">assigned FCS</Tag>}
+                          {c.isAssigned && <Tag color="gold">{t('fstdsPage.assignedFcsTag')}</Tag>}
                         </List.Item>
                       )}
                     />
                   )}
                   <List
-                    header="ESL 装备规格清单 (AMC1/AMC2 ORA.FSTD.120, 存量设备BITD除外均需提供)"
+                    header={t('fstdsPage.eslHeader')}
                     size="small"
                     dataSource={fstd.eslLists ?? []}
-                    locale={{ emptyText: '尚未登记任何ESL版本' }}
+                    locale={{ emptyText: t('fstdsPage.noEslVersions') }}
                     renderItem={(esl) => (
                       <List.Item
                         actions={
@@ -684,7 +679,7 @@ export function FstdsPage() {
                                     setEslDeclareModalId(esl.id)
                                   }}
                                 >
-                                  声明确认
+                                  {t('fstdsPage.declareConfirm')}
                                 </Button>,
                               ]
                             : []
@@ -692,13 +687,15 @@ export function FstdsPage() {
                       >
                         <Space direction="vertical" size={0} style={{ width: '100%' }}>
                           <Space wrap>
-                            <Tag color={esl.supersededAt ? 'default' : 'green'}>{esl.supersededAt ? '历史版本' : '当前版本'}</Tag>
-                            <span>修订版 {esl.revisionNumber}</span>
-                            <Tag color={esl.declaredAt ? 'green' : 'orange'}>{esl.declaredAt ? '已声明确认' : '待声明确认'}</Tag>
+                            <Tag color={esl.supersededAt ? 'default' : 'green'}>
+                              {esl.supersededAt ? t('fstdsPage.historicalVersionTag') : t('fstdsPage.currentVersionTag')}
+                            </Tag>
+                            <span>{t('fstdsPage.revisionLabel', { number: esl.revisionNumber })}</span>
+                            <Tag color={esl.declaredAt ? 'green' : 'orange'}>{esl.declaredAt ? t('fstdsPage.declaredTag') : t('fstdsPage.pendingDeclareTag')}</Tag>
                           </Space>
                           <span style={{ color: '#888', fontSize: 12 }}>
-                            修订日期 {new Date(esl.revisionDate).toLocaleDateString()}
-                            {esl.declaredAt ? ` | 声明于 ${new Date(esl.declaredAt).toLocaleString()}` : ''}
+                            {t('fstdsPage.revisionDateLabel', { date: new Date(esl.revisionDate).toLocaleDateString() })}
+                            {esl.declaredAt ? t('fstdsPage.declaredAtLabel', { date: new Date(esl.declaredAt).toLocaleString() }) : ''}
                           </span>
                           <Space wrap style={{ marginTop: 4 }}>
                             {esl.entries
@@ -716,21 +713,21 @@ export function FstdsPage() {
                   {fstd.performanceMetrics && fstd.performanceMetrics.monthly.length > 0 && (
                     <div>
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        FSTD性能指标 (AMC1 ORA.FSTD.100(d), 近12个月汇总: 共{fstd.performanceMetrics.last12Months.monthCount}个月)
+                        {t('fstdsPage.performanceMetricsHeader', { count: fstd.performanceMetrics.last12Months.monthCount })}
                       </div>
                       <Space wrap style={{ marginBottom: 8 }}>
                         <Tag color={fstd.performanceMetrics.last12Months.availabilityPercent != null && fstd.performanceMetrics.last12Months.availabilityPercent < 90 ? 'red' : 'green'}>
-                          可用率 {fstd.performanceMetrics.last12Months.availabilityPercent?.toFixed(1) ?? '-'}%
+                          {t('fstdsPage.availabilityTag', { percent: fstd.performanceMetrics.last12Months.availabilityPercent?.toFixed(1) ?? '-' })}
                         </Tag>
                         <Tag color={fstd.performanceMetrics.last12Months.reliabilityPercent != null && fstd.performanceMetrics.last12Months.reliabilityPercent < 90 ? 'red' : 'green'}>
-                          可靠率 {fstd.performanceMetrics.last12Months.reliabilityPercent?.toFixed(1) ?? '-'}%
+                          {t('fstdsPage.reliabilityTag', { percent: fstd.performanceMetrics.last12Months.reliabilityPercent?.toFixed(1) ?? '-' })}
                         </Tag>
-                        <Tag>计划可用 {fstd.performanceMetrics.last12Months.plannedAvailableHours}h</Tag>
-                        <Tag>排期训练 {fstd.performanceMetrics.last12Months.scheduledTrainingHours}h</Tag>
-                        <Tag>停机 {fstd.performanceMetrics.last12Months.downtimeHours}h</Tag>
-                        <Tag>损失训练时间 {fstd.performanceMetrics.last12Months.lostTrainingHours}h</Tag>
-                        <Tag>缺陷 {fstd.performanceMetrics.last12Months.discrepancyCount}次</Tag>
-                        <Tag>中断 {fstd.performanceMetrics.last12Months.interruptionCount}次</Tag>
+                        <Tag>{t('fstdsPage.plannedAvailableTag', { hours: fstd.performanceMetrics.last12Months.plannedAvailableHours })}</Tag>
+                        <Tag>{t('fstdsPage.scheduledTrainingTag', { hours: fstd.performanceMetrics.last12Months.scheduledTrainingHours })}</Tag>
+                        <Tag>{t('fstdsPage.downtimeTag', { hours: fstd.performanceMetrics.last12Months.downtimeHours })}</Tag>
+                        <Tag>{t('fstdsPage.lostTrainingTag', { hours: fstd.performanceMetrics.last12Months.lostTrainingHours })}</Tag>
+                        <Tag>{t('fstdsPage.discrepancyCountTag', { count: fstd.performanceMetrics.last12Months.discrepancyCount })}</Tag>
+                        <Tag>{t('fstdsPage.interruptionCountTag', { count: fstd.performanceMetrics.last12Months.interruptionCount })}</Tag>
                       </Space>
                       <Table
                         size="small"
@@ -738,21 +735,21 @@ export function FstdsPage() {
                         pagination={false}
                         dataSource={fstd.performanceMetrics.monthly}
                         columns={[
-                          { title: '年月', render: (_, m) => `${m.year}-${String(m.month).padStart(2, '0')}` },
-                          { title: '计划可用(h)', dataIndex: 'plannedAvailableHours' },
-                          { title: '排期训练(h)', dataIndex: 'scheduledTrainingHours' },
-                          { title: '支持时间(h)', dataIndex: 'supportHours' },
-                          { title: '设备故障(h)', dataIndex: 'fstdFailureHours' },
-                          { title: '外部因素(h)', dataIndex: 'externalFailureHours' },
-                          { title: '损失训练(h)', dataIndex: 'lostTrainingHours' },
-                          { title: '缺陷数', dataIndex: 'discrepancyCount' },
-                          { title: '中断数', dataIndex: 'interruptionCount' },
+                          { title: t('fstdsPage.columnYearMonth'), render: (_, m) => `${m.year}-${String(m.month).padStart(2, '0')}` },
+                          { title: t('fstdsPage.columnPlannedAvailable'), dataIndex: 'plannedAvailableHours' },
+                          { title: t('fstdsPage.columnScheduledTraining'), dataIndex: 'scheduledTrainingHours' },
+                          { title: t('fstdsPage.columnSupportHours'), dataIndex: 'supportHours' },
+                          { title: t('fstdsPage.columnFstdFailureHours'), dataIndex: 'fstdFailureHours' },
+                          { title: t('fstdsPage.columnExternalFailureHours'), dataIndex: 'externalFailureHours' },
+                          { title: t('fstdsPage.columnLostTraining'), dataIndex: 'lostTrainingHours' },
+                          { title: t('fstdsPage.columnDiscrepancyCount'), dataIndex: 'discrepancyCount' },
+                          { title: t('fstdsPage.columnInterruptionCount'), dataIndex: 'interruptionCount' },
                           {
-                            title: '可用率',
+                            title: t('fstdsPage.columnAvailability'),
                             render: (_, m) => (m.availabilityPercent != null ? `${m.availabilityPercent.toFixed(1)}%` : '-'),
                           },
                           {
-                            title: '可靠率',
+                            title: t('fstdsPage.columnReliability'),
                             render: (_, m) => (m.reliabilityPercent != null ? `${m.reliabilityPercent.toFixed(1)}%` : '-'),
                           },
                         ]}
@@ -760,21 +757,24 @@ export function FstdsPage() {
                     </div>
                   )}
                   <List
-                    header="周期性评估记录 (标准周期12个月, BITD为3年)"
+                    header={t('fstdsPage.evalHeader')}
                     size="small"
                     dataSource={fstd.evaluations ?? []}
-                    locale={{ emptyText: '尚未记录任何周期性评估' }}
+                    locale={{ emptyText: t('fstdsPage.noEvaluations') }}
                     renderItem={(e) => (
                       <List.Item>
-                        {new Date(e.periodStart).toLocaleDateString()} ~ {new Date(e.periodEnd).toLocaleDateString()}
-                        , 结果: {e.result ?? '-'}
-                        {e.evaluationType === 'extended' && <Tag color="purple" style={{ marginLeft: 8 }}>延长周期</Tag>}
+                        {t('fstdsPage.evalResultLabel', {
+                          start: new Date(e.periodStart).toLocaleDateString(),
+                          end: new Date(e.periodEnd).toLocaleDateString(),
+                          result: e.result ?? '-',
+                        })}
+                        {e.evaluationType === 'extended' && <Tag color="purple" style={{ marginLeft: 8 }}>{t('fstdsPage.extendedTag')}</Tag>}
                         {e.isWithinWindow === false && (
                           <Tag color="red" style={{ marginLeft: 8 }}>
-                            超出评估窗口
+                            {t('fstdsPage.outOfWindowTag')}
                           </Tag>
                         )}
-                        , 下次到期:{' '}
+                        {t('fstdsPage.nextDueLabel')}
                         <Tag color={e.nextDueDate && new Date(e.nextDueDate) < new Date() ? 'red' : 'default'}>
                           {e.nextDueDate ? new Date(e.nextDueDate).toLocaleDateString() : '-'}
                         </Tag>
@@ -782,14 +782,14 @@ export function FstdsPage() {
                     )}
                   />
                   <div>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>变更管理 (3.3.6, ORA.GEN.130)</div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('fstdsPage.mocHeader')}</div>
                     <ChangeRequestPanel entityType="Fstd" entityId={fstd.id} />
                   </div>
                   <List
-                    header="缺陷/故障处理 (3.3.7, 30天修复时限)"
+                    header={t('fstdsPage.discrepancyHeader')}
                     size="small"
                     dataSource={fstd.discrepancies ?? []}
-                    locale={{ emptyText: '暂无缺陷记录' }}
+                    locale={{ emptyText: t('fstdsPage.noDiscrepancies') }}
                     renderItem={(d) => {
                       const retentionExpired = d.retentionExpiresAt && new Date(d.retentionExpiresAt) < new Date()
                       const retentionActive = !!d.retentionCategory && !retentionExpired
@@ -799,24 +799,24 @@ export function FstdsPage() {
                           d.status === 'open'
                             ? [
                                 <Button key="correct" size="small" onClick={() => setCorrectModalDiscrepancyId(d.id)}>
-                                  标记已纠正
+                                  {t('fstdsPage.markCorrected')}
                                 </Button>,
                                 retentionActive ? (
                                   <Button key="clear-retention" size="small" onClick={() => handleClearRetention(d.id)}>
-                                    取消保留分级
+                                    {t('fstdsPage.clearRetention')}
                                   </Button>
                                 ) : (
                                   <Button key="set-retention" size="small" onClick={() => setRetentionModalDiscrepancyId(d.id)}>
-                                    设置保留分级
+                                    {t('fstdsPage.setRetention')}
                                   </Button>
                                 ),
                                 <Button key="movements" size="small" onClick={() => loadDiscrepancyMovements(d.id)}>
-                                  查看关联备件领用记录
+                                  {t('fstdsPage.viewRelatedMovements')}
                                 </Button>,
                               ]
                             : [
                                 <Button key="movements" size="small" onClick={() => loadDiscrepancyMovements(d.id)}>
-                                  查看关联备件领用记录
+                                  {t('fstdsPage.viewRelatedMovements')}
                                 </Button>,
                               ]
                         }
@@ -824,27 +824,27 @@ export function FstdsPage() {
                         <Space direction="vertical" size={0} style={{ width: '100%' }}>
                           <Space wrap>
                             <Tag color={d.status === 'open' ? (d.dueDate && new Date(d.dueDate) < new Date() ? 'red' : 'orange') : 'green'}>
-                              {d.status === 'open' ? (d.dueDate && new Date(d.dueDate) < new Date() ? '已逾期' : '处理中') : '已纠正'}
+                              {d.status === 'open' ? (d.dueDate && new Date(d.dueDate) < new Date() ? t('fstdsPage.overdueTag') : t('fstdsPage.inProgressTag')) : t('fstdsPage.correctedTag')}
                             </Tag>
-                            {d.isMmi && <Tag color="red">MMI</Tag>}
-                            {d.severityRating != null && <Tag>严重度 {d.severityRating}/5</Tag>}
-                            {d.trainingTimeLostMinutes != null && <Tag>损失培训时间 {d.trainingTimeLostMinutes}分钟</Tag>}
+                            {d.isMmi && <Tag color="red">{t('fstdsPage.mmiTag')}</Tag>}
+                            {d.severityRating != null && <Tag>{t('fstdsPage.severityTag', { rating: d.severityRating })}</Tag>}
+                            {d.trainingTimeLostMinutes != null && <Tag>{t('fstdsPage.lostTimeTag', { minutes: d.trainingTimeLostMinutes })}</Tag>}
                             {d.retentionCategory && (
-                              <Tag color={retentionExpired ? 'default' : RETENTION_CATEGORY_LABEL[d.retentionCategory].color}>
-                                {retentionExpired ? '保留分级已过期: ' : '保留分级: '}
-                                {RETENTION_CATEGORY_LABEL[d.retentionCategory].text}
-                                {d.retentionExpiresAt ? ` (至${new Date(d.retentionExpiresAt).toLocaleDateString()})` : ''}
+                              <Tag color={retentionExpired ? 'default' : RETENTION_CATEGORY_COLOR[d.retentionCategory]}>
+                                {retentionExpired ? t('fstdsPage.retentionExpiredPrefix') : t('fstdsPage.retentionPrefix')}
+                                {t(`fstdsPage.retentionCategories.${d.retentionCategory}`)}
+                                {d.retentionExpiresAt ? t('fstdsPage.retentionExpiresSuffix', { date: new Date(d.retentionExpiresAt).toLocaleDateString() }) : ''}
                               </Tag>
                             )}
                             <span>{d.description}</span>
                           </Space>
                           {d.retentionCategory && (
-                            <span style={{ color: '#888', fontSize: 12 }}>保留理由: {d.retentionJustification}</span>
+                            <span style={{ color: '#888', fontSize: 12 }}>{t('fstdsPage.retentionJustificationLabel', { text: d.retentionJustification })}</span>
                           )}
                           {discrepancyMovements[d.id] && (
                             <div style={{ marginTop: 4 }}>
                               {discrepancyMovements[d.id].length === 0 ? (
-                                <span style={{ color: '#888', fontSize: 12 }}>暂无关联的备件领用记录</span>
+                                <span style={{ color: '#888', fontSize: 12 }}>{t('fstdsPage.noRelatedMovements')}</span>
                               ) : (
                                 discrepancyMovements[d.id].map((m) => (
                                   <Tag key={m.id} color="blue">
@@ -855,9 +855,11 @@ export function FstdsPage() {
                             </div>
                           )}
                           <span style={{ color: '#888', fontSize: 12 }}>
-                            报告于 {new Date(d.reportedAt).toLocaleString()}, 修复时限:{' '}
-                            {d.dueDate ? new Date(d.dueDate).toLocaleDateString() : '-'}
-                            {d.correctiveAction ? ` | 纠正措施: ${d.correctiveAction}` : ''}
+                            {t('fstdsPage.discrepancyFooter', {
+                              reportedAt: new Date(d.reportedAt).toLocaleString(),
+                              dueDate: d.dueDate ? new Date(d.dueDate).toLocaleDateString() : '-',
+                            })}
+                            {d.correctiveAction ? t('fstdsPage.correctiveActionSuffix', { text: d.correctiveAction }) : ''}
                           </span>
                         </Space>
                       </List.Item>
@@ -866,19 +868,19 @@ export function FstdsPage() {
                   <List
                     header={
                       <Space>
-                        常规维护(PM)记录 (3.3.10, 执行→审核两阶段签署)
+                        {t('fstdsPage.pmHeader')}
                         <Button size="small" onClick={() => openPmTaskModal(fstd.id)} disabled={pmTemplates.length === 0}>
-                          登记PM任务
+                          {t('fstdsPage.registerPmTask')}
                         </Button>
                       </Space>
                     }
                     size="small"
                     dataSource={fstd.pmTasks ?? []}
-                    locale={{ emptyText: pmTemplates.length === 0 ? '请先在上方配置检查单模板' : '尚未登记任何PM任务' }}
-                    renderItem={(t) => (
+                    locale={{ emptyText: pmTemplates.length === 0 ? t('fstdsPage.configureTemplateFirst') : t('fstdsPage.noPmTasks') }}
+                    renderItem={(pmTask) => (
                       <List.Item
                         actions={
-                          t.status === 'PENDING_REVIEW'
+                          pmTask.status === 'PENDING_REVIEW'
                             ? [
                                 <Button
                                   key="review"
@@ -886,10 +888,10 @@ export function FstdsPage() {
                                   type="primary"
                                   onClick={() => {
                                     pmReviewForm.resetFields()
-                                    setPmReviewModal(t)
+                                    setPmReviewModal(pmTask)
                                   }}
                                 >
-                                  审核
+                                  {t('fstdsPage.review')}
                                 </Button>,
                               ]
                             : []
@@ -897,65 +899,67 @@ export function FstdsPage() {
                       >
                         <Space direction="vertical" size={0} style={{ width: '100%' }}>
                           <Space wrap>
-                            <Tag>{PM_CHECK_LEVEL_LABEL[t.level]}</Tag>
-                            <Tag color={PM_TASK_STATUS_LABEL[t.status].color}>{PM_TASK_STATUS_LABEL[t.status].text}</Tag>
-                            {t.itemResultsJson
+                            <Tag>{t(`fstdsPage.pmCheckLevels.${pmTask.level}`)}</Tag>
+                            <Tag color={PM_TASK_STATUS_COLOR[pmTask.status]}>{t(`fstdsPage.pmTaskStatus.${pmTask.status}`)}</Tag>
+                            {pmTask.itemResultsJson
                               .filter((i) => !i.passed)
                               .map((i, idx) => (
                                 <Tag key={idx} color="red">
-                                  {i.item}: {i.notes || '不合格'}
+                                  {t('fstdsPage.notPassedTag', { item: i.item, notes: i.notes || t('fstdsPage.notPassedDefault') })}
                                 </Tag>
                               ))}
                           </Space>
                           <span style={{ color: '#888', fontSize: 12 }}>
-                            任务日期 {new Date(t.taskDate).toLocaleDateString()}
-                            {t.reviewedAt ? ` | 审核于 ${new Date(t.reviewedAt).toLocaleString()}` : ''}
-                            {t.reviewNotes ? ` | 审核意见: ${t.reviewNotes}` : ''}
+                            {t('fstdsPage.pmTaskFooter', { taskDate: new Date(pmTask.taskDate).toLocaleDateString() })}
+                            {pmTask.reviewedAt ? t('fstdsPage.reviewedAtSuffix', { date: new Date(pmTask.reviewedAt).toLocaleString() }) : ''}
+                            {pmTask.reviewNotes ? t('fstdsPage.reviewNotesSuffix', { notes: pmTask.reviewNotes }) : ''}
                           </span>
                         </Space>
                       </List.Item>
                     )}
                   />
                   <List
-                    header="安全设施年检记录 (3.3.8, 标准周期12个月)"
+                    header={t('fstdsPage.safetyCheckHeader')}
                     size="small"
                     dataSource={fstd.safetyChecks ?? []}
-                    locale={{ emptyText: '尚未记录任何年检' }}
+                    locale={{ emptyText: t('fstdsPage.noSafetyChecks') }}
                     renderItem={(c) => (
                       <List.Item>
                         <Space direction="vertical" size={0} style={{ width: '100%' }}>
                           <Space wrap>
                             <Tag color={c.overallResult === 'pass' ? 'green' : 'red'}>
-                              {c.overallResult === 'pass' ? '全部合格' : '发现问题'}
+                              {c.overallResult === 'pass' ? t('fstdsPage.allPassedTag') : t('fstdsPage.foundIssuesTag')}
                             </Tag>
                             {c.itemsJson
                               .filter((i) => !i.passed)
                               .map((i) => (
                                 <Tag key={i.item} color="red">
-                                  {i.item}: {i.notes || '不合格'}
+                                  {t('fstdsPage.notPassedTag', { item: i.item, notes: i.notes || t('fstdsPage.notPassedDefault') })}
                                 </Tag>
                               ))}
                           </Space>
                           <span style={{ color: '#888', fontSize: 12 }}>
-                            检查日期 {new Date(c.checkedAt).toLocaleDateString()}, 下次到期{' '}
-                            {new Date(c.nextDueDate).toLocaleDateString()}
+                            {t('fstdsPage.safetyCheckFooter', {
+                              checkedAt: new Date(c.checkedAt).toLocaleDateString(),
+                              nextDue: new Date(c.nextDueDate).toLocaleDateString(),
+                            })}
                           </span>
                         </Space>
                       </List.Item>
                     )}
                   />
                   <List
-                    header="QTG/MQTG文档版本 (3.3.4: SOC/VDR/MQTG)"
+                    header={t('fstdsPage.qtgDocHeader')}
                     size="small"
                     dataSource={fstd.qtgDocuments ?? []}
-                    locale={{ emptyText: '尚未登记任何QTG文档' }}
+                    locale={{ emptyText: t('fstdsPage.noQtgDocuments') }}
                     renderItem={(d) => (
                       <List.Item
                         actions={
                           d.originalFileName
                             ? [
                                 <Button key="download" size="small" icon={<DownloadOutlined />} onClick={() => handleDownloadQtgDocument(d)}>
-                                  下载
+                                  {t('fstdsPage.download')}
                                 </Button>,
                               ]
                             : []
@@ -964,33 +968,33 @@ export function FstdsPage() {
                         <Tag color={d.documentType === 'MQTG' ? 'purple' : 'blue'}>{d.documentType}</Tag>
                         {d.version}
                         <Tag color={d.supersededAt ? 'default' : 'green'} style={{ marginLeft: 8 }}>
-                          {d.supersededAt ? '历史版本' : '当前版本'}
+                          {d.supersededAt ? t('fstdsPage.historicalVersionTag') : t('fstdsPage.currentVersionTag')}
                         </Tag>
                         <span style={{ color: '#888', marginLeft: 8 }}>
-                          生效日期 {new Date(d.effectiveDate).toLocaleDateString()}
-                          {d.documentType === 'MQTG' ? ' (设备全生命周期保存)' : ''}
+                          {t('fstdsPage.qtgEffectiveDate', { date: new Date(d.effectiveDate).toLocaleDateString() })}
+                          {d.documentType === 'MQTG' ? t('fstdsPage.mqtgLifetimeNote') : ''}
                           {d.originalFileName
-                            ? ` | 已上传文件: ${d.originalFileName} (${((d.fileSize ?? 0) / 1024).toFixed(1)} KB)`
+                            ? t('fstdsPage.uploadedFileSuffix', { name: d.originalFileName, size: ((d.fileSize ?? 0) / 1024).toFixed(1) })
                             : d.pointerUrl
-                              ? ` | 外部链接: ${d.pointerUrl}`
+                              ? t('fstdsPage.externalLinkSuffix', { url: d.pointerUrl })
                               : ''}
                         </span>
                       </List.Item>
                     )}
                   />
                   <List
-                    header="年度QTG季度滚动运行 (3.3.4, 不允许年检前突击补测)"
+                    header={t('fstdsPage.qtgRunHeader')}
                     size="small"
                     dataSource={fstd.qtgRuns ?? []}
-                    locale={{ emptyText: '尚未记录任何季度运行' }}
+                    locale={{ emptyText: t('fstdsPage.noQtgRuns') }}
                     renderItem={(r) => (
                       <List.Item>
                         <Tag>{r.year} Q{r.quarter}</Tag>
-                        {r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '未完成'}
+                        {r.completedAt ? new Date(r.completedAt).toLocaleDateString() : t('fstdsPage.notCompletedTag')}
                         {r.result && <Tag style={{ marginLeft: 8 }}>{r.result}</Tag>}
                         {r.burstTested && (
                           <Tag color="red" style={{ marginLeft: 8 }}>
-                            完成日期不在所属季度内 (疑似突击补测)
+                            {t('fstdsPage.burstTestedTag')}
                           </Tag>
                         )}
                       </List.Item>
@@ -1003,29 +1007,29 @@ export function FstdsPage() {
         </>
       )}
 
-      <Modal title="新增模拟机" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('fstdsPage.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ qualificationBasisType: 'EASA_LEGACY_LEVEL' }}>
-          <Form.Item name="deviceCode" label="设备编号" rules={[{ required: true }]}>
-            <Input placeholder="如 FFS-01" />
+          <Form.Item name="deviceCode" label={t('fstdsPage.fieldDeviceCode')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldDeviceCodePlaceholder')} />
           </Form.Item>
-          <Form.Item name="representedAircraft" label="代表机型" rules={[{ required: true }]}>
-            <Input placeholder="如 A320" />
+          <Form.Item name="representedAircraft" label={t('fstdsPage.fieldRepresentedAircraft')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldRepresentedAircraftPlaceholder')} />
           </Form.Item>
-          <Form.Item name="deviceType" label="设备类型" rules={[{ required: true }]}>
+          <Form.Item name="deviceType" label={t('fstdsPage.fieldDeviceType')} rules={[{ required: true }]}>
             <Select options={DEVICE_TYPES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="qualificationBasisType" label="鉴定基础 (3.3.1)" rules={[{ required: true }]}>
+          <Form.Item name="qualificationBasisType" label={t('fstdsPage.fieldQualificationBasis')} rules={[{ required: true }]}>
             <Select
               options={QUALIFICATION_BASIS_TYPES.map((v) => ({
                 value: v,
-                label: v === 'EASA_FCS' ? 'EASA_FCS (CS-FSTD Issue 1, 14特征矩阵)' : 'EASA_LEGACY_LEVEL (CS-FSTD(A) Issue 2)',
+                label: v === 'EASA_FCS' ? t('fstdsPage.qualificationBasisFcsOption') : t('fstdsPage.qualificationBasisLegacyOption'),
               }))}
             />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.qualificationBasisType !== cur.qualificationBasisType}>
             {({ getFieldValue }) =>
               getFieldValue('qualificationBasisType') !== 'EASA_FCS' && (
-                <Form.Item name="legacyLevel" label="EASA 等级 (CS-FSTD(A) Issue 2)">
+                <Form.Item name="legacyLevel" label={t('fstdsPage.fieldLegacyLevel')}>
                   <Select allowClear options={LEGACY_LEVELS.map((v) => ({ value: v, label: v }))} />
                 </Form.Item>
               )
@@ -1035,7 +1039,7 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="记录周期性评估"
+        title={t('fstdsPage.evalModalTitle')}
         open={!!evalModalFstdId}
         onOk={handleRecordEvaluation}
         onCancel={() => setEvalModalFstdId(undefined)}
@@ -1045,19 +1049,19 @@ export function FstdsPage() {
           layout="vertical"
           initialValues={{ range: [dayjs().subtract(5, 'day'), dayjs()], result: 'pass', useExtension: false, extensionMonths: 24 }}
         >
-          <Form.Item name="range" label="评估周期" rules={[{ required: true }]}>
+          <Form.Item name="range" label={t('fstdsPage.fieldEvalRange')} rules={[{ required: true }]}>
             <DatePicker.RangePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="result" label="结果" rules={[{ required: true }]}>
+          <Form.Item name="result" label={t('fstdsPage.fieldResult')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'pass', label: '通过' },
-                { value: 'partial', label: '部分通过' },
-                { value: 'fail', label: '未通过' },
+                { value: 'pass', label: t('fstdsPage.resultPass') },
+                { value: 'partial', label: t('fstdsPage.resultPartial') },
+                { value: 'fail', label: t('fstdsPage.resultFail') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="useExtension" label="延长评估周期至24/36个月 (3.3.5)" valuePropName="checked">
+          <Form.Item name="useExtension" label={t('fstdsPage.fieldUseExtension')} valuePropName="checked">
             <Switch />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.useExtension !== cur.useExtension}>
@@ -1069,30 +1073,30 @@ export function FstdsPage() {
                       style={{ marginBottom: 12 }}
                       type={extensionEligibility.has36MonthsCompliantRecord && extensionEligibility.hasAnnualManagementAudit ? 'success' : 'warning'}
                       showIcon
-                      message="延长资格系统可核实项 (仅供参考, 最终由主管机关判断)"
+                      message={t('fstdsPage.extensionEligibilityTitle')}
                       description={
                         <>
-                          <div>{extensionEligibility.has36MonthsCompliantRecord ? '✓' : '✗'} 连续36个月合规评估记录</div>
-                          <div>{extensionEligibility.hasAnnualManagementAudit ? '✓' : '✗'} 近12个月管理体系审计</div>
-                          <div>⚠ 指定合格人员自评: 需人工确认 (见下方勾选)</div>
+                          <div>{extensionEligibility.has36MonthsCompliantRecord ? '✓' : '✗'} {t('fstdsPage.extension36MonthRecord')}</div>
+                          <div>{extensionEligibility.hasAnnualManagementAudit ? '✓' : '✗'} {t('fstdsPage.extensionAnnualAudit')}</div>
+                          <div>{t('fstdsPage.extensionSelfAssessmentNote')}</div>
                         </>
                       }
                     />
                   )}
-                  <Form.Item name="extensionMonths" label="延长周期" rules={[{ required: true }]}>
+                  <Form.Item name="extensionMonths" label={t('fstdsPage.fieldExtensionMonths')} rules={[{ required: true }]}>
                     <Select
                       options={[
-                        { value: 24, label: '24个月' },
-                        { value: 36, label: '36个月' },
+                        { value: 24, label: t('fstdsPage.extension24Months') },
+                        { value: 36, label: t('fstdsPage.extension36Months') },
                       ]}
                     />
                   </Form.Item>
                   <Form.Item
                     name="selfAssessmentConfirmed"
                     valuePropName="checked"
-                    rules={[{ validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error('须确认已完成指定合格人员自评'))) }]}
+                    rules={[{ validator: (_, v) => (v ? Promise.resolve() : Promise.reject(new Error(t('fstdsPage.selfAssessmentValidationError')))) }]}
                   >
-                    <Switch checkedChildren="已完成指定合格人员自评" unCheckedChildren="尚未确认" />
+                    <Switch checkedChildren={t('fstdsPage.selfAssessmentConfirmedSwitch')} unCheckedChildren={t('fstdsPage.selfAssessmentUnconfirmedSwitch')} />
                   </Form.Item>
                 </>
               )
@@ -1102,96 +1106,96 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="报告缺陷 (3.3.7)"
+        title={t('fstdsPage.discrepancyModalTitle')}
         open={!!discrepancyModalFstdId}
         onOk={handleReportDiscrepancy}
         onCancel={() => setDiscrepancyModalFstdId(undefined)}
       >
         <Form form={discrepancyForm} layout="vertical">
-          <Form.Item name="description" label="问题描述" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="如: 视景系统左侧显示花屏" />
+          <Form.Item name="description" label={t('fstdsPage.fieldProblemDescription')} rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder={t('fstdsPage.fieldProblemDescriptionPlaceholder')} />
           </Form.Item>
-          <Form.Item name="isMmi" label="是否MMI (缺失/故障/失效, 影响设备可用性)" initialValue={false}>
+          <Form.Item name="isMmi" label={t('fstdsPage.fieldIsMmi')} initialValue={false}>
             <Select
               options={[
-                { value: false, label: '否' },
-                { value: true, label: '是' },
+                { value: false, label: t('fstdsPage.mmiNo') },
+                { value: true, label: t('fstdsPage.mmiYes') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="severityRating" label="严重度打分 (1-5, 5为最严重)">
+          <Form.Item name="severityRating" label={t('fstdsPage.fieldSeverityRating')}>
             <InputNumber min={1} max={5} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="trainingTimeLostMinutes" label="导致培训损失时间 (分钟)">
+          <Form.Item name="trainingTimeLostMinutes" label={t('fstdsPage.fieldTrainingTimeLost')}>
             <InputNumber min={0} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="标记缺陷已纠正"
+        title={t('fstdsPage.correctModalTitle')}
         open={!!correctModalDiscrepancyId}
         onOk={handleCorrectDiscrepancy}
         onCancel={() => setCorrectModalDiscrepancyId(undefined)}
       >
         <Form form={correctForm} layout="vertical">
-          <Form.Item name="correctiveAction" label="纠正措施" rules={[{ required: true }]}>
+          <Form.Item name="correctiveAction" label={t('fstdsPage.fieldCorrectiveAction')} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="设置故障保留分级"
+        title={t('fstdsPage.retentionModalTitle')}
         open={!!retentionModalDiscrepancyId}
         onOk={handleSetRetention}
         onCancel={() => setRetentionModalDiscrepancyId(undefined)}
       >
         <Form form={retentionForm} layout="vertical">
-          <Form.Item name="category" label="保留分级" rules={[{ required: true }]}>
+          <Form.Item name="category" label={t('fstdsPage.fieldRetentionCategory')} rules={[{ required: true }]}>
             <Select
-              options={(Object.keys(RETENTION_CATEGORY_LABEL) as RetentionCategory[]).map((c) => ({
+              options={(Object.keys(RETENTION_CATEGORY_COLOR) as RetentionCategory[]).map((c) => ({
                 value: c,
-                label: RETENTION_CATEGORY_LABEL[c].text,
+                label: t(`fstdsPage.retentionCategories.${c}`),
               }))}
             />
           </Form.Item>
-          <Form.Item name="justification" label="保留理由" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} placeholder="说明该缺陷不影响本次训练科目开展的依据" />
+          <Form.Item name="justification" label={t('fstdsPage.fieldJustification')} rules={[{ required: true }]}>
+            <Input.TextArea rows={3} placeholder={t('fstdsPage.fieldJustificationPlaceholder')} />
           </Form.Item>
-          <Form.Item name="approvedById" label="批准人" rules={[{ required: true }]}>
+          <Form.Item name="approvedById" label={t('fstdsPage.fieldApprover')} rules={[{ required: true }]}>
             <Select options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
           </Form.Item>
-          <Form.Item name="expiresAt" label="有效期至 (可选, 不填则长期有效直至手动取消)">
+          <Form.Item name="expiresAt" label={t('fstdsPage.fieldExpiresAt')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="配置常规维护(PM)检查单模板"
+        title={t('fstdsPage.pmTemplateModalTitle')}
         open={pmTemplateModalOpen}
         onOk={handleSetPmTemplate}
         onCancel={() => setPmTemplateModalOpen(false)}
         width={600}
       >
         <Form form={pmTemplateForm} layout="vertical">
-          <Form.Item name="level" label="层级" rules={[{ required: true }]}>
-            <Select options={PM_CHECK_LEVELS.map((l) => ({ value: l, label: PM_CHECK_LEVEL_LABEL[l] }))} />
+          <Form.Item name="level" label={t('fstdsPage.columnLevel')} rules={[{ required: true }]}>
+            <Select options={PM_CHECK_LEVELS.map((l) => ({ value: l, label: t(`fstdsPage.pmCheckLevels.${l}`) }))} />
           </Form.Item>
           <Form.List name="items" initialValue={[{ item: '' }]}>
             {(fields, { add, remove }) => (
               <>
                 {fields.map((field) => (
                   <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
-                    <Form.Item name={[field.name, 'item']} rules={[{ required: true, message: '检查项内容' }]}>
-                      <Input placeholder="如: 检查刹车片磨损" style={{ width: 400 }} />
+                    <Form.Item name={[field.name, 'item']} rules={[{ required: true, message: t('fstdsPage.fieldCheckItem') }]}>
+                      <Input placeholder={t('fstdsPage.fieldCheckItemPlaceholder')} style={{ width: 400 }} />
                     </Form.Item>
                     <DeleteOutlined onClick={() => remove(field.name)} />
                   </Space>
                 ))}
                 <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>
-                  添加检查项
+                  {t('fstdsPage.addCheckItem')}
                 </Button>
               </>
             )}
@@ -1200,32 +1204,32 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="登记PM任务"
+        title={t('fstdsPage.pmTaskModalTitle')}
         open={!!pmTaskModalFstdId}
         onOk={handleCreatePmTask}
         onCancel={() => setPmTaskModalFstdId(undefined)}
         width={600}
       >
         <Form form={pmTaskForm} layout="vertical" initialValues={{ taskDate: dayjs() }}>
-          <Form.Item name="level" label="层级" rules={[{ required: true }]}>
+          <Form.Item name="level" label={t('fstdsPage.columnLevel')} rules={[{ required: true }]}>
             <Select
-              options={pmTemplates.map((t) => ({ value: t.level, label: PM_CHECK_LEVEL_LABEL[t.level] }))}
+              options={pmTemplates.map((tpl) => ({ value: tpl.level, label: t(`fstdsPage.pmCheckLevels.${tpl.level}`) }))}
               onChange={(level: PmCheckLevel) => {
                 setPmTaskLevel(level)
-                const template = pmTemplates.find((t) => t.level === level)
+                const template = pmTemplates.find((tpl) => tpl.level === level)
                 pmTaskForm.setFieldsValue({
                   items: (template?.itemsJson ?? []).map((i) => ({ item: i.item, passed: true, notes: '' })),
                 })
               }}
             />
           </Form.Item>
-          <Form.Item name="taskDate" label="任务日期" rules={[{ required: true }]}>
+          <Form.Item name="taskDate" label={t('fstdsPage.fieldTaskDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="performedById" label="执行人">
+          <Form.Item name="performedById" label={t('fstdsPage.fieldPerformedBy')}>
             <Select allowClear options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
           </Form.Item>
-          <Form.Item name="responsibleIds" label="责任人 (可多选)">
+          <Form.Item name="responsibleIds" label={t('fstdsPage.fieldResponsibleIds')}>
             <Select mode="multiple" options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
           </Form.Item>
           {pmTaskLevel && (
@@ -1238,10 +1242,10 @@ export function FstdsPage() {
                         {({ getFieldValue }) => <span>{getFieldValue(['items', field.name, 'item'])}</span>}
                       </Form.Item>
                       <Form.Item name={[field.name, 'passed']} valuePropName="checked" noStyle>
-                        <Switch checkedChildren="合格" unCheckedChildren="不合格" />
+                        <Switch checkedChildren={t('fstdsPage.passedSwitch')} unCheckedChildren={t('fstdsPage.notPassedSwitch')} />
                       </Form.Item>
                       <Form.Item name={[field.name, 'notes']} noStyle>
-                        <Input placeholder="备注(不合格时说明情况)" style={{ width: 220 }} />
+                        <Input placeholder={t('fstdsPage.fieldItemNotesPlaceholder')} style={{ width: 220 }} />
                       </Form.Item>
                     </Space>
                   ))}
@@ -1253,53 +1257,53 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="审核PM任务"
+        title={t('fstdsPage.pmReviewModalTitle')}
         open={!!pmReviewModal}
         onCancel={() => setPmReviewModal(undefined)}
         footer={
           <Space>
-            <Button onClick={() => setPmReviewModal(undefined)}>Cancel</Button>
+            <Button onClick={() => setPmReviewModal(undefined)}>{t('fstdsPage.cancel')}</Button>
             <Button danger onClick={() => handleReviewPmTask(false)}>
-              审核不通过
+              {t('fstdsPage.reviewRejected')}
             </Button>
             <Button type="primary" onClick={() => handleReviewPmTask(true)}>
-              审核通过
+              {t('fstdsPage.reviewApproved')}
             </Button>
           </Space>
         }
       >
         <Form form={pmReviewForm} layout="vertical">
-          <Form.Item name="reviewedById" label="审核人 (须与执行人不同)" rules={[{ required: true }]}>
+          <Form.Item name="reviewedById" label={t('fstdsPage.fieldReviewer')} rules={[{ required: true }]}>
             <Select options={personnel.map((p) => ({ value: p.id, label: `${p.firstName} ${p.lastName}` }))} />
           </Form.Item>
-          <Form.Item name="reviewNotes" label="审核意见">
+          <Form.Item name="reviewNotes" label={t('fstdsPage.fieldReviewNotes')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="记录安全设施年检 (3.3.8, ORA.FSTD.115(b))"
+        title={t('fstdsPage.safetyCheckModalTitle')}
         open={!!safetyCheckModalFstdId}
         onOk={handleRecordSafetyCheck}
         onCancel={() => setSafetyCheckModalFstdId(undefined)}
       >
         <Form form={safetyCheckForm} layout="vertical" initialValues={{ checkedAt: dayjs() }}>
-          <Form.Item name="checkedAt" label="检查日期" rules={[{ required: true }]}>
+          <Form.Item name="checkedAt" label={t('fstdsPage.fieldCheckedAt')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           {SAFETY_CHECK_ITEMS.map((item) => (
             <Form.Item key={item} label={item} style={{ marginBottom: 12 }}>
               <Switch
                 checked={safetyCheckItemState[item]}
-                checkedChildren="合格"
-                unCheckedChildren="不合格"
+                checkedChildren={t('fstdsPage.passedSwitch')}
+                unCheckedChildren={t('fstdsPage.notPassedSwitch')}
                 onChange={(checked) => setSafetyCheckItemState((s) => ({ ...s, [item]: checked }))}
               />
             </Form.Item>
           ))}
           {Object.values(safetyCheckItemState).some((v) => !v) && (
-            <Form.Item name="notes" label="不合格项说明">
+            <Form.Item name="notes" label={t('fstdsPage.fieldUnqualifiedNotes')}>
               <Input.TextArea rows={2} />
             </Form.Item>
           )}
@@ -1307,96 +1311,96 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="登记QTG文档版本 (3.3.4)"
+        title={t('fstdsPage.qtgDocModalTitle')}
         open={!!qtgDocModalFstdId}
         onOk={handleAddQtgDocument}
         onCancel={() => setQtgDocModalFstdId(undefined)}
       >
         <Form form={qtgDocForm} layout="vertical">
-          <Form.Item name="documentType" label="文档类型" rules={[{ required: true }]}>
+          <Form.Item name="documentType" label={t('fstdsPage.fieldDocumentType')} rules={[{ required: true }]}>
             <Select
               options={QTG_DOCUMENT_TYPES.map((v) => ({
                 value: v,
-                label: v === 'MQTG' ? 'MQTG (主鉴定测试指南, 设备全生命周期保存)' : v,
+                label: v === 'MQTG' ? t('fstdsPage.mqtgOption') : v,
               }))}
             />
           </Form.Item>
-          <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
-            <Input placeholder="如 v2.0" />
+          <Form.Item name="version" label={t('fstdsPage.fieldVersion')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldVersionPlaceholder')} />
           </Form.Item>
-          <Form.Item name="effectiveDate" label="生效日期" rules={[{ required: true }]}>
+          <Form.Item name="effectiveDate" label={t('fstdsPage.fieldEffectiveDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item
             name="fileList"
-            label="上传文件 (PDF/Word/Excel/图片, 最大25MB)"
+            label={t('fstdsPage.fieldUploadFile')}
             valuePropName="fileList"
             getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
           >
             <Upload beforeUpload={() => false} maxCount={1} accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg">
-              <Button icon={<UploadOutlined />}>选择文件</Button>
+              <Button icon={<UploadOutlined />}>{t('fstdsPage.chooseFile')}</Button>
             </Upload>
           </Form.Item>
-          <Form.Item name="pointerUrl" label="或填写外部引用链接 (未上传文件时使用, 如内部文档系统地址)">
-            <Input placeholder="如 https://docs.internal/mqtg-v2" />
+          <Form.Item name="pointerUrl" label={t('fstdsPage.fieldPointerUrl')}>
+            <Input placeholder={t('fstdsPage.fieldPointerUrlPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="记录季度QTG运行 (3.3.4)"
+        title={t('fstdsPage.qtgRunModalTitle')}
         open={!!qtgRunModalFstdId}
         onOk={handleRecordQuarterlyRun}
         onCancel={() => setQtgRunModalFstdId(undefined)}
       >
         <Form form={qtgRunForm} layout="vertical" initialValues={{ year: dayjs().year(), completedAt: dayjs() }}>
-          <Form.Item name="year" label="年度" rules={[{ required: true }]}>
+          <Form.Item name="year" label={t('fstdsPage.fieldYear')} rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="quarter" label="季度 (1-4)" rules={[{ required: true }]}>
+          <Form.Item name="quarter" label={t('fstdsPage.fieldQuarter')} rules={[{ required: true }]}>
             <Select
               options={[1, 2, 3, 4].map((q) => ({ value: q, label: `Q${q}` }))}
             />
           </Form.Item>
-          <Form.Item name="completedAt" label="实际完成日期 (须落在所属季度内, 否则判定为突击补测)" rules={[{ required: true }]}>
+          <Form.Item name="completedAt" label={t('fstdsPage.fieldCompletedAt')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="result" label="结果">
+          <Form.Item name="result" label={t('fstdsPage.fieldResult')}>
             <Select
               options={[
-                { value: 'pass', label: '通过' },
-                { value: 'partial', label: '部分通过' },
-                { value: 'fail', label: '未通过' },
+                { value: 'pass', label: t('fstdsPage.resultPass') },
+                { value: 'partial', label: t('fstdsPage.resultPartial') },
+                { value: 'fail', label: t('fstdsPage.resultFail') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="notes" label="备注">
+          <Form.Item name="notes" label={t('fstdsPage.fieldNotes')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记FCS能力 (3.3.2)"
+        title={t('fstdsPage.fcsCapModalTitle')}
         open={!!fcsCapModalFstdId}
         onOk={handleSetFcsCapability}
         onCancel={() => setFcsCapModalFstdId(undefined)}
       >
         <Form form={fcsCapForm} layout="vertical">
-          <Form.Item name="characteristic" label="特征" rules={[{ required: true }]}>
+          <Form.Item name="characteristic" label={t('fstdsPage.fieldCharacteristic')} rules={[{ required: true }]}>
             <Select options={FCS_CHARACTERISTICS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="fidelityLevel" label="保真度 (N < G < R < S)" rules={[{ required: true }]}>
+          <Form.Item name="fidelityLevel" label={t('fstdsPage.fieldFidelityLevel')} rules={[{ required: true }]}>
             <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="subsystem" label="子系统 (仅SYS特征需要展开时填写)">
-            <Input placeholder="如: autopilot / FMS / hydraulics" />
+          <Form.Item name="subsystem" label={t('fstdsPage.fieldSubsystem')}>
+            <Input placeholder={t('fstdsPage.fieldSubsystemPlaceholder')} />
           </Form.Item>
-          <Form.Item name="isAssigned" label="是否为assigned FCS (主管机关为存量设备指定)" initialValue={false}>
+          <Form.Item name="isAssigned" label={t('fstdsPage.fieldIsAssigned')} initialValue={false}>
             <Select
               options={[
-                { value: false, label: '否 (原生FCS鉴定)' },
-                { value: true, label: '是 (assigned FCS)' },
+                { value: false, label: t('fstdsPage.isAssignedNo') },
+                { value: true, label: t('fstdsPage.isAssignedYes') },
               ]}
             />
           </Form.Item>
@@ -1404,15 +1408,15 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="科目能力检查 (can_device_perform_task)"
+        title={t('fstdsPage.checkTaskModalTitle')}
         open={!!checkTaskModalFstdId}
         onOk={handleCheckTask}
         onCancel={() => setCheckTaskModalFstdId(undefined)}
-        okText="检查"
+        okText={t('fstdsPage.checkButton')}
       >
         <Form form={checkTaskForm} layout="vertical">
-          <Form.Item name="taskCode" label="训练科目编号" rules={[{ required: true }]}>
-            <Input placeholder="如 CPL-01 (legacy) 或 FCS-APPR-01 (FCS)" />
+          <Form.Item name="taskCode" label={t('fstdsPage.columnTaskCode')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldTaskCodePlaceholder')} />
           </Form.Item>
         </Form>
         {checkTaskResult && (
@@ -1420,12 +1424,17 @@ export function FstdsPage() {
             <Alert
               type={checkTaskResult.canStartTraining ? 'success' : 'error'}
               showIcon
-              message={`可开始训练 (T): ${checkTaskResult.canStartTraining ? '满足' : '不满足'} (判定依据: ${checkTaskResult.basis})`}
+              message={t('fstdsPage.canStartTrainingMessage', {
+                status: checkTaskResult.canStartTraining ? t('fstdsPage.satisfied') : t('fstdsPage.notSatisfied'),
+                basis: checkTaskResult.basis,
+              })}
             />
             <Alert
               type={checkTaskResult.canCompleteTraining ? 'success' : 'warning'}
               showIcon
-              message={`可完成训练并计入学时 (TP): ${checkTaskResult.canCompleteTraining ? '满足' : '不满足'}`}
+              message={t('fstdsPage.canCompleteTrainingMessage', {
+                status: checkTaskResult.canCompleteTraining ? t('fstdsPage.satisfied') : t('fstdsPage.notSatisfied'),
+              })}
               description={checkTaskResult.reason}
             />
           </Space>
@@ -1433,32 +1442,32 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="登记训练矩阵条目 (3.3.3)"
+        title={t('fstdsPage.trainingMatrixModalTitle')}
         open={trainingMatrixModalOpen}
         onOk={handleAddTrainingMatrixEntry}
         onCancel={() => setTrainingMatrixModalOpen(false)}
       >
         <Form form={trainingMatrixForm} layout="vertical">
-          <Form.Item name="taskCode" label="训练科目编号" rules={[{ required: true }]}>
-            <Input placeholder="如 FCS-APPR-01" />
+          <Form.Item name="taskCode" label={t('fstdsPage.columnTaskCode')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldTaskCodePlaceholder2')} />
           </Form.Item>
-          <Form.Item name="taskName" label="训练科目名称" rules={[{ required: true }]}>
-            <Input placeholder="如 Visual approach" />
+          <Form.Item name="taskName" label={t('fstdsPage.fieldTaskName')} rules={[{ required: true }]}>
+            <Input placeholder={t('fstdsPage.fieldTaskNamePlaceholder')} />
           </Form.Item>
-          <Form.Item name="characteristic" label="特征" rules={[{ required: true }]}>
+          <Form.Item name="characteristic" label={t('fstdsPage.fieldCharacteristic')} rules={[{ required: true }]}>
             <Select options={FCS_CHARACTERISTICS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="thresholdT" label="T阈值 (可开始训练)" rules={[{ required: true }]}>
+          <Form.Item name="thresholdT" label={t('fstdsPage.fieldThresholdT')} rules={[{ required: true }]}>
             <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
-          <Form.Item name="thresholdTP" label="TP阈值 (完成训练)" rules={[{ required: true }]}>
+          <Form.Item name="thresholdTP" label={t('fstdsPage.fieldThresholdTP')} rules={[{ required: true }]}>
             <Select options={FCS_FIDELITY_LEVELS.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记ESL装备规格清单新版本 (AMC1/AMC2 ORA.FSTD.120)"
+        title={t('fstdsPage.eslModalTitle')}
         open={!!eslModalFstdId}
         onOk={handleCreateEslRevision}
         onCancel={() => setEslModalFstdId(undefined)}
@@ -1466,10 +1475,10 @@ export function FstdsPage() {
       >
         <Form form={eslForm} layout="vertical" initialValues={{ revisionDate: dayjs() }}>
           <Space>
-            <Form.Item name="revisionNumber" label="修订版本号" rules={[{ required: true }]}>
-              <Input placeholder="如 R1" style={{ width: 200 }} />
+            <Form.Item name="revisionNumber" label={t('fstdsPage.fieldRevisionNumber')} rules={[{ required: true }]}>
+              <Input placeholder={t('fstdsPage.fieldRevisionNumberPlaceholder')} style={{ width: 200 }} />
             </Form.Item>
-            <Form.Item name="revisionDate" label="修订日期" rules={[{ required: true }]}>
+            <Form.Item name="revisionDate" label={t('fstdsPage.fieldRevisionDate')} rules={[{ required: true }]}>
               <DatePicker />
             </Form.Item>
           </Space>
@@ -1480,9 +1489,9 @@ export function FstdsPage() {
           pagination={false}
           dataSource={FCS_CHARACTERISTICS.map((c) => ({ characteristic: c }))}
           columns={[
-            { title: '特征', dataIndex: 'characteristic', width: 70, render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
+            { title: t('fstdsPage.fieldCharacteristic'), dataIndex: 'characteristic', width: 70, render: (v: FcsCharacteristic) => <Tag>{v}</Tag> },
             {
-              title: '保真度 (存量设备可留空)',
+              title: t('fstdsPage.columnFidelityLevel'),
               width: 150,
               render: (_, row) => (
                 <Select
@@ -1498,7 +1507,7 @@ export function FstdsPage() {
               ),
             },
             {
-              title: '设备描述',
+              title: t('fstdsPage.columnEquipmentDescription'),
               render: (_, row) => (
                 <Input
                   size="small"
@@ -1513,7 +1522,7 @@ export function FstdsPage() {
               ),
             },
             {
-              title: '限制说明',
+              title: t('fstdsPage.columnLimitations'),
               render: (_, row) => (
                 <Input
                   size="small"
@@ -1529,13 +1538,13 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="声明确认ESL (须由组织指定的合规负责人 ORA.GEN.210(b) 声明)"
+        title={t('fstdsPage.eslDeclareModalTitle')}
         open={!!eslDeclareModalId}
         onOk={handleDeclareEsl}
         onCancel={() => setEslDeclareModalId(undefined)}
       >
         <Form form={eslDeclareForm} layout="vertical">
-          <Form.Item name="personnelId" label="声明人" rules={[{ required: true }]}>
+          <Form.Item name="personnelId" label={t('fstdsPage.fieldDeclarer')} rules={[{ required: true }]}>
             <Select
               showSearch
               optionFilterProp="label"
@@ -1546,7 +1555,7 @@ export function FstdsPage() {
       </Modal>
 
       <Modal
-        title="登记FSTD性能指标 (AMC1 ORA.FSTD.100(d), 按月登记, 同年月重复登记将覆盖)"
+        title={t('fstdsPage.perfMetricModalTitle')}
         open={!!perfMetricModalFstdId}
         onOk={handleRecordPerformanceMetric}
         onCancel={() => setPerfMetricModalFstdId(undefined)}
@@ -1567,36 +1576,36 @@ export function FstdsPage() {
             interruptionCount: 0,
           }}
         >
-          <Form.Item name="period" label="年月" rules={[{ required: true }]}>
+          <Form.Item name="period" label={t('fstdsPage.fieldPeriod')} rules={[{ required: true }]}>
             <DatePicker picker="month" style={{ width: '100%' }} />
           </Form.Item>
           <Space wrap>
-            <Form.Item name="plannedAvailableHours" label="计划可用时间(h)" rules={[{ required: true }]}>
+            <Form.Item name="plannedAvailableHours" label={t('fstdsPage.fieldPlannedAvailableHours')} rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="scheduledTrainingHours" label="排期训练时间(h)" rules={[{ required: true }]}>
+            <Form.Item name="scheduledTrainingHours" label={t('fstdsPage.fieldScheduledTrainingHours')} rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="supportHours" label="支持时间(h, 计划性不可用)" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: 160 }} />
-            </Form.Item>
-          </Space>
-          <Space wrap>
-            <Form.Item name="fstdFailureHours" label="设备故障时间(h)" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="externalFailureHours" label="外部因素损失时间(h)" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="lostTrainingHours" label="损失训练时间(h)" rules={[{ required: true }]}>
+            <Form.Item name="supportHours" label={t('fstdsPage.fieldSupportHours')} rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 160 }} />
             </Form.Item>
           </Space>
           <Space wrap>
-            <Form.Item name="discrepancyCount" label="缺陷次数" rules={[{ required: true }]}>
+            <Form.Item name="fstdFailureHours" label={t('fstdsPage.fieldFstdFailureHours')} rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="interruptionCount" label="中断次数" rules={[{ required: true }]}>
+            <Form.Item name="externalFailureHours" label={t('fstdsPage.fieldExternalFailureHours')} rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="lostTrainingHours" label={t('fstdsPage.fieldLostTrainingHours')} rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
+          <Space wrap>
+            <Form.Item name="discrepancyCount" label={t('fstdsPage.fieldDiscrepancyCount')} rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="interruptionCount" label={t('fstdsPage.fieldInterruptionCount')} rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 160 }} />
             </Form.Item>
           </Space>
