@@ -1,13 +1,16 @@
 import { BellOutlined, SyncOutlined } from '@ant-design/icons'
-import { Badge, Button, Empty, List, Popover, Typography, message } from 'antd'
+import { App, Badge, Button, Empty, List, Popover, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { notificationsApi, type AppNotification } from '../api/notifications'
 import { useAuth } from '../auth/AuthContext'
 
 const POLL_INTERVAL_MS = 60_000
 
 export function NotificationBell() {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
   const { isAdmin } = useAuth()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
@@ -41,7 +44,7 @@ export function NotificationBell() {
     setChecking(true)
     try {
       const { notifiedCount } = await notificationsApi.checkOverdueOccurrenceReports()
-      message.success(`检查完成, 新发出 ${notifiedCount} 条提醒`)
+      message.success(t('notifications.checkDone', { count: notifiedCount }))
       const list = await notificationsApi.list()
       setNotifications(list)
       refreshUnreadCount()
@@ -55,7 +58,7 @@ export function NotificationBell() {
       <List
         size="small"
         dataSource={notifications}
-        locale={{ emptyText: <Empty description="暂无通知" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        locale={{ emptyText: <Empty description={t('notifications.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         style={{ maxHeight: 400, overflowY: 'auto' }}
         renderItem={(item) => (
           <List.Item
@@ -83,7 +86,7 @@ export function NotificationBell() {
       {isAdmin && (
         <div style={{ textAlign: 'right', marginTop: 8, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
           <Button size="small" icon={<SyncOutlined />} loading={checking} onClick={handleCheckNow}>
-            立即检查到期提醒
+            {t('notifications.checkNow')}
           </Button>
         </div>
       )}
@@ -92,7 +95,7 @@ export function NotificationBell() {
 
   return (
     <Popover
-      title="通知"
+      title={t('notifications.title')}
       trigger="click"
       placement="bottomRight"
       open={open}

@@ -1,6 +1,7 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { App, Button, DatePicker, Empty, Form, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { bookingsApi } from '../api/bookings'
 import { fstdsApi } from '../api/fstds'
 import { studentsApi } from '../api/students'
@@ -12,6 +13,7 @@ const { RangePicker } = DatePicker
 
 // 需求清单 3.8: 排课引擎强依赖设备能力(3.3)/学员前置条件(3.7)的实时校验, 校验逻辑全部在后端, 这里负责把结果透出给用户
 export function BookingsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<Fstd[]>([])
@@ -58,19 +60,19 @@ export function BookingsPage() {
         studentId: values.studentId,
         taskCode: values.taskCode,
       })
-      message.success('预订成功')
+      message.success(t('bookings.createSuccess'))
       setModalOpen(false)
       form.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '预订失败')
+      message.error(err.response?.data?.message ?? t('bookings.createFailed'))
     }
   }
 
   const cancel = async (id: string) => {
     await bookingsApi.cancel(id)
-    message.success('已取消')
+    message.success(t('bookings.cancelled'))
     load()
   }
 
@@ -79,9 +81,9 @@ export function BookingsPage() {
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('bookings.selectOrgFirst')} />
       ) : fstds.length === 0 ? (
-        <Empty description="该机构还没有模拟机, 请先到「模拟机」页面创建" />
+        <Empty description={t('bookings.noFstds')} />
       ) : (
         <>
           <Space style={{ marginBottom: 16 }}>
@@ -92,7 +94,7 @@ export function BookingsPage() {
               onChange={setSelectedFstdId}
             />
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-              新增预订
+              {t('bookings.addButton')}
             </Button>
           </Space>
 
@@ -101,15 +103,15 @@ export function BookingsPage() {
             loading={loading}
             dataSource={bookings}
             columns={[
-              { title: '开始时间', dataIndex: 'startAt', render: (v: string) => new Date(v).toLocaleString() },
-              { title: '结束时间', dataIndex: 'endAt', render: (v: string) => new Date(v).toLocaleString() },
-              { title: '训练科目', dataIndex: 'taskCode', render: (v?: string) => (v ? <Tag color="blue">{v}</Tag> : '-') },
-              { title: '状态', dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> },
+              { title: t('bookings.columnStartAt'), dataIndex: 'startAt', render: (v: string) => new Date(v).toLocaleString() },
+              { title: t('bookings.columnEndAt'), dataIndex: 'endAt', render: (v: string) => new Date(v).toLocaleString() },
+              { title: t('bookings.columnTaskCode'), dataIndex: 'taskCode', render: (v?: string) => (v ? <Tag color="blue">{v}</Tag> : '-') },
+              { title: t('bookings.columnStatus'), dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> },
               {
-                title: '操作',
+                title: t('bookings.columnActions'),
                 render: (_, record) => (
                   <Button size="small" danger onClick={() => cancel(record.id)}>
-                    取消
+                    {t('bookings.cancel')}
                   </Button>
                 ),
               },
@@ -118,24 +120,24 @@ export function BookingsPage() {
         </>
       )}
 
-      <Modal title="新增预订" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('bookings.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical">
-          <Form.Item name="range" label="时间段" rules={[{ required: true }]}>
+          <Form.Item name="range" label={t('bookings.fieldRange')} rules={[{ required: true }]}>
             <RangePicker showTime style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="taskCode" label="训练科目 (校验设备是否已鉴定该科目)">
+          <Form.Item name="taskCode" label={t('bookings.fieldTaskCode')}>
             <Select
               allowClear
-              placeholder="不选则不校验具体科目"
-              options={(selectedFstd?.qualifiedTasks ?? []).map((t) => ({ value: t.taskCode, label: `${t.taskCode} - ${t.taskName}` }))}
+              placeholder={t('bookings.fieldTaskCodePlaceholder')}
+              options={(selectedFstd?.qualifiedTasks ?? []).map((task) => ({ value: task.taskCode, label: `${task.taskCode} - ${task.taskName}` }))}
             />
           </Form.Item>
-          <Form.Item name="studentId" label="学员 (校验体检证有效性, ORA.ATO.145)">
+          <Form.Item name="studentId" label={t('bookings.fieldStudent')}>
             <Select
               allowClear
               showSearch
               optionFilterProp="label"
-              placeholder="不选则不校验学员前置条件"
+              placeholder={t('bookings.fieldStudentPlaceholder')}
               options={students.map((s) => ({ value: s.id, label: `${s.lastName}${s.firstName}` }))}
             />
           </Form.Item>

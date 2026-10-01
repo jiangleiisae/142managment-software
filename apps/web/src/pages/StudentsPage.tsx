@@ -2,6 +2,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, DatePicker, Empty, Form, Input, List, Modal, Progress, Select, Space, Table, Tag } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { CourseRequirement } from '../api/courses'
 import { coursesApi } from '../api/courses'
 import { personnelApi } from '../api/personnel'
@@ -18,6 +19,7 @@ const ENROLLMENT_STATUS_COLOR: Record<Enrollment['status'], string> = {
 }
 
 export function StudentsPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [students, setStudents] = useState<StudentDetail[]>([])
@@ -66,7 +68,7 @@ export function StudentsPage() {
       ...values,
       medicalCertExpiry: values.medicalCertExpiry ? values.medicalCertExpiry.format('YYYY-MM-DD') : undefined,
     })
-    message.success('学员创建成功')
+    message.success(t('students.createSuccess'))
     setModalOpen(false)
     form.resetFields()
     load()
@@ -77,13 +79,13 @@ export function StudentsPage() {
     const values = await enrollForm.validateFields()
     try {
       await studentsApi.enroll(enrollModalStudentId, values.courseId)
-      message.success('入学成功')
+      message.success(t('students.enrollSuccess'))
       setEnrollModalStudentId(undefined)
       enrollForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '入学失败')
+      message.error(err.response?.data?.message ?? t('students.enrollFailed'))
     }
   }
 
@@ -91,11 +93,11 @@ export function StudentsPage() {
     const fn = action === 'complete' ? studentsApi.completeEnrollment : studentsApi.withdrawEnrollment
     try {
       await fn(enrollmentId)
-      message.success('学籍状态已更新')
+      message.success(t('students.enrollmentStatusUpdated'))
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('students.operationFailed'))
     }
   }
 
@@ -128,7 +130,7 @@ export function StudentsPage() {
       ...values,
       sessionDate: values.sessionDate.format('YYYY-MM-DD'),
     })
-    message.success('训练记录已登记')
+    message.success(t('students.trainingRecordAdded'))
     setRecordModalEnrollment(undefined)
     if (progressCardEnrollment?.id === recordModalEnrollment.id) {
       openProgressCard(progressCardEnrollment)
@@ -136,11 +138,11 @@ export function StudentsPage() {
   }
 
   const medicalStatus = (expiry?: string | null) => {
-    if (!expiry) return <Tag>未记录</Tag>
+    if (!expiry) return <Tag>{t('students.medicalNotRecorded')}</Tag>
     const expired = new Date(expiry) < new Date()
     return (
       <Tag color={expired ? 'red' : 'green'}>
-        {expired ? '已过期' : '有效'} ({new Date(expiry).toLocaleDateString()})
+        {expired ? t('students.medicalExpired') : t('students.medicalValid')} ({new Date(expiry).toLocaleDateString()})
       </Tag>
     )
   }
@@ -150,7 +152,7 @@ export function StudentsPage() {
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('students.selectOrgFirst')} />
       ) : (
         <>
           {expiringSoon.length > 0 && (
@@ -158,14 +160,14 @@ export function StudentsPage() {
               style={{ marginBottom: 16 }}
               type="warning"
               showIcon
-              message={`有 ${expiringSoon.length} 名学员体检证即将到期或已过期 (ORA.ATO.145 训练前置条件)`}
+              message={t('students.expiringAlertMessage', { count: expiringSoon.length })}
               description={expiringSoon.map((s) => `${s.lastName}${s.firstName}`).join('、')}
             />
           )}
 
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-              新增学员
+              {t('students.addButton')}
             </Button>
           </Space>
 
@@ -174,19 +176,19 @@ export function StudentsPage() {
             loading={loading}
             dataSource={students}
             columns={[
-              { title: '姓', dataIndex: 'lastName' },
-              { title: '名', dataIndex: 'firstName' },
-              { title: '执照号', dataIndex: 'licenceNo' },
+              { title: t('students.columnLastName'), dataIndex: 'lastName' },
+              { title: t('students.columnFirstName'), dataIndex: 'firstName' },
+              { title: t('students.columnLicenceNo'), dataIndex: 'licenceNo' },
               {
-                title: '体检证状态 (ORA.ATO.120(c))',
+                title: t('students.columnMedicalStatus'),
                 dataIndex: 'medicalCertExpiry',
                 render: medicalStatus,
               },
               {
-                title: '操作',
+                title: t('students.columnActions'),
                 render: (_, s) => (
                   <Button size="small" onClick={() => setEnrollModalStudentId(s.id)}>
-                    办理入学
+                    {t('students.enroll')}
                   </Button>
                 ),
               },
@@ -195,25 +197,25 @@ export function StudentsPage() {
               expandedRowRender: (s) => (
                 <List
                   size="small"
-                  header="学籍记录"
+                  header={t('students.enrollmentsHeader')}
                   dataSource={s.enrollments ?? []}
-                  locale={{ emptyText: '尚未入学任何课程' }}
+                  locale={{ emptyText: t('students.noEnrollments') }}
                   renderItem={(e) => (
                     <List.Item
                       actions={[
                         <Button key="progress" size="small" onClick={() => openProgressCard(e)}>
-                          进度卡
+                          {t('students.progressCard')}
                         </Button>,
                         ...(e.status === 'active'
                           ? [
                               <Button key="record" size="small" onClick={() => openAddTrainingRecord(e)}>
-                                登记训练记录
+                                {t('students.addTrainingRecord')}
                               </Button>,
                               <Button key="complete" size="small" type="primary" onClick={() => transitionEnrollment('complete', e.id)}>
-                                结业
+                                {t('students.complete')}
                               </Button>,
                               <Button key="withdraw" size="small" danger onClick={() => transitionEnrollment('withdraw', e.id)}>
-                                退学
+                                {t('students.withdraw')}
                               </Button>,
                             ]
                           : []),
@@ -229,33 +231,33 @@ export function StudentsPage() {
         </>
       )}
 
-      <Modal title="新增学员" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('students.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ medicalCertExpiry: dayjs().add(1, 'year') }}>
-          <Form.Item name="firstName" label="名" rules={[{ required: true }]}>
+          <Form.Item name="firstName" label={t('students.fieldFirstName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="lastName" label="姓" rules={[{ required: true }]}>
+          <Form.Item name="lastName" label={t('students.fieldLastName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="licenceNo" label="执照号">
+          <Form.Item name="licenceNo" label={t('students.fieldLicenceNo')}>
             <Input />
           </Form.Item>
-          <Form.Item name="medicalCertExpiry" label="体检证到期日">
+          <Form.Item name="medicalCertExpiry" label={t('students.fieldMedicalCertExpiry')}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="办理入学" open={!!enrollModalStudentId} onOk={handleEnroll} onCancel={() => setEnrollModalStudentId(undefined)}>
+      <Modal title={t('students.enrollModalTitle')} open={!!enrollModalStudentId} onOk={handleEnroll} onCancel={() => setEnrollModalStudentId(undefined)}>
         <Form form={enrollForm} layout="vertical">
-          <Form.Item name="courseId" label="课程" rules={[{ required: true }]}>
+          <Form.Item name="courseId" label={t('students.fieldCourse')} rules={[{ required: true }]}>
             <Select options={courses.map((c) => ({ value: c.id, label: c.name }))} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={`进度卡 - ${progressCardEnrollment?.course?.name ?? ''} (3.7 ORA.ATO.120 训练记录)`}
+        title={t('students.progressCardTitle', { course: progressCardEnrollment?.course?.name ?? '' })}
         open={!!progressCardEnrollment}
         onCancel={() => setProgressCardEnrollment(undefined)}
         footer={null}
@@ -269,7 +271,7 @@ export function StudentsPage() {
               style={{ marginBottom: 16 }}
             />
             {progressCard.totalRequirements === 0 ? (
-              <Empty description="该课程未定义要求科目 (CourseRequirement), 无法生成进度卡" />
+              <Empty description={t('students.noRequirementsDefined')} />
             ) : (
               <Table
                 size="small"
@@ -278,16 +280,16 @@ export function StudentsPage() {
                 dataSource={progressCard.items}
                 pagination={false}
                 columns={[
-                  { title: '科目编号', dataIndex: 'taskCode' },
-                  { title: '科目名称', dataIndex: 'taskName' },
-                  { title: '要求最少学时', dataIndex: 'minHours', render: (v?: number | null) => v ?? '-' },
+                  { title: t('students.columnTaskCode'), dataIndex: 'taskCode' },
+                  { title: t('students.columnTaskName'), dataIndex: 'taskName' },
+                  { title: t('students.columnMinHours'), dataIndex: 'minHours', render: (v?: number | null) => v ?? '-' },
                   {
-                    title: '状态',
+                    title: t('students.columnStatus'),
                     dataIndex: 'completed',
-                    render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? '已覆盖' : '未覆盖'}</Tag>,
+                    render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? t('students.covered') : t('students.notCovered')}</Tag>,
                   },
                   {
-                    title: '最近记录',
+                    title: t('students.columnLatestRecord'),
                     render: (_, item) =>
                       item.latestSessionDate
                         ? `${new Date(item.latestSessionDate).toLocaleDateString()} (${item.latestTestScore ?? '-'})`
@@ -298,10 +300,10 @@ export function StudentsPage() {
             )}
             <List
               size="small"
-              header="全部训练记录 (含未挂钩具体科目的地面训练)"
+              header={t('students.allRecordsHeader')}
               style={{ marginTop: 16 }}
               dataSource={progressCardRecords}
-              locale={{ emptyText: '尚无训练记录' }}
+              locale={{ emptyText: t('students.noRecords') }}
               renderItem={(r) => (
                 <List.Item>
                   {new Date(r.sessionDate).toLocaleDateString()} · {r.subject}
@@ -319,28 +321,28 @@ export function StudentsPage() {
       </Modal>
 
       <Modal
-        title="登记训练记录 (ORA.ATO.120)"
+        title={t('students.addRecordModalTitle')}
         open={!!recordModalEnrollment}
         onOk={handleAddTrainingRecord}
         onCancel={() => setRecordModalEnrollment(undefined)}
       >
         <Form form={recordForm} layout="vertical">
-          <Form.Item name="sessionDate" label="训练日期" rules={[{ required: true }]}>
+          <Form.Item name="sessionDate" label={t('students.fieldSessionDate')} rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="subject" label="训练内容" rules={[{ required: true }]}>
-            <Input placeholder="如: Basic maneuvers session 1 / 地面课: 空中法规" />
+          <Form.Item name="subject" label={t('students.fieldSubject')} rules={[{ required: true }]}>
+            <Input placeholder={t('students.fieldSubjectPlaceholder')} />
           </Form.Item>
-          <Form.Item name="courseRequirementId" label="对应课程要求科目 (用于进度卡, 不选则视为地面训练)">
+          <Form.Item name="courseRequirementId" label={t('students.fieldCourseRequirement')}>
             <Select
               allowClear
               options={recordModalRequirements.map((r) => ({ value: r.id, label: `${r.taskCode} - ${r.taskName}` }))}
             />
           </Form.Item>
-          <Form.Item name="testScore" label="测评结果">
-            <Input placeholder="如: Pass / Fail / 85分" />
+          <Form.Item name="testScore" label={t('students.fieldTestScore')}>
+            <Input placeholder={t('students.fieldTestScorePlaceholder')} />
           </Form.Item>
-          <Form.Item name="assessedById" label="教员/考核人">
+          <Form.Item name="assessedById" label={t('students.fieldAssessedBy')}>
             <Select
               allowClear
               showSearch
@@ -348,7 +350,7 @@ export function StudentsPage() {
               options={personnel.map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
             />
           </Form.Item>
-          <Form.Item name="progressNotes" label="备注">
+          <Form.Item name="progressNotes" label={t('students.fieldNotes')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>

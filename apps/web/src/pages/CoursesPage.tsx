@@ -1,6 +1,7 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { CourseRequirement, FstdCompatibilityResult } from '../api/courses'
 import { coursesApi } from '../api/courses'
 import { fstdsApi } from '../api/fstds'
@@ -15,6 +16,7 @@ interface CourseWithRequirements extends Course {
 }
 
 export function CoursesPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [courses, setCourses] = useState<CourseWithRequirements[]>([])
@@ -51,7 +53,7 @@ export function CoursesPage() {
     if (!selectedId) return
     const values = await form.validateFields()
     await coursesApi.create({ organizationId: selectedId, ...values })
-    message.success('课程创建成功')
+    message.success(t('courses.createSuccess'))
     setModalOpen(false)
     form.resetFields()
     load()
@@ -59,7 +61,7 @@ export function CoursesPage() {
 
   const approve = async (id: string) => {
     await coursesApi.approve(id)
-    message.success('课程已批准')
+    message.success(t('courses.approved'))
     load()
   }
 
@@ -67,7 +69,7 @@ export function CoursesPage() {
     if (!requirementModalCourseId) return
     const values = await requirementForm.validateFields()
     await coursesApi.addRequirement(requirementModalCourseId, values)
-    message.success('课程要求已添加')
+    message.success(t('courses.requirementAdded'))
     setRequirementModalCourseId(undefined)
     requirementForm.resetFields()
     load()
@@ -85,12 +87,12 @@ export function CoursesPage() {
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
 
       {!selectedId ? (
-        <Empty description="请先创建并选择一个机构" />
+        <Empty description={t('courses.selectOrgFirst')} />
       ) : (
         <>
           <Space style={{ marginBottom: 16 }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-              新增课程
+              {t('courses.addButton')}
             </Button>
           </Space>
 
@@ -99,29 +101,29 @@ export function CoursesPage() {
             loading={loading}
             dataSource={courses}
             columns={[
-              { title: '课程名称', dataIndex: 'name' },
-              { title: '类型', dataIndex: 'courseType' },
+              { title: t('courses.columnName'), dataIndex: 'name' },
+              { title: t('courses.columnType'), dataIndex: 'courseType' },
               {
-                title: '审批状态',
+                title: t('courses.columnApprovalStatus'),
                 dataIndex: 'isApproved',
                 render: (v: boolean, record) =>
                   v ? (
-                    <Tag color="green">已批准</Tag>
+                    <Tag color="green">{t('courses.approvedTag')}</Tag>
                   ) : (
                     <Space>
-                      <Tag color="orange">待批准</Tag>
+                      <Tag color="orange">{t('courses.pendingTag')}</Tag>
                       <Button size="small" onClick={() => approve(record.id)}>
-                        批准
+                        {t('courses.approve')}
                       </Button>
                     </Space>
                   ),
               },
               {
-                title: '操作',
+                title: t('courses.columnActions'),
                 render: (_, course) => (
                   <Space>
                     <Button size="small" onClick={() => setRequirementModalCourseId(course.id)}>
-                      添加课程要求
+                      {t('courses.addRequirement')}
                     </Button>
                     <Button
                       size="small"
@@ -130,7 +132,7 @@ export function CoursesPage() {
                         setCompatResult(undefined)
                       }}
                     >
-                      检查设备兼容性
+                      {t('courses.checkCompatibility')}
                     </Button>
                   </Space>
                 ),
@@ -140,13 +142,13 @@ export function CoursesPage() {
               expandedRowRender: (course) => (
                 <List
                   size="small"
-                  header="课程要求 (需要设备已鉴定以下训练科目)"
+                  header={t('courses.requirementsHeader')}
                   dataSource={course.requirements ?? []}
-                  locale={{ emptyText: '尚未设置课程要求' }}
+                  locale={{ emptyText: t('courses.noRequirements') }}
                   renderItem={(r) => (
                     <List.Item>
                       <Tag color="blue">{r.taskCode}</Tag> {r.taskName}
-                      {r.minHours ? ` (最低${r.minHours}小时)` : ''}
+                      {r.minHours ? t('courses.minHours', { hours: r.minHours }) : ''}
                     </List.Item>
                   )}
                 />
@@ -156,45 +158,45 @@ export function CoursesPage() {
         </>
       )}
 
-      <Modal title="新增课程" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('courses.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="课程名称" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('courses.fieldName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="courseType" label="课程类型" rules={[{ required: true }]}>
+          <Form.Item name="courseType" label={t('courses.fieldCourseType')} rules={[{ required: true }]}>
             <Select options={COURSE_TYPES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="添加课程要求"
+        title={t('courses.addRequirementModalTitle')}
         open={!!requirementModalCourseId}
         onOk={handleAddRequirement}
         onCancel={() => setRequirementModalCourseId(undefined)}
       >
         <Form form={requirementForm} layout="vertical">
-          <Form.Item name="taskCode" label="训练科目编号" rules={[{ required: true }]}>
-            <Input placeholder="如: UPRT-01 (需与FSTD已鉴定任务清单里的编号一致)" />
+          <Form.Item name="taskCode" label={t('courses.fieldTaskCode')} rules={[{ required: true }]}>
+            <Input placeholder={t('courses.fieldTaskCodePlaceholder')} />
           </Form.Item>
-          <Form.Item name="taskName" label="科目名称" rules={[{ required: true }]}>
+          <Form.Item name="taskName" label={t('courses.fieldTaskName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="检查设备兼容性"
+        title={t('courses.checkCompatModalTitle')}
         open={!!compatModalCourseId}
         onCancel={() => setCompatModalCourseId(undefined)}
         footer={null}
       >
         <Form form={compatForm} layout="vertical" onFinish={handleCheckCompatibility}>
-          <Form.Item name="fstdId" label="选择模拟机" rules={[{ required: true }]}>
+          <Form.Item name="fstdId" label={t('courses.fieldSelectFstd')} rules={[{ required: true }]}>
             <Select options={fstds.map((f) => ({ value: f.id, label: f.deviceCode }))} />
           </Form.Item>
           <Button type="primary" htmlType="submit">
-            检查
+            {t('courses.checkButton')}
           </Button>
         </Form>
         {compatResult && (
@@ -202,11 +204,13 @@ export function CoursesPage() {
             style={{ marginTop: 16 }}
             type={compatResult.compatible ? 'success' : 'error'}
             showIcon
-            message={compatResult.compatible ? '该设备满足课程全部训练科目要求' : '该设备不满足课程要求'}
+            message={compatResult.compatible ? t('courses.compatibleMessage') : t('courses.incompatibleMessage')}
             description={
               compatResult.compatible
                 ? undefined
-                : `缺少科目: ${compatResult.missingTasks.map((t) => `${t.taskCode}(${t.taskName})`).join('、')}`
+                : t('courses.missingTasks', {
+                    tasks: compatResult.missingTasks.map((task) => `${task.taskCode}(${task.taskName})`).join('、'),
+                  })
             }
           />
         )}

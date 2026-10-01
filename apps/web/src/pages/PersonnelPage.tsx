@@ -1,12 +1,14 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { App, Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { personnelApi } from '../api/personnel'
 import type { InstructorType, Personnel } from '../api/types'
 
 const INSTRUCTOR_TYPES: InstructorType[] = ['FI', 'TRI', 'SFI', 'THEORETICAL', 'EXAMINER']
 
 export function PersonnelPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [loading, setLoading] = useState(false)
@@ -28,7 +30,7 @@ export function PersonnelPage() {
   const handleCreate = async () => {
     const values = await form.validateFields()
     await personnelApi.create(values)
-    message.success('人员创建成功')
+    message.success(t('personnel.createSuccess'))
     setModalOpen(false)
     form.resetFields()
     load()
@@ -44,7 +46,7 @@ export function PersonnelPage() {
     if (!instructorModalId) return
     const values = await instructorForm.validateFields()
     await personnelApi.setInstructorProfile(instructorModalId, values.instructorType)
-    message.success('教员档案已登记')
+    message.success(t('personnel.instructorProfileSet'))
     setInstructorModalId(undefined)
     load()
   }
@@ -53,7 +55,7 @@ export function PersonnelPage() {
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          新增人员
+          {t('personnel.addButton')}
         </Button>
       </Space>
 
@@ -62,31 +64,33 @@ export function PersonnelPage() {
         loading={loading}
         dataSource={personnel}
         columns={[
-          { title: '姓', dataIndex: 'lastName' },
-          { title: '名', dataIndex: 'firstName' },
-          { title: '邮箱', dataIndex: 'email' },
+          { title: t('personnel.columnLastName'), dataIndex: 'lastName' },
+          { title: t('personnel.columnFirstName'), dataIndex: 'firstName' },
+          { title: t('personnel.columnEmail'), dataIndex: 'email' },
           {
-            title: '资质到期情况',
+            title: t('personnel.columnQualifications'),
             dataIndex: 'qualifications',
             render: (quals: Personnel['qualifications']) => (
               <Space wrap>
                 {(quals ?? []).map((q) => (
                   <Tag key={q.id} color={isExpiringSoon(q.validUntil) ? 'red' : 'default'}>
                     {q.qualificationType}
-                    {q.validUntil ? ` (至 ${new Date(q.validUntil).toLocaleDateString()})` : ''}
+                    {q.validUntil
+                      ? ` (${t('personnel.validUntil', { date: new Date(q.validUntil).toLocaleDateString() })})`
+                      : ''}
                   </Tag>
                 ))}
               </Space>
             ),
           },
           {
-            title: '教员类型 (3.5)',
+            title: t('personnel.columnInstructorType'),
             dataIndex: 'instructorProfile',
             render: (profile: Personnel['instructorProfile']) =>
-              profile ? <Tag color="blue">{profile.instructorType}</Tag> : <Tag>非教员</Tag>,
+              profile ? <Tag color="blue">{profile.instructorType}</Tag> : <Tag>{t('personnel.notInstructor')}</Tag>,
           },
           {
-            title: '操作',
+            title: t('personnel.columnActions'),
             render: (_, p) => (
               <Button
                 size="small"
@@ -95,35 +99,40 @@ export function PersonnelPage() {
                   setInstructorModalId(p.id)
                 }}
               >
-                登记教员类型
+                {t('personnel.setInstructorType')}
               </Button>
             ),
           },
         ]}
       />
 
-      <Modal title="新增人员" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal
+        title={t('personnel.createModalTitle')}
+        open={modalOpen}
+        onOk={handleCreate}
+        onCancel={() => setModalOpen(false)}
+      >
         <Form form={form} layout="vertical">
-          <Form.Item name="firstName" label="名" rules={[{ required: true }]}>
+          <Form.Item name="firstName" label={t('personnel.fieldFirstName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="lastName" label="姓" rules={[{ required: true }]}>
+          <Form.Item name="lastName" label={t('personnel.fieldLastName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="email" label="邮箱">
+          <Form.Item name="email" label={t('personnel.fieldEmail')}>
             <Input />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="登记教员类型 (3.5)"
+        title={t('personnel.instructorModalTitle')}
         open={!!instructorModalId}
         onOk={handleSetInstructorProfile}
         onCancel={() => setInstructorModalId(undefined)}
       >
         <Form form={instructorForm} layout="vertical">
-          <Form.Item name="instructorType" label="教员类型" rules={[{ required: true }]}>
+          <Form.Item name="instructorType" label={t('personnel.fieldInstructorType')} rules={[{ required: true }]}>
             <Select options={INSTRUCTOR_TYPES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
         </Form>

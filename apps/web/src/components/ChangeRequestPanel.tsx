@@ -1,5 +1,6 @@
-import { Button, Form, Input, InputNumber, List, Modal, Select, Space, Tag, message } from 'antd'
+import { App, Button, Form, Input, InputNumber, List, Modal, Select, Space, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChangeEntityType, ChangeRequest, ChangeRequestStatus, ChangeTypeConfig } from '../api/changeRequests'
 import { changeRequestsApi } from '../api/changeRequests'
 
@@ -13,17 +14,19 @@ const STATUS_COLOR: Record<ChangeRequestStatus, string> = {
   NOTIFIED: 'green',
 }
 
-const DETAIL_FIELD_LABELS: Record<string, string> = {
-  newLevelOrBasis: '升级后的等级/FCS基础',
-  impactAssessment: '影响评估',
-  revisedTestPlan: '修订测试方案',
-  verificationTestPercentComplete: '验证测试完成百分比 (恢复前须≥34%)',
-  storagePlan: '存储/复活计划',
-  newOperatorName: '新运营人名称',
+const DETAIL_FIELD_LABEL_KEYS: Record<string, string> = {
+  newLevelOrBasis: 'changeRequests.fieldNewLevelOrBasis',
+  impactAssessment: 'changeRequests.fieldImpactAssessment',
+  revisedTestPlan: 'changeRequests.fieldRevisedTestPlan',
+  verificationTestPercentComplete: 'changeRequests.fieldVerificationTestPercentComplete',
+  storagePlan: 'changeRequests.fieldStoragePlan',
+  newOperatorName: 'changeRequests.fieldNewOperatorName',
 }
 
 /// 通用变更管理面板 (ORA.GEN.130), 供机构详情页(entityType=Organization)与FSTD页面(entityType=Fstd)共用
 export function ChangeRequestPanel({ entityType, entityId }: { entityType: ChangeEntityType; entityId: string }) {
+  const { t } = useTranslation()
+  const { message } = App.useApp()
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([])
   const [types, setTypes] = useState<ChangeTypeConfig[]>([])
   const [modalOpen, setModalOpen] = useState(false)
@@ -54,13 +57,13 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
         description,
         detailsJson: Object.keys(detailsJson).length > 0 ? detailsJson : undefined,
       })
-      message.success('变更申请已创建')
+      message.success(t('changeRequests.createSuccess'))
       setModalOpen(false)
       form.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '创建失败')
+      message.error(err.response?.data?.message ?? t('changeRequests.createFailed'))
     }
   }
 
@@ -68,11 +71,11 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
     try {
       const fn = { submit: changeRequestsApi.submit, notify: changeRequestsApi.notify, approve: changeRequestsApi.approve, reject: changeRequestsApi.reject }[action]
       await fn(id)
-      message.success('状态已更新')
+      message.success(t('changeRequests.statusUpdated'))
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '操作失败')
+      message.error(err.response?.data?.message ?? t('changeRequests.operationFailed'))
     }
   }
 
@@ -86,13 +89,13 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
             setModalOpen(true)
           }}
         >
-          发起变更申请
+          {t('changeRequests.initiateButton')}
         </Button>
       </Space>
       <List
         size="small"
         dataSource={changeRequests}
-        locale={{ emptyText: '暂无变更申请' }}
+        locale={{ emptyText: t('changeRequests.emptyText') }}
         renderItem={(cr) => {
           const config = configFor(cr.changeType)
           return (
@@ -100,22 +103,22 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
               actions={[
                 cr.status === 'DRAFT' && (
                   <Button key="submit" size="small" onClick={() => handleAction('submit', cr.id)}>
-                    提交(通知主管机关)
+                    {t('changeRequests.submit')}
                   </Button>
                 ),
                 cr.status === 'LOGGED' && (
                   <Button key="notify" size="small" onClick={() => handleAction('notify', cr.id)}>
-                    确认已通知当局
+                    {t('changeRequests.confirmNotified')}
                   </Button>
                 ),
                 (cr.status === 'SUBMITTED' || cr.status === 'UNDER_REVIEW') && (
                   <Button key="approve" size="small" type="primary" onClick={() => handleAction('approve', cr.id)}>
-                    批准
+                    {t('changeRequests.approve')}
                   </Button>
                 ),
                 (cr.status === 'SUBMITTED' || cr.status === 'UNDER_REVIEW' || cr.status === 'DRAFT') && (
                   <Button key="reject" size="small" danger onClick={() => handleAction('reject', cr.id)}>
-                    驳回
+                    {t('changeRequests.reject')}
                   </Button>
                 ),
               ].filter(Boolean)}
@@ -124,15 +127,18 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
                 <Space wrap>
                   <Tag color={STATUS_COLOR[cr.status]}>{cr.status}</Tag>
                   <Tag color={cr.approvalType === 'PRIOR_APPROVAL' ? 'purple' : 'blue'}>
-                    {cr.approvalType === 'PRIOR_APPROVAL' ? `事先批准(提前${cr.minNoticeDays}天)` : '仅需通知'}
+                    {cr.approvalType === 'PRIOR_APPROVAL'
+                      ? t('changeRequests.priorApprovalTag', { days: cr.minNoticeDays })
+                      : t('changeRequests.notifyOnlyTag')}
                   </Tag>
                   <span>{config?.label ?? cr.changeType}</span>
                 </Space>
                 {cr.description && <span style={{ color: '#888' }}>{cr.description}</span>}
                 <span style={{ color: '#888', fontSize: 12 }}>
-                  {cr.earliestEffectiveDate && `最早生效日期: ${new Date(cr.earliestEffectiveDate).toLocaleDateString()} `}
-                  {cr.effectiveAt && `生效于: ${new Date(cr.effectiveAt).toLocaleString()} `}
-                  {cr.authorityReply && `驳回原因: ${cr.authorityReply}`}
+                  {cr.earliestEffectiveDate &&
+                    t('changeRequests.earliestEffectiveDate', { date: new Date(cr.earliestEffectiveDate).toLocaleDateString() })}
+                  {cr.effectiveAt && t('changeRequests.effectiveAt', { date: new Date(cr.effectiveAt).toLocaleString() })}
+                  {cr.authorityReply && t('changeRequests.rejectReason', { reason: cr.authorityReply })}
                 </span>
               </Space>
             </List.Item>
@@ -140,23 +146,26 @@ export function ChangeRequestPanel({ entityType, entityId }: { entityType: Chang
         }}
       />
 
-      <Modal title="发起变更申请 (ORA.GEN.130)" open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
+      <Modal title={t('changeRequests.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical">
-          <Form.Item name="changeType" label="变更类型" rules={[{ required: true }]}>
+          <Form.Item name="changeType" label={t('changeRequests.fieldChangeType')} rules={[{ required: true }]}>
             <Select
-              options={types.map((t) => ({
-                value: t.changeType,
-                label: `${t.label}${t.approvalType === 'PRIOR_APPROVAL' ? ` (提前${t.minNoticeDays}天)` : ' (仅需通知)'}`,
+              options={types.map((ct) => ({
+                value: ct.changeType,
+                label:
+                  ct.approvalType === 'PRIOR_APPROVAL'
+                    ? t('changeRequests.changeTypePriorApprovalOption', { label: ct.label, days: ct.minNoticeDays })
+                    : t('changeRequests.changeTypeNotifyOnlyOption', { label: ct.label }),
               }))}
             />
           </Form.Item>
-          <Form.Item name="description" label="说明">
+          <Form.Item name="description" label={t('changeRequests.fieldDescription')}>
             <Input.TextArea rows={2} />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.changeType !== cur.changeType}>
             {({ getFieldValue }) =>
               (configFor(getFieldValue('changeType'))?.requiredDetailFields ?? []).map((field) => (
-                <Form.Item key={field} name={field} label={DETAIL_FIELD_LABELS[field] ?? field} rules={[{ required: true }]}>
+                <Form.Item key={field} name={field} label={DETAIL_FIELD_LABEL_KEYS[field] ? t(DETAIL_FIELD_LABEL_KEYS[field]) : field} rules={[{ required: true }]}>
                   {field === 'verificationTestPercentComplete' ? (
                     <InputNumber min={0} max={100} style={{ width: '100%' }} />
                   ) : (

@@ -1,27 +1,29 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { App, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/AuthContext'
 import { personnelApi } from '../api/personnel'
 import type { Personnel } from '../api/types'
 import type { ManagedUser, Permission } from '../api/users'
 import { usersApi } from '../api/users'
 
-const PERMISSION_LABELS: Record<Permission, string> = {
-  ORGANIZATION: '机构与证书',
-  MANAGEMENT_SYSTEM: '管理体系 SMS/QMS',
-  FSTD: '模拟机(FSTD)',
-  INVENTORY: '备件/工具管理',
-  PERSONNEL: '人员资质',
-  COURSES: '课程管理',
-  STUDENTS: '学员记录',
-  SCHEDULING: '排班预订',
-  ISMS: '信息安全 ISMS',
+const PERMISSION_LABEL_KEYS: Record<Permission, string> = {
+  ORGANIZATION: 'menu.organizations',
+  MANAGEMENT_SYSTEM: 'menu.managementSystem',
+  FSTD: 'menu.fstds',
+  INVENTORY: 'menu.inventory',
+  PERSONNEL: 'menu.personnel',
+  COURSES: 'menu.courses',
+  STUDENTS: 'menu.students',
+  SCHEDULING: 'menu.bookings',
+  ISMS: 'menu.isms',
 }
-const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS) as Permission[]
+const ALL_PERMISSIONS = Object.keys(PERMISSION_LABEL_KEYS) as Permission[]
 
 /// 仅OWNER/ADMIN可见 (见 App.tsx 的 AdminOnlyRoute)。OWNER账户本身不可在此编辑/停用 (后端强制)。
 export function UsersPage() {
+  const { t } = useTranslation()
   const { message } = App.useApp()
   const { user: currentUser } = useAuth()
   const isOwner = currentUser?.role === 'OWNER'
@@ -57,13 +59,13 @@ export function UsersPage() {
     const values = await createForm.validateFields()
     try {
       await usersApi.create(values)
-      message.success('账户已创建')
+      message.success(t('users.createSuccess'))
       setCreateModalOpen(false)
       createForm.resetFields()
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '创建失败')
+      message.error(err.response?.data?.message ?? t('users.createFailed'))
     }
   }
 
@@ -77,12 +79,12 @@ export function UsersPage() {
     const values = await editForm.validateFields()
     try {
       await usersApi.update(editUserId, values)
-      message.success('账户已更新')
+      message.success(t('users.updateSuccess'))
       setEditUserId(undefined)
       load()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '更新失败')
+      message.error(err.response?.data?.message ?? t('users.updateFailed'))
     }
   }
 
@@ -96,19 +98,19 @@ export function UsersPage() {
     const values = await linkPersonnelForm.validateFields()
     try {
       await usersApi.linkPersonnel(linkPersonnelUserId, values.personnelId)
-      message.success('已关联人员档案')
+      message.success(t('users.linkSuccess'))
       setLinkPersonnelUserId(undefined)
       load()
       personnelApi.list().then(setPersonnel)
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '关联失败')
+      message.error(err.response?.data?.message ?? t('users.linkFailed'))
     }
   }
 
   const handleUnlinkPersonnel = async (userId: string) => {
     await usersApi.unlinkPersonnel(userId)
-    message.success('已解除关联')
+    message.success(t('users.unlinkSuccess'))
     load()
     personnelApi.list().then(setPersonnel)
   }
@@ -118,12 +120,12 @@ export function UsersPage() {
     const values = await resetPwdForm.validateFields()
     try {
       await usersApi.resetPassword(resetPwdUserId, values.newPassword)
-      message.success('密码已重置')
+      message.success(t('users.resetSuccess'))
       setResetPwdUserId(undefined)
       resetPwdForm.resetFields()
     } catch (e) {
       const err = e as { response?: { data?: { message?: string } } }
-      message.error(err.response?.data?.message ?? '重置失败')
+      message.error(err.response?.data?.message ?? t('users.resetFailed'))
     }
   }
 
@@ -134,7 +136,7 @@ export function UsersPage() {
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
-          新增账户
+          {t('users.addButton')}
         </Button>
       </Space>
 
@@ -143,48 +145,48 @@ export function UsersPage() {
         loading={loading}
         dataSource={users}
         columns={[
-          { title: '邮箱', dataIndex: 'email' },
+          { title: t('users.columnEmail'), dataIndex: 'email' },
           {
-            title: '角色',
+            title: t('users.columnRole'),
             dataIndex: 'role',
             render: (v: ManagedUser['role']) => (
               <Tag color={v === 'OWNER' ? 'gold' : v === 'ADMIN' ? 'purple' : 'default'}>{v}</Tag>
             ),
           },
           {
-            title: '模块权限',
+            title: t('users.columnPermissions'),
             dataIndex: 'permissions',
             render: (perms: Permission[], u) =>
               u.role === 'OWNER' || u.role === 'ADMIN' ? (
-                <Tag color="green">全部模块(管理账户)</Tag>
+                <Tag color="green">{t('users.allModulesTag')}</Tag>
               ) : perms.length === 0 ? (
-                <Tag>无</Tag>
+                <Tag>{t('users.noneTag')}</Tag>
               ) : (
-                perms.map((p) => <Tag key={p}>{PERMISSION_LABELS[p]}</Tag>)
+                perms.map((p) => <Tag key={p}>{t(PERMISSION_LABEL_KEYS[p])}</Tag>)
               ),
           },
           {
-            title: '状态',
+            title: t('users.columnStatus'),
             dataIndex: 'isActive',
-            render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? '启用' : '已停用'}</Tag>,
+            render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? t('users.activeTag') : t('users.disabledTag')}</Tag>,
           },
           {
-            title: '关联人员档案',
+            title: t('users.columnLinkedPersonnel'),
             dataIndex: 'personnelId',
             render: (personnelId: string | null | undefined) => {
               const linked = personnel.find((p) => p.id === personnelId)
-              return linked ? <Tag color="blue">{`${linked.lastName}${linked.firstName}`}</Tag> : <Tag>未关联</Tag>
+              return linked ? <Tag color="blue">{`${linked.lastName}${linked.firstName}`}</Tag> : <Tag>{t('users.notLinkedTag')}</Tag>
             },
           },
-          { title: '创建时间', dataIndex: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
+          { title: t('users.columnCreatedAt'), dataIndex: 'createdAt', render: (v: string) => new Date(v).toLocaleString() },
           {
-            title: '操作',
+            title: t('users.columnActions'),
             render: (_, u) => (
               <Space>
                 {canManage(u) && (
                   <>
                     <Button size="small" onClick={() => openEditModal(u)}>
-                      编辑权限
+                      {t('users.editPermissions')}
                     </Button>
                     <Button
                       size="small"
@@ -193,16 +195,16 @@ export function UsersPage() {
                         setResetPwdUserId(u.id)
                       }}
                     >
-                      重置密码
+                      {t('users.resetPassword')}
                     </Button>
                   </>
                 )}
                 <Button size="small" onClick={() => openLinkPersonnelModal(u)}>
-                  {u.personnelId ? '更换关联' : '关联人员'}
+                  {u.personnelId ? t('users.relink') : t('users.linkPersonnel')}
                 </Button>
                 {u.personnelId && (
                   <Button size="small" danger onClick={() => handleUnlinkPersonnel(u.id)}>
-                    解除关联
+                    {t('users.unlink')}
                   </Button>
                 )}
               </Space>
@@ -212,23 +214,23 @@ export function UsersPage() {
       />
 
       <Modal
-        title="新增账户"
+        title={t('users.createModalTitle')}
         open={createModalOpen}
         onOk={handleCreate}
         onCancel={() => setCreateModalOpen(false)}
       >
         <Form form={createForm} layout="vertical" initialValues={{ role: 'STAFF', permissions: [] }}>
-          <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
+          <Form.Item name="email" label={t('users.fieldEmail')} rules={[{ required: true, type: 'email' }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="password" label="初始密码" rules={[{ required: true, min: 8, message: '密码至少8位' }]}>
+          <Form.Item name="password" label={t('users.fieldInitialPassword')} rules={[{ required: true, min: 8, message: t('users.passwordMinLength') }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true }]}>
+          <Form.Item name="role" label={t('users.fieldRole')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'STAFF', label: 'STAFF (按模块权限访问)' },
-                ...(isOwner ? [{ value: 'ADMIN', label: 'ADMIN (管理账户, 全部模块权限 + 可管理其他账户)' }] : []),
+                { value: 'STAFF', label: t('users.roleStaffOption') },
+                ...(isOwner ? [{ value: 'ADMIN', label: t('users.roleAdminOption') }] : []),
               ]}
             />
           </Form.Item>
@@ -238,8 +240,8 @@ export function UsersPage() {
           >
             {({ getFieldValue }) =>
               getFieldValue('role') === 'STAFF' && (
-                <Form.Item name="permissions" label="模块权限">
-                  <Checkbox.Group options={ALL_PERMISSIONS.map((p) => ({ value: p, label: PERMISSION_LABELS[p] }))} />
+                <Form.Item name="permissions" label={t('users.fieldPermissions')}>
+                  <Checkbox.Group options={ALL_PERMISSIONS.map((p) => ({ value: p, label: t(PERMISSION_LABEL_KEYS[p]) }))} />
                 </Form.Item>
               )
             }
@@ -247,14 +249,14 @@ export function UsersPage() {
         </Form>
       </Modal>
 
-      <Modal title="编辑账户权限" open={!!editUserId} onOk={handleEdit} onCancel={() => setEditUserId(undefined)}>
+      <Modal title={t('users.editModalTitle')} open={!!editUserId} onOk={handleEdit} onCancel={() => setEditUserId(undefined)}>
         <Form form={editForm} layout="vertical">
           {isOwner && (
-            <Form.Item name="role" label="角色" rules={[{ required: true }]}>
+            <Form.Item name="role" label={t('users.fieldRole')} rules={[{ required: true }]}>
               <Select
                 options={[
-                  { value: 'STAFF', label: 'STAFF (按模块权限访问)' },
-                  { value: 'ADMIN', label: 'ADMIN (管理账户, 全部模块权限 + 可管理其他账户)' },
+                  { value: 'STAFF', label: t('users.roleStaffOption') },
+                  { value: 'ADMIN', label: t('users.roleAdminOption') },
                 ]}
               />
             </Form.Item>
@@ -265,43 +267,43 @@ export function UsersPage() {
           >
             {({ getFieldValue }) =>
               getFieldValue('role') === 'STAFF' && (
-                <Form.Item name="permissions" label="模块权限">
-                  <Checkbox.Group options={ALL_PERMISSIONS.map((p) => ({ value: p, label: PERMISSION_LABELS[p] }))} />
+                <Form.Item name="permissions" label={t('users.fieldPermissions')}>
+                  <Checkbox.Group options={ALL_PERMISSIONS.map((p) => ({ value: p, label: t(PERMISSION_LABEL_KEYS[p]) }))} />
                 </Form.Item>
               )
             }
           </Form.Item>
-          <Form.Item name="isActive" label="账户状态" valuePropName="checked">
-            <Switch checkedChildren="启用" unCheckedChildren="停用" />
+          <Form.Item name="isActive" label={t('users.fieldAccountStatus')} valuePropName="checked">
+            <Switch checkedChildren={t('users.enabledSwitch')} unCheckedChildren={t('users.disabledSwitch')} />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="重置密码"
+        title={t('users.resetModalTitle')}
         open={!!resetPwdUserId}
         onOk={handleResetPassword}
         onCancel={() => setResetPwdUserId(undefined)}
       >
         <Form form={resetPwdForm} layout="vertical">
-          <Form.Item name="newPassword" label="新密码" rules={[{ required: true, min: 8, message: '密码至少8位' }]}>
+          <Form.Item name="newPassword" label={t('users.fieldNewPassword')} rules={[{ required: true, min: 8, message: t('users.passwordMinLength') }]}>
             <Input.Password />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title="关联人员档案"
+        title={t('users.linkModalTitle')}
         open={!!linkPersonnelUserId}
         onOk={handleLinkPersonnel}
         onCancel={() => setLinkPersonnelUserId(undefined)}
       >
         <Form form={linkPersonnelForm} layout="vertical">
-          <Form.Item name="personnelId" label="人员档案" rules={[{ required: true, message: '请选择人员档案' }]}>
+          <Form.Item name="personnelId" label={t('users.fieldPersonnel')} rules={[{ required: true, message: t('users.fieldPersonnelRequired') }]}>
             <Select
               showSearch
               optionFilterProp="label"
-              placeholder="选择要关联的人员档案 (已被其他账户关联的不可选)"
+              placeholder={t('users.fieldPersonnelPlaceholder')}
               options={personnel.map((p) => ({
                 value: p.id,
                 label: `${p.lastName}${p.firstName}`,

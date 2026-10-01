@@ -1,6 +1,7 @@
 import { CheckCircleFilled, WarningFilled } from '@ant-design/icons'
 import { Button, Card, Empty, Input, Result, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { fstdsApi } from '../api/fstds'
 import type { Fstd } from '../api/types'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
@@ -12,6 +13,7 @@ const TIME_LOST_PRESETS = [0, 15, 30, 60, 120]
 
 /// 3.3.7 Kiosk交互 (对标Simorg): 驾驶舱内技术人员/学员/教员快速报障, 大按钮+单屏, 提交后自动复位供下一人使用
 export function KioskPage() {
+  const { t } = useTranslation()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const [fstds, setFstds] = useState<Fstd[]>([])
   const [selectedFstdId, setSelectedFstdId] = useState<string>()
@@ -59,11 +61,11 @@ export function KioskPage() {
       <div style={{ maxWidth: 640, margin: '80px auto', textAlign: 'center' }}>
         <Result
           icon={<CheckCircleFilled style={{ color: '#52c41a' }} />}
-          title="缺陷已登记"
-          subTitle="30天修复时限倒计时已启动, 感谢报告"
+          title={t('kiosk.submittedTitle')}
+          subTitle={t('kiosk.submittedSubtitle')}
         />
         <Button type="primary" size="large" onClick={reset}>
-          继续报告下一项
+          {t('kiosk.continueButton')}
         </Button>
       </div>
     )
@@ -72,10 +74,10 @@ export function KioskPage() {
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <Title level={2} style={{ textAlign: 'center' }}>
-        FSTD 缺陷快速报告 (Kiosk)
+        {t('kiosk.title')}
       </Title>
       <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 24 }}>
-        驾驶舱内技术人员/学员/教员均可直接报告问题, 无需登录后台完整流程
+        {t('kiosk.subtitle')}
       </Text>
 
       {organizations.length > 1 && (
@@ -94,9 +96,9 @@ export function KioskPage() {
       )}
 
       {fstds.length === 0 ? (
-        <Empty description="当前机构还没有模拟机" />
+        <Empty description={t('kiosk.noFstds')} />
       ) : (
-        <Card title="1. 选择设备" style={{ marginBottom: 16 }}>
+        <Card title={t('kiosk.step1Title')} style={{ marginBottom: 16 }}>
           <Space wrap size="middle">
             {fstds.map((f) => (
               <Button
@@ -115,17 +117,17 @@ export function KioskPage() {
         </Card>
       )}
 
-      <Card title="2. 描述问题" style={{ marginBottom: 16 }}>
+      <Card title={t('kiosk.step2Title')} style={{ marginBottom: 16 }}>
         <Input.TextArea
           rows={4}
           size="large"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="如: 视景系统左侧显示花屏"
+          placeholder={t('kiosk.descriptionPlaceholder')}
         />
       </Card>
 
-      <Card title="3. 是否影响设备可用性 (MMI: 缺失/故障/失效)" style={{ marginBottom: 16 }}>
+      <Card title={t('kiosk.step3Title')} style={{ marginBottom: 16 }}>
         <Space size="middle">
           <Button
             danger={isMmi}
@@ -134,15 +136,15 @@ export function KioskPage() {
             icon={<WarningFilled />}
             onClick={() => setIsMmi(true)}
           >
-            是, 影响使用
+            {t('kiosk.mmiYes')}
           </Button>
           <Button type={!isMmi ? 'primary' : 'default'} size="large" onClick={() => setIsMmi(false)}>
-            否, 不影响使用
+            {t('kiosk.mmiNo')}
           </Button>
         </Space>
       </Card>
 
-      <Card title="4. 严重度打分 (可选, 5为最严重)" style={{ marginBottom: 16 }}>
+      <Card title={t('kiosk.step4Title')} style={{ marginBottom: 16 }}>
         <Space size="middle">
           {SEVERITY_OPTIONS.map((v) => (
             <Button
@@ -158,18 +160,18 @@ export function KioskPage() {
         </Space>
       </Card>
 
-      <Card title="5. 导致培训损失时间 (可选, 分钟)" style={{ marginBottom: 24 }}>
+      <Card title={t('kiosk.step5Title')} style={{ marginBottom: 24 }}>
         <Space size="middle" wrap>
           {TIME_LOST_PRESETS.map((v) => (
             <Button key={v} type={timeLost === v ? 'primary' : 'default'} size="large" onClick={() => setTimeLost(v)}>
-              {v} 分钟
+              {t('kiosk.minutesSuffix', { value: v })}
             </Button>
           ))}
         </Space>
       </Card>
 
       <Button type="primary" size="large" block disabled={!canSubmit} loading={submitting} onClick={handleSubmit}>
-        提交报告
+        {t('kiosk.submit')}
       </Button>
     </div>
   )
