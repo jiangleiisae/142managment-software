@@ -223,6 +223,8 @@ model Organization {
   partTypeConfigs             PartTypeConfig[]
   pmChecklistTemplates        PmChecklistTemplate[]
   dutyLogs                    DutyLog[]
+  checklistTemplates          ChecklistTemplate[]
+  checklistRecords            ChecklistRecord[]
 
   @@map("organizations")
 }
@@ -755,6 +757,8 @@ model Fstd {
   safetyFacilityChecks        FstdSafetyFacilityCheck[]
   preFlightChecks             FstdPreFlightCheck[]
   groundings                  FstdGrounding[]
+  checklistTemplates          ChecklistTemplate[]
+  checklistRecords            ChecklistRecord[]
   discrepancies               DiscrepancyLog[]
   qtgDocuments                FstdQtgDocument[]
   qtgQuarterlyRuns            FstdQtgQuarterlyRun[]
@@ -1743,10 +1747,11 @@ model ShiftType {
   isActive                  Boolean       @default(true)
   createdAt                 DateTime      @default(now())
 
-  organization    Organization   @relation(fields: [organizationId], references: [id])
-  entries         RosterEntry[]
-  dutyLogs        DutyLog[]
-  handoverTargets DutyHandover[]
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  entries          RosterEntry[]
+  dutyLogs         DutyLog[]
+  checklistRecords ChecklistRecord[]
+  handoverTargets  DutyHandover[]
 
   @@unique([organizationId, code])
   @@map("shift_types")
@@ -1881,4 +1886,54 @@ model DutyHandover {
   @@index([logId])
   @@index([toStartAt])
   @@map("duty_handovers")
+}
+
+// ---- 设备级检查单模板与执行记录 (R4b): 航前/航后 ----
+
+enum ChecklistType {
+  PRE_FLIGHT // 航前
+  POST_FLIGHT // 航后
+}
+
+/// 设备级、可配置的检查单模板: 每台设备每种类型一套。items: [{ no: "1.1", text: "...", sopUrl?: "https://..." }]
+/// (和 R1-R3 之前硬编码的 CAAC 14 项航前检查/PM 模板并存, 不替换它们)
+model ChecklistTemplate {
+  id             String        @id @default(cuid())
+  organizationId String
+  fstdId         String
+  type           ChecklistType
+  itemsJson      Json
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  fstd         Fstd         @relation(fields: [fstdId], references: [id], onDelete: Cascade)
+
+  @@unique([fstdId, type])
+  @@map("checklist_templates")
+}
+
+/// 某台设备某天某个班次完成的一份检查单 (逐项结果是提交时模板的快照, 之后改模板不影响历史)。
+/// "今天应做哪些"不落库, 由班表 + 班次"是否生成维护任务" + 停飞日历 + 模板实时推算, 做完才产生记录。
+model ChecklistRecord {
+  id                     String        @id @default(cuid())
+  organizationId         String
+  fstdId                 String
+  type                   ChecklistType
+  date                   DateTime      @db.Date // 北京时间日历日
+  shiftTypeId            String
+  performedByPersonnelId String?
+  performedByEmail       String?
+  itemsJson              Json // [{ no, text, passed, notes? }]
+  overallResult          String // pass / issues_found
+  note                   String?
+  createdAt              DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  fstd         Fstd         @relation(fields: [fstdId], references: [id], onDelete: Cascade)
+  shiftType    ShiftType    @relation(fields: [shiftTypeId], references: [id])
+
+  @@unique([fstdId, type, date, shiftTypeId])
+  @@index([organizationId, date])
+  @@map("checklist_records")
 }

@@ -11,6 +11,8 @@ import { GroundingPage } from './pages/GroundingPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { RosterPage } from './pages/RosterPage'
 import { DutyPage } from './pages/DutyPage'
+import { ChecklistConfigPage } from './pages/ChecklistConfigPage'
+import { ChecklistRecordPage } from './pages/ChecklistRecordPage'
 import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { IsmsPage } from './pages/IsmsPage'
@@ -43,6 +45,9 @@ function App() {
           <Route element={<PermissionRoute permission="FSTD" />}>
             <Route path="/fstds" element={<FstdsPage />} />
             <Route path="/grounding" element={<GroundingPage />} />
+            <Route path="/pre-flight" element={<ChecklistRecordPage type="PRE_FLIGHT" />} />
+            <Route path="/post-flight" element={<ChecklistRecordPage type="POST_FLIGHT" />} />
+            <Route path="/checklist-config" element={<ChecklistConfigPage />} />
           </Route>
           <Route element={<PermissionRoute permission={["FSTD", "INVENTORY"]} />}>
             <Route path="/reports" element={<ReportsPage />} />

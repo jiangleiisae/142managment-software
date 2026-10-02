@@ -81,7 +81,12 @@ const menuEntries: MenuEntry[] = [
     key: 'group:records',
     icon: <FormOutlined />,
     labelKey: 'menu.group.records',
-    children: [{ key: '/duty', labelKey: 'menu.duty', permission: 'SCHEDULING' }],
+    children: [
+      { key: '/duty', labelKey: 'menu.duty', permission: 'SCHEDULING' },
+      { key: '/pre-flight', labelKey: 'menu.preFlightRecord', permission: 'FSTD' },
+      { key: '/post-flight', labelKey: 'menu.postFlightRecord', permission: 'FSTD' },
+      { key: '/checklist-config', labelKey: 'menu.checklistConfig', permission: 'FSTD' },
+    ],
   },
   { type: 'item', icon: <BarChartOutlined />, leaf: { key: '/reports', labelKey: 'menu.reports', permission: ['FSTD', 'INVENTORY'] } },
   // Kiosk 任何在场人员均可使用, 不受模块权限限制

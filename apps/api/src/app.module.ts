@@ -25,6 +25,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { RosterModule } from './roster/roster.module.js';
 import { DutyModule } from './duty/duty.module.js';
+import { ChecklistModule } from './checklist/checklist.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { StudentModule } from './student/student.module.js';
@@ -56,6 +57,7 @@ import { UserModule } from './user/user.module.js';
     ReportsModule,
     RosterModule,
     DutyModule,
+    ChecklistModule,
     RetentionModule,
     IsmsModule,
     UserModule,
