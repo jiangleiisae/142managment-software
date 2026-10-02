@@ -41,12 +41,17 @@ export type LegacyLevel =
   | 'FFS_D'
   | 'FTD_1'
   | 'FTD_2'
+  | 'FTD_3'
+  | 'FTD_4'
+  | 'FTD_5'
+  | 'FTD_6'
+  | 'FTD_7'
   | 'FNPT_I'
   | 'FNPT_II'
   | 'FNPT_II_MCC'
   | 'BITD'
 
-export type FstdQualificationBasisType = 'EASA_LEGACY_LEVEL' | 'EASA_FCS'
+export type FstdQualificationBasisType = 'EASA_LEGACY_LEVEL' | 'EASA_FCS' | 'CCAR_60'
 
 export interface Fstd {
   id: string

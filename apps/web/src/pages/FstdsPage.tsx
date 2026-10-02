@@ -60,7 +60,10 @@ const QTG_DOCUMENT_TYPES: QtgDocumentType[] = ['SOC', 'VDR', 'MQTG']
 const LEGACY_LEVELS: LegacyLevel[] = [
   'FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD',
 ]
-const QUALIFICATION_BASIS_TYPES: FstdQualificationBasisType[] = ['EASA_LEGACY_LEVEL', 'EASA_FCS']
+// CCAR-60 第60.71条: FFS A-D, FTD 1-7
+const CCAR_60_LEVELS: LegacyLevel[] = ['FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FTD_3', 'FTD_4', 'FTD_5', 'FTD_6', 'FTD_7']
+const QUALIFICATION_BASIS_TYPES: FstdQualificationBasisType[] = ['EASA_LEGACY_LEVEL', 'EASA_FCS', 'CCAR_60']
+const BASIS_TAG_COLOR: Record<FstdQualificationBasisType, string> = { EASA_LEGACY_LEVEL: 'blue', EASA_FCS: 'purple', CCAR_60: 'red' }
 const FCS_CHARACTERISTICS: FcsCharacteristic[] = [
   'FDK', 'CLH', 'CLO', 'SYS', 'GND', 'IGE', 'OGE', 'SND', 'VIB', 'MTN', 'VIS', 'NAV', 'ATM', 'OST',
 ]
@@ -712,7 +715,7 @@ export function FstdsPage() {
               {
                 title: t('fstdsPage.columnQualificationBasis'),
                 dataIndex: 'qualificationBasisType',
-                render: (v: FstdQualificationBasisType) => <Tag color={v === 'EASA_FCS' ? 'purple' : 'blue'}>{v}</Tag>,
+                render: (v: FstdQualificationBasisType) => <Tag color={BASIS_TAG_COLOR[v]}>{v}</Tag>,
               },
               {
                 title: t('fstdsPage.columnLegacyLevel'),
@@ -1206,7 +1209,7 @@ export function FstdsPage() {
       )}
 
       <Modal title={t('fstdsPage.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
-        <Form form={form} layout="vertical" initialValues={{ qualificationBasisType: 'EASA_LEGACY_LEVEL' }}>
+        <Form form={form} layout="vertical" initialValues={{ qualificationBasisType: isCaac ? 'CCAR_60' : 'EASA_LEGACY_LEVEL' }}>
           <Form.Item name="deviceCode" label={t('fstdsPage.fieldDeviceCode')} rules={[{ required: true }]}>
             <Input placeholder={t('fstdsPage.fieldDeviceCodePlaceholder')} />
           </Form.Item>
@@ -1218,20 +1221,24 @@ export function FstdsPage() {
           </Form.Item>
           <Form.Item name="qualificationBasisType" label={t('fstdsPage.fieldQualificationBasis')} rules={[{ required: true }]}>
             <Select
+              onChange={() => form.setFieldValue('legacyLevel', undefined)}
               options={QUALIFICATION_BASIS_TYPES.map((v) => ({
                 value: v,
-                label: v === 'EASA_FCS' ? t('fstdsPage.qualificationBasisFcsOption') : t('fstdsPage.qualificationBasisLegacyOption'),
+                label: t(v === 'EASA_FCS' ? 'fstdsPage.qualificationBasisFcsOption' : v === 'CCAR_60' ? 'fstdsPage.qualificationBasisCcarOption' : 'fstdsPage.qualificationBasisLegacyOption'),
               }))}
             />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.qualificationBasisType !== cur.qualificationBasisType}>
-            {({ getFieldValue }) =>
-              getFieldValue('qualificationBasisType') !== 'EASA_FCS' && (
-                <Form.Item name="legacyLevel" label={t('fstdsPage.fieldLegacyLevel')}>
-                  <Select allowClear options={LEGACY_LEVELS.map((v) => ({ value: v, label: v }))} />
+            {({ getFieldValue }) => {
+              const basis = getFieldValue('qualificationBasisType') as FstdQualificationBasisType
+              if (basis === 'EASA_FCS') return null
+              const ccar = basis === 'CCAR_60'
+              return (
+                <Form.Item name="legacyLevel" label={t(ccar ? 'fstdsPage.fieldCcarLevel' : 'fstdsPage.fieldLegacyLevel')}>
+                  <Select allowClear options={(ccar ? CCAR_60_LEVELS : LEGACY_LEVELS).map((v) => ({ value: v, label: v }))} />
                 </Form.Item>
               )
-            }
+            }}
           </Form.Item>
           {isCaac && (
             <Form.Item noStyle shouldUpdate={(prev, cur) => prev.deviceType !== cur.deviceType}>

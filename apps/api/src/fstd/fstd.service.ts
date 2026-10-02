@@ -113,6 +113,21 @@ export const FSTD_PRE_FLIGHT_CHECK_ITEMS = [
 
 const PRE_FLIGHT_CHECK_WINDOW_DAYS = 7;
 
+/// 各鉴定基础允许的等级: EASA legacy 为 CS-FSTD(A) Issue 2 的 FFS A-D / FTD 1-2 / FNPT / BITD;
+/// CCAR-60 为 FFS A-D / FTD 1-7 (第60.71条)。EASA_FCS 体系不按等级鉴定, 保留既有的宽松处理(存量设备可同时记 legacy 等级)。
+const CCAR_60_LEVELS: LegacyLevel[] = ['FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FTD_3', 'FTD_4', 'FTD_5', 'FTD_6', 'FTD_7'];
+const EASA_LEGACY_LEVELS: LegacyLevel[] = ['FFS_A', 'FFS_B', 'FFS_C', 'FFS_D', 'FTD_1', 'FTD_2', 'FNPT_I', 'FNPT_II', 'FNPT_II_MCC', 'BITD'];
+
+function assertLevelMatchesBasis(basis: FstdQualificationBasisType, level: LegacyLevel | undefined) {
+  if (!level) return;
+  if (basis === 'CCAR_60' && !CCAR_60_LEVELS.includes(level)) {
+    throw new BadRequestException(`CCAR-60 鉴定基础下等级只能是 FFS A-D 或 FTD 1-7, 不能是 ${level}`);
+  }
+  if (basis === 'EASA_LEGACY_LEVEL' && !EASA_LEGACY_LEVELS.includes(level)) {
+    throw new BadRequestException(`EASA legacy 鉴定基础下不能使用等级 ${level} (FTD 3-7 仅适用于 CCAR-60)`);
+  }
+}
+
 /// CCAR-60第60.19条: 合格证有效期档位。方向与EASA相反——建立QMS后有效期更长, 未建立则更短,
 /// 而非EASA"12个月为标准、24/36个月需专门申请延期"的例外逻辑。
 /// (a)款: 模拟大型飞机(多发、公共航空运输)的FFS, 单独档位 12/6个月。
@@ -161,6 +176,7 @@ export class FstdService {
     qualificationBasisType?: FstdQualificationBasisType;
     isLargeAircraftPublicTransport?: boolean;
   }) {
+    assertLevelMatchesBasis(data.qualificationBasisType ?? 'EASA_LEGACY_LEVEL', data.legacyLevel);
     return this.prisma.fstd
       .create({
         data: {
@@ -480,10 +496,11 @@ export class FstdService {
     const fstd = await this.prisma.fstd.findUnique({ where: { id: fstdId } });
     if (!fstd) throw new NotFoundException(`FSTD ${fstdId} not found`);
 
-    if (fstd.qualificationBasisType === 'EASA_LEGACY_LEVEL') {
+    // legacy 与 CCAR-60 都按"已鉴定训练科目清单"二元判定; 只有 EASA_FCS 走训练矩阵
+    if (fstd.qualificationBasisType !== 'EASA_FCS') {
       const task = await this.prisma.fstdQualifiedTask.findFirst({ where: { fstdId, taskCode } });
       return {
-        basis: 'EASA_LEGACY_LEVEL',
+        basis: fstd.qualificationBasisType,
         canStartTraining: !!task,
         canCompleteTraining: !!task,
         reason: task ? undefined : `设备未鉴定训练科目 ${taskCode}`,

@@ -724,6 +724,7 @@ model InfoSecurityIncident {
 enum FstdQualificationBasisType {
   EASA_LEGACY_LEVEL
   EASA_FCS // 二期/三期启用
+  CCAR_60 // 中国民航局 CCAR-60 鉴定: 等级为 FFS A-D / FTD 1-7, 能力按已鉴定科目清单二元判定(与 legacy 同一分支)
 }
 
 enum FstdDeviceType {
@@ -777,6 +778,11 @@ enum LegacyLevel {
   FFS_D
   FTD_1
   FTD_2
+  FTD_3 // FTD 3-7 仅用于 CCAR_60 鉴定基础 (CCAR-60 第60.71条)
+  FTD_4
+  FTD_5
+  FTD_6
+  FTD_7
   FNPT_I
   FNPT_II
   FNPT_II_MCC
