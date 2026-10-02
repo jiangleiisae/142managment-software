@@ -147,10 +147,10 @@ model ChangeRequest {
 
 /// 记录保存策略引擎配置表 (需求清单 3.9)
 model RecordRetentionPolicy {
-  id              String   @id @default(cuid())
-  documentType    String   @unique // 如 "student_training_record" / "fstd_mqtg" / "audit_finding"
+  id              String  @id @default(cuid())
+  documentType    String  @unique // 如 "student_training_record" / "fstd_mqtg" / "audit_finding"
   retentionMonths Int? // null = 永久保存 (如 MQTG/初始鉴定记录)
-  anchorEvent     String   @default("created_at") // 保存期起算点: "created_at" | "enrollment_completed_at"
+  anchorEvent     String  @default("created_at") // 保存期起算点: "created_at" | "enrollment_completed_at"
   basisRegulation String? // 法规依据, 如 "ORA.ATO.120"
   description     String?
 
@@ -175,49 +175,53 @@ enum RegulatoryStandard {
 }
 
 model Organization {
-  id                  String             @id @default(cuid())
-  tenantId            String
-  type                OrganizationType   @default(EASA_ATO)
-  regulatoryStandard  RegulatoryStandard @default(EASA)
-  name                String
-  address             String?
-  competentAuthority  String? // 主管当局名称
-  isComplexOrg        Boolean            @default(false) // AMC1 ORA.GEN.200(b) 复杂/非复杂机构判定
-  complexOrgReason    String? // 触发复杂机构判定的具体原因 (>20FTE / FFS训练 / MP / ZFTT / 多场地 等)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  id                 String             @id @default(cuid())
+  tenantId           String
+  type               OrganizationType   @default(EASA_ATO)
+  regulatoryStandard RegulatoryStandard @default(EASA)
+  name               String
+  address            String?
+  competentAuthority String? // 主管当局名称
+  isComplexOrg       Boolean            @default(false) // AMC1 ORA.GEN.200(b) 复杂/非复杂机构判定
+  complexOrgReason   String? // 触发复杂机构判定的具体原因 (>20FTE / FFS训练 / MP / ZFTT / 多场地 等)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  tenant               Tenant                @relation(fields: [tenantId], references: [id])
-  certificates         OrganizationCertificate[]
-  applicationRecords   ApplicationRecord[]
-  personnelAssignments PersonnelRoleAssignment[]
-  fstds                Fstd[]
-  courses              Course[]
-  students             Student[]
-  hazards              HazardRegisterEntry[]
-  auditSchedules       AuditSchedule[]
-  occurrenceReports    OccurrenceReport[]
-  contracts            ContractRecord[]
-  bookings             Booking[]
-  spareParts           SparePart[]
-  tools                Tool[]
-  suppliers            Supplier[]
-  purchaseOrders       PurchaseOrder[]
-  safetyPolicies             SafetyPolicy[]
-  managementOfChanges        ManagementOfChange[]
-  emergencyResponsePlans     EmergencyResponsePlan[]
+  tenant                      Tenant                       @relation(fields: [tenantId], references: [id])
+  certificates                OrganizationCertificate[]
+  applicationRecords          ApplicationRecord[]
+  personnelAssignments        PersonnelRoleAssignment[]
+  fstds                       Fstd[]
+  courses                     Course[]
+  students                    Student[]
+  hazards                     HazardRegisterEntry[]
+  auditSchedules              AuditSchedule[]
+  occurrenceReports           OccurrenceReport[]
+  contracts                   ContractRecord[]
+  bookings                    Booking[]
+  spareParts                  SparePart[]
+  tools                       Tool[]
+  suppliers                   Supplier[]
+  purchaseOrders              PurchaseOrder[]
+  safetyPolicies              SafetyPolicy[]
+  managementOfChanges         ManagementOfChange[]
+  emergencyResponsePlans      EmergencyResponsePlan[]
   safetyPerformanceIndicators SafetyPerformanceIndicator[]
-  safetyReviewBoardMeetings  SafetyReviewBoardMeeting[]
-  informationAssets    InformationAsset[]
-  infoSecurityIncidents InfoSecurityIncident[]
-  selfReviews          OrganisationalSelfReview[]
-  fstdQms              FstdQms?
-  bookingCustomers     BookingCustomer[]
-  partDemandRequests   PartDemandRequest[]
-  stocktakeSessions    StocktakeSession[]
-  warehouses           Warehouse[]
-  partTypeConfigs      PartTypeConfig[]
-  pmChecklistTemplates PmChecklistTemplate[]
+  safetyReviewBoardMeetings   SafetyReviewBoardMeeting[]
+  informationAssets           InformationAsset[]
+  infoSecurityIncidents       InfoSecurityIncident[]
+  selfReviews                 OrganisationalSelfReview[]
+  fstdQms                     FstdQms?
+  bookingCustomers            BookingCustomer[]
+  shiftTypes                  ShiftType[]
+  rosterGroups                RosterGroup[]
+  rosterMembers               RosterMember[]
+  rosterEntries               RosterEntry[]
+  partDemandRequests          PartDemandRequest[]
+  stocktakeSessions           StocktakeSession[]
+  warehouses                  Warehouse[]
+  partTypeConfigs             PartTypeConfig[]
+  pmChecklistTemplates        PmChecklistTemplate[]
 
   @@map("organizations")
 }
@@ -267,35 +271,35 @@ enum CertificateStatus {
 
 /// 对应 EASA Form 143 模板 (ORA.ATO批准证书)
 model OrganizationCertificate {
-  id               String            @id @default(cuid())
-  organizationId   String
-  certificateNo    String
-  issuedAuthority  String
-  regulationBasis  String            @default("Regulation (EU) No 1178/2011")
-  approvalScope    String // 批准范围声明文本
-  status           CertificateStatus @default(ACTIVE)
-  issuedAt         DateTime
-  suspendedAt      DateTime?
-  revokedAt        DateTime?
-  terminatedAt     DateTime?
-  statusReason     String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id              String            @id @default(cuid())
+  organizationId  String
+  certificateNo   String
+  issuedAuthority String
+  regulationBasis String            @default("Regulation (EU) No 1178/2011")
+  approvalScope   String // 批准范围声明文本
+  status          CertificateStatus @default(ACTIVE)
+  issuedAt        DateTime
+  suspendedAt     DateTime?
+  revokedAt       DateTime?
+  terminatedAt    DateTime?
+  statusReason    String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  organization         Organization                     @relation(fields: [organizationId], references: [id])
-  courseApprovals      TrainingCourseApprovalAttachment[]
+  organization    Organization                       @relation(fields: [organizationId], references: [id])
+  courseApprovals TrainingCourseApprovalAttachment[]
 
   @@map("organization_certificates")
 }
 
 /// 证书附件: 课程批准列表, 比证书本身更新更频繁 (一对多)
 model TrainingCourseApprovalAttachment {
-  id             String   @id @default(cuid())
-  certificateId  String
-  courseId       String
+  id                String    @id @default(cuid())
+  certificateId     String
+  courseId          String
   approvedFstdCodes String[] // 可用FSTD清单 (字母代码)
-  approvedAt     DateTime @default(now())
-  revokedAt      DateTime?
+  approvedAt        DateTime  @default(now())
+  revokedAt         DateTime?
 
   certificate OrganizationCertificate @relation(fields: [certificateId], references: [id])
   course      Course                  @relation(fields: [courseId], references: [id])
@@ -305,18 +309,18 @@ model TrainingCourseApprovalAttachment {
 
 /// ORA.ATO.105 申请材料
 model ApplicationRecord {
-  id                    String   @id @default(cuid())
-  organizationId        String
-  isChangeApplication   Boolean  @default(false) // 首次申请 vs 变更申请(仅需提交变更相关部分)
-  proposedStartDate     DateTime?
-  headOfTrainingInfo    Json?
-  trainingSitesJson     Json? // 训练场地清单
-  aircraftListJson      Json? // 航空器清单: 机型/注册号/所有人/适航证类别
-  fstdListJson          Json?
-  courseTypesJson       Json?
-  operationsManualRef   String?
-  trainingManualRef     String?
-  submittedAt           DateTime @default(now())
+  id                  String    @id @default(cuid())
+  organizationId      String
+  isChangeApplication Boolean   @default(false) // 首次申请 vs 变更申请(仅需提交变更相关部分)
+  proposedStartDate   DateTime?
+  headOfTrainingInfo  Json?
+  trainingSitesJson   Json? // 训练场地清单
+  aircraftListJson    Json? // 航空器清单: 机型/注册号/所有人/适航证类别
+  fstdListJson        Json?
+  courseTypesJson     Json?
+  operationsManualRef String?
+  trainingManualRef   String?
+  submittedAt         DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -361,36 +365,36 @@ model HazardRegisterEntry {
   affectedArea   String? // 涉及运行环节: 训练科目/FSTD/场地
   createdAt      DateTime @default(now())
 
-  organization    Organization      @relation(fields: [organizationId], references: [id])
+  organization    Organization     @relation(fields: [organizationId], references: [id])
   riskAssessments RiskAssessment[]
 
   @@map("hazard_register_entries")
 }
 
 model RiskAssessment {
-  id               String   @id @default(cuid())
-  hazardId         String
-  probabilityLevel Int
-  severityLevel    Int
-  riskScore        Int
+  id                 String   @id @default(cuid())
+  hazardId           String
+  probabilityLevel   Int
+  severityLevel      Int
+  riskScore          Int
   existingMitigation String?
   residualRiskLevel  Int?
-  assessedAt       DateTime @default(now())
+  assessedAt         DateTime @default(now())
 
-  hazard    HazardRegisterEntry @relation(fields: [hazardId], references: [id])
-  mitigations MitigationAction[]
+  hazard                     HazardRegisterEntry  @relation(fields: [hazardId], references: [id])
+  mitigations                MitigationAction[]
   changesUsingThisAssessment ManagementOfChange[]
 
   @@map("risk_assessments")
 }
 
 model MitigationAction {
-  id               String    @id @default(cuid())
-  riskAssessmentId String
-  description      String
+  id                     String    @id @default(cuid())
+  riskAssessmentId       String
+  description            String
   responsiblePersonnelId String?
-  dueDate          DateTime?
-  status           String    @default("open") // open / in_progress / closed
+  dueDate                DateTime?
+  status                 String    @default("open") // open / in_progress / closed
 
   riskAssessment RiskAssessment @relation(fields: [riskAssessmentId], references: [id])
 
@@ -423,16 +427,16 @@ enum MocStatus {
 }
 
 model ManagementOfChange {
-  id                  String    @id @default(cuid())
-  organizationId      String
-  changeDescription   String // 新课程/新设备/新场地等
-  status              MocStatus @default(DRAFT)
-  riskAssessmentId    String? // 变更前风险评估, 必须存在才能进入实施阶段
-  implementationPlan  String?
-  implementedAt       DateTime?
-  verificationNotes   String?
-  verifiedAt          DateTime?
-  createdAt           DateTime  @default(now())
+  id                 String    @id @default(cuid())
+  organizationId     String
+  changeDescription  String // 新课程/新设备/新场地等
+  status             MocStatus @default(DRAFT)
+  riskAssessmentId   String? // 变更前风险评估, 必须存在才能进入实施阶段
+  implementationPlan String?
+  implementedAt      DateTime?
+  verificationNotes  String?
+  verifiedAt         DateTime?
+  createdAt          DateTime  @default(now())
 
   organization   Organization    @relation(fields: [organizationId], references: [id])
   riskAssessment RiskAssessment? @relation(fields: [riskAssessmentId], references: [id])
@@ -569,7 +573,7 @@ model AuditSchedule {
 }
 
 model AuditTask {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   auditScheduleId String
   auditorId       String? // 必须独立于被审核职能
   scope           String
@@ -583,12 +587,12 @@ model AuditTask {
 }
 
 model Finding {
-  id           String   @id @default(cuid())
-  auditTaskId  String
-  level        Int // 1 或 2, 对应 ARA.GEN.350
-  description  String
-  rootCause    String?
-  createdAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  auditTaskId String
+  level       Int // 1 或 2, 对应 ARA.GEN.350
+  description String
+  rootCause   String?
+  createdAt   DateTime @default(now())
 
   auditTask         AuditTask          @relation(fields: [auditTaskId], references: [id])
   correctiveActions CorrectiveAction[]
@@ -597,13 +601,13 @@ model Finding {
 }
 
 model CorrectiveAction {
-  id                 String    @id @default(cuid())
-  findingId          String
-  planDescription    String
+  id                     String    @id @default(cuid())
+  findingId              String
+  planDescription        String
   responsiblePersonnelId String?
-  dueDate            DateTime?
-  status             String    @default("open") // open / verifying / closed
-  closedAt           DateTime?
+  dueDate                DateTime?
+  status                 String    @default("open") // open / verifying / closed
+  closedAt               DateTime?
 
   finding Finding @relation(fields: [findingId], references: [id])
 
@@ -646,7 +650,7 @@ model InformationAsset {
   description      String?
   createdAt        DateTime             @default(now())
 
-  organization    Organization                  @relation(fields: [organizationId], references: [id])
+  organization    Organization                 @relation(fields: [organizationId], references: [id])
   riskAssessments InfoSecurityRiskAssessment[]
   incidents       InfoSecurityIncident[]
 
@@ -664,7 +668,7 @@ model InfoSecurityRiskAssessment {
   residualRiskLevel Int?
   assessedAt        DateTime @default(now())
 
-  asset       InformationAsset                @relation(fields: [assetId], references: [id])
+  asset       InformationAsset               @relation(fields: [assetId], references: [id])
   mitigations InfoSecurityMitigationAction[]
 
   @@map("info_security_risk_assessments")
@@ -727,35 +731,35 @@ enum FstdDeviceType {
 }
 
 model Fstd {
-  id                    String                     @id @default(cuid())
-  organizationId        String
-  deviceCode            String // 设备编号
-  serialNumber          String?
-  representedAircraft   String // 代表机型/机型组
-  deviceType            FstdDeviceType
-  qualificationBasisType FstdQualificationBasisType @default(EASA_LEGACY_LEVEL)
-  qualificationBasisVersion String? // 初始鉴定采用的标准版本, 后续周期性鉴定持续沿用
-  location              String?
-  status                String                     @default("active") // active / deactivated / relocating / decommissioned
-  isLargeAircraftPublicTransport Boolean           @default(false) // CCAR-60第60.19条(a)款: 模拟大型飞机(多发、公共航空运输)的FFS适用独立的有效期档位(12/6个月), 区别于(b)款其他FSTD的24/36或12/18个月档位
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
+  id                             String                     @id @default(cuid())
+  organizationId                 String
+  deviceCode                     String // 设备编号
+  serialNumber                   String?
+  representedAircraft            String // 代表机型/机型组
+  deviceType                     FstdDeviceType
+  qualificationBasisType         FstdQualificationBasisType @default(EASA_LEGACY_LEVEL)
+  qualificationBasisVersion      String? // 初始鉴定采用的标准版本, 后续周期性鉴定持续沿用
+  location                       String?
+  status                         String                     @default("active") // active / deactivated / relocating / decommissioned
+  isLargeAircraftPublicTransport Boolean                    @default(false) // CCAR-60第60.19条(a)款: 模拟大型飞机(多发、公共航空运输)的FFS适用独立的有效期档位(12/6个月), 区别于(b)款其他FSTD的24/36或12/18个月档位
+  createdAt                      DateTime                   @default(now())
+  updatedAt                      DateTime                   @updatedAt
 
-  organization    Organization         @relation(fields: [organizationId], references: [id])
-  legacyLevel     FstdLegacyLevel?
-  qualifiedTasks  FstdQualifiedTask[]
-  fcsCapabilities FstdFcsCapability[]
+  organization                Organization                 @relation(fields: [organizationId], references: [id])
+  legacyLevel                 FstdLegacyLevel?
+  qualifiedTasks              FstdQualifiedTask[]
+  fcsCapabilities             FstdFcsCapability[]
   equipmentSpecificationLists EquipmentSpecificationList[]
-  recurrentEvals  FstdRecurrentEvaluation[]
-  safetyFacilityChecks FstdSafetyFacilityCheck[]
-  preFlightChecks FstdPreFlightCheck[]
-  groundings      FstdGrounding[]
-  discrepancies   DiscrepancyLog[]
-  qtgDocuments    FstdQtgDocument[]
-  qtgQuarterlyRuns FstdQtgQuarterlyRun[]
-  performanceMetrics FstdPerformanceMetric[]
-  faultyPartRecords FaultyPartRecord[]
-  pmTasks         PmTask[]
+  recurrentEvals              FstdRecurrentEvaluation[]
+  safetyFacilityChecks        FstdSafetyFacilityCheck[]
+  preFlightChecks             FstdPreFlightCheck[]
+  groundings                  FstdGrounding[]
+  discrepancies               DiscrepancyLog[]
+  qtgDocuments                FstdQtgDocument[]
+  qtgQuarterlyRuns            FstdQtgQuarterlyRun[]
+  performanceMetrics          FstdPerformanceMetric[]
+  faultyPartRecords           FaultyPartRecord[]
+  pmTasks                     PmTask[]
 
   @@unique([organizationId, deviceCode])
   @@map("fstds")
@@ -786,10 +790,10 @@ model FstdLegacyLevel {
 
 /// 已鉴定任务清单 (连接设备与训练), 一期用课程直接挂钩等级的方式, 训练矩阵留待FCS体系(三期)
 model FstdQualifiedTask {
-  id          String  @id @default(cuid())
-  fstdId      String
-  taskCode    String // 训练科目编号
-  taskName    String
+  id                  String  @id @default(cuid())
+  fstdId              String
+  taskCode            String // 训练科目编号
+  taskName            String
   requiresSpecialAuth Boolean @default(false)
 
   fstd Fstd @relation(fields: [fstdId], references: [id])
@@ -894,14 +898,14 @@ model TrainingMatrixEntry {
 }
 
 model FstdRecurrentEvaluation {
-  id            String    @id @default(cuid())
-  fstdId        String
-  periodStart   DateTime
-  periodEnd     DateTime
-  evaluationType String   @default("standard") // standard / extended
-  result        String?   // pass / fail / partial
-  nextDueDate   DateTime?
-  createdAt     DateTime  @default(now())
+  id             String    @id @default(cuid())
+  fstdId         String
+  periodStart    DateTime
+  periodEnd      DateTime
+  evaluationType String    @default("standard") // standard / extended
+  result         String? // pass / fail / partial
+  nextDueDate    DateTime?
+  createdAt      DateTime  @default(now())
 
   fstd Fstd @relation(fields: [fstdId], references: [id])
 
@@ -1086,27 +1090,27 @@ enum RetentionCategory {
 
 /// 缺陷/故障处理 (吸收FAA 30天规则 + Kiosk交互模式)
 model DiscrepancyLog {
-  id              String    @id @default(cuid())
-  fstdId          String
-  reportedById    String? // Personnel.id, 也可来自Kiosk匿名报障
-  reportedAt      DateTime  @default(now())
-  description     String
-  isMmi           Boolean   @default(false) // Missing/Malfunctioning/Inoperative
-  severityRating  Int? // Kiosk打分 1-5, 5为最严重 (对标Simorg)
+  id                      String             @id @default(cuid())
+  fstdId                  String
+  reportedById            String? // Personnel.id, 也可来自Kiosk匿名报障
+  reportedAt              DateTime           @default(now())
+  description             String
+  isMmi                   Boolean            @default(false) // Missing/Malfunctioning/Inoperative
+  severityRating          Int? // Kiosk打分 1-5, 5为最严重 (对标Simorg)
   trainingTimeLostMinutes Int? // Kiosk记录培训损失时间(分钟)
-  correctiveAction String?
-  correctedById   String?
-  correctedAt     DateTime?
-  status          String    @default("open") // open / corrected
-  dueDate         DateTime? // 默认报告时间+30天 (吸收FAA §60.25规则)
-  retentionCategory      RetentionCategory?
-  retentionJustification String? // 保留理由说明
-  retentionApprovedById  String? // Personnel.id
-  retentionApprovedAt    DateTime?
-  retentionExpiresAt     DateTime? // 保留有效期, 到期需重新评估(到期后即使有分级也恢复阻断)
+  correctiveAction        String?
+  correctedById           String?
+  correctedAt             DateTime?
+  status                  String             @default("open") // open / corrected
+  dueDate                 DateTime? // 默认报告时间+30天 (吸收FAA §60.25规则)
+  retentionCategory       RetentionCategory?
+  retentionJustification  String? // 保留理由说明
+  retentionApprovedById   String? // Personnel.id
+  retentionApprovedAt     DateTime?
+  retentionExpiresAt      DateTime? // 保留有效期, 到期需重新评估(到期后即使有分级也恢复阻断)
 
-  fstd Fstd @relation(fields: [fstdId], references: [id])
-  partMovements PartMovement[]
+  fstd              Fstd               @relation(fields: [fstdId], references: [id])
+  partMovements     PartMovement[]
   faultyPartRecords FaultyPartRecord[]
 
   @@map("discrepancy_logs")
@@ -1135,21 +1139,21 @@ model PartTypeConfig {
 }
 
 model SparePart {
-  id             String   @id @default(cuid())
-  organizationId String
-  partNumber     String
-  name           String
-  compatibleWith String? // 按配置树关联使用类型, 一期简化为文本描述, 如 "A320 FFS" / "通用"
-  partCategory   String  @default("CONSUMABLE") // 引用同机构 PartTypeConfig.code, 内置"CONSUMABLE"/"ROTABLE"外机构可自行扩展
-  unit           String  @default("pcs")
-  minQuantity    Int     @default(0)
-  currentQuantity Int    @default(0)
-  location       String? // 存放位置(仓库货架编号), 区别于 PartMovement.usageLocation(安装使用位置)
-  requiresInspection       Boolean @default(false) // 是否要求入库检测/定期检测 (吸收天津飞安实践: 备件检测区别于tool校准计划)
+  id                       String   @id @default(cuid())
+  organizationId           String
+  partNumber               String
+  name                     String
+  compatibleWith           String? // 按配置树关联使用类型, 一期简化为文本描述, 如 "A320 FFS" / "通用"
+  partCategory             String   @default("CONSUMABLE") // 引用同机构 PartTypeConfig.code, 内置"CONSUMABLE"/"ROTABLE"外机构可自行扩展
+  unit                     String   @default("pcs")
+  minQuantity              Int      @default(0)
+  currentQuantity          Int      @default(0)
+  location                 String? // 存放位置(仓库货架编号), 区别于 PartMovement.usageLocation(安装使用位置)
+  requiresInspection       Boolean  @default(false) // 是否要求入库检测/定期检测 (吸收天津飞安实践: 备件检测区别于tool校准计划)
   inspectionIntervalMonths Int? // 定期检测间隔月数, requiresInspection=true时生效
-  createdAt      DateTime @default(now())
+  createdAt                DateTime @default(now())
 
-  organization      Organization        @relation(fields: [organizationId], references: [id])
+  organization       Organization           @relation(fields: [organizationId], references: [id])
   movements          PartMovement[]
   purchaseOrderItems PurchaseOrderItem[]
   faultyPartRecords  FaultyPartRecord[]
@@ -1245,36 +1249,36 @@ enum PartMovementType {
 
 /// 备件出入库记录, currentQuantity 由此累计得出
 model PartMovement {
-  id                  String           @id @default(cuid())
-  sparePartId         String
-  type                PartMovementType
-  quantity            Int // ADJUSTMENT 可为负数表示盘亏
+  id                   String           @id @default(cuid())
+  sparePartId          String
+  type                 PartMovementType
+  quantity             Int // ADJUSTMENT 可为负数表示盘亏
   relatedDiscrepancyId String? // 可关联到消耗该备件的缺陷维修记录, 形成"缺陷→领用备件"追溯链 (吸收天津飞安实践)
-  warehouseId         String? // 发生本次出入库的仓库(可选); 提供时同步更新该仓库的WarehouseStock明细
-  usageLocation       String? // 安装使用位置(如"FFS-01视景系统机柜"), 区别于SparePart.location(存放位置/货架编号)
-  note                String?
-  performedAt         DateTime         @default(now())
+  warehouseId          String? // 发生本次出入库的仓库(可选); 提供时同步更新该仓库的WarehouseStock明细
+  usageLocation        String? // 安装使用位置(如"FFS-01视景系统机柜"), 区别于SparePart.location(存放位置/货架编号)
+  note                 String?
+  performedAt          DateTime         @default(now())
 
-  sparePart         SparePart        @relation(fields: [sparePartId], references: [id])
+  sparePart          SparePart       @relation(fields: [sparePartId], references: [id])
   relatedDiscrepancy DiscrepancyLog? @relation(fields: [relatedDiscrepancyId], references: [id])
-  warehouse         Warehouse?       @relation(fields: [warehouseId], references: [id])
-  loanFor           PartLoan?        @relation("LoanMovement")
-  returnFor         PartLoan?        @relation("ReturnMovement")
+  warehouse          Warehouse?      @relation(fields: [warehouseId], references: [id])
+  loanFor            PartLoan?       @relation("LoanMovement")
+  returnFor          PartLoan?       @relation("ReturnMovement")
 
   @@map("part_movements")
 }
 
 model Tool {
-  id                       String   @id @default(cuid())
-  organizationId           String
-  toolCode                 String
-  name                     String
-  category                 String?
-  location                 String?
-  calibrationIntervalMonths Int     @default(12)
-  createdAt                DateTime @default(now())
+  id                        String   @id @default(cuid())
+  organizationId            String
+  toolCode                  String
+  name                      String
+  category                  String?
+  location                  String?
+  calibrationIntervalMonths Int      @default(12)
+  createdAt                 DateTime @default(now())
 
-  organization Organization             @relation(fields: [organizationId], references: [id])
+  organization Organization            @relation(fields: [organizationId], references: [id])
   calibrations ToolCalibrationRecord[]
 
   @@unique([organizationId, toolCode])
@@ -1282,13 +1286,13 @@ model Tool {
 }
 
 model ToolCalibrationRecord {
-  id            String    @id @default(cuid())
-  toolId        String
-  calibratedAt  DateTime
-  result        String    @default("pass") // pass / fail
-  nextDueDate   DateTime?
-  performedBy   String?
-  createdAt     DateTime  @default(now())
+  id           String    @id @default(cuid())
+  toolId       String
+  calibratedAt DateTime
+  result       String    @default("pass") // pass / fail
+  nextDueDate  DateTime?
+  performedBy  String?
+  createdAt    DateTime  @default(now())
 
   tool Tool @relation(fields: [toolId], references: [id])
 
@@ -1302,8 +1306,8 @@ model Supplier {
   serviceCategory String?
   contactInfo     String?
 
-  organization    Organization     @relation(fields: [organizationId], references: [id])
-  purchaseOrders  PurchaseOrder[]
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+  purchaseOrders    PurchaseOrder[]
   faultyPartRecords FaultyPartRecord[]
 
   @@map("suppliers")
@@ -1326,16 +1330,16 @@ model PurchaseOrder {
   approvedAt     DateTime?
   receivedAt     DateTime?
 
-  organization Organization        @relation(fields: [organizationId], references: [id])
-  supplier     Supplier            @relation(fields: [supplierId], references: [id])
-  items        PurchaseOrderItem[]
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  items          PurchaseOrderItem[]
   demandRequests PartDemandRequest[]
 
   @@map("purchase_orders")
 }
 
 model PurchaseOrderItem {
-  id              String  @id @default(cuid())
+  id              String @id @default(cuid())
   purchaseOrderId String
   sparePartId     String
   quantity        Int
@@ -1454,7 +1458,7 @@ model StocktakeSession {
 }
 
 model StocktakeItem {
-  id                 String   @id @default(cuid())
+  id                 String  @id @default(cuid())
   stocktakeSessionId String
   sparePartId        String
   systemQuantity     Int // 开始盘点时的账面库存快照
@@ -1485,6 +1489,8 @@ model Personnel {
   instructorProfile InstructorProfile?
   qualifications    QualificationRecord[]
   user              User?
+  rosterMemberships RosterMember[]
+  rosterEntries     RosterEntry[]
 
   @@map("personnel")
 }
@@ -1498,11 +1504,11 @@ enum InstructorType {
 }
 
 model InstructorProfile {
-  id           String         @id @default(cuid())
-  personnelId  String         @unique
+  id             String         @id @default(cuid())
+  personnelId    String         @unique
   instructorType InstructorType
 
-  personnel       Personnel                   @relation(fields: [personnelId], references: [id])
+  personnel       Personnel                  @relation(fields: [personnelId], references: [id])
   initialTraining InstructorInitialTraining?
 
   @@map("instructor_profiles")
@@ -1510,15 +1516,15 @@ model InstructorProfile {
 
 /// CCAR-142第142.61条(c)款: 教员初始聘任前应完成的≥8小时地面训练(7个科目)并通过笔试, 一次性建档(非周期性记录)
 model InstructorInitialTraining {
-  id                   String    @id @default(cuid())
-  instructorProfileId  String    @unique
-  completedAt          DateTime? // 培训完成日期; 为空视为未完成
-  totalHours           Float? // 实际完成的地面训练小时数, 须≥8
-  itemsJson            Json      @default("[]") // [{ item, completed }, ...] (142.61(c)(1)-(7) 7个科目)
-  writtenExamPassed    Boolean   @default(false)
-  writtenExamDate      DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  instructorProfileId String    @unique
+  completedAt         DateTime? // 培训完成日期; 为空视为未完成
+  totalHours          Float? // 实际完成的地面训练小时数, 须≥8
+  itemsJson           Json      @default("[]") // [{ item, completed }, ...] (142.61(c)(1)-(7) 7个科目)
+  writtenExamPassed   Boolean   @default(false)
+  writtenExamDate     DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   instructorProfile InstructorProfile @relation(fields: [instructorProfileId], references: [id])
 
@@ -1527,15 +1533,15 @@ model InstructorInitialTraining {
 
 /// 通用证照/资质记录 + 到期提醒 (人员/学员/设备均可复用此模式, 此处聚焦人员)
 model QualificationRecord {
-  id              String    @id @default(cuid())
-  personnelId     String
+  id                String    @id @default(cuid())
+  personnelId       String
   qualificationType String // 执照类型/教员证/考试员证等
-  certificateNo   String?
-  issuingAuthority String?
-  validFrom       DateTime?
-  validUntil      DateTime?
-  reminderSentAt  DateTime?
-  createdAt       DateTime  @default(now())
+  certificateNo     String?
+  issuingAuthority  String?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  reminderSentAt    DateTime?
+  createdAt         DateTime  @default(now())
 
   personnel Personnel @relation(fields: [personnelId], references: [id])
 
@@ -1568,10 +1574,10 @@ model Course {
   updatedAt      DateTime   @updatedAt
 
   organization      Organization                       @relation(fields: [organizationId], references: [id])
-  trainingProgramme  TrainingProgramme?
-  courseApprovals    TrainingCourseApprovalAttachment[]
-  enrollments        Enrollment[]
-  requirements       CourseRequirement[]
+  trainingProgramme TrainingProgramme?
+  courseApprovals   TrainingCourseApprovalAttachment[]
+  enrollments       Enrollment[]
+  requirements      CourseRequirement[]
 
   @@map("courses")
 }
@@ -1579,13 +1585,13 @@ model Course {
 /// 课程对训练科目的要求 (旧体系: 课程直接与设备等级/科目挂钩, 需求清单3.3.3/3.6)
 /// taskCode 与 FstdQualifiedTask.taskCode 使用同一套科目编号体系, 用于校验某设备是否满足课程全部要求
 model CourseRequirement {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   courseId String
   taskCode String
   taskName String
   minHours Float?
 
-  course Course @relation(fields: [courseId], references: [id])
+  course          Course           @relation(fields: [courseId], references: [id])
   trainingRecords TrainingRecord[]
 
   @@map("course_requirements")
@@ -1593,11 +1599,11 @@ model CourseRequirement {
 
 /// ORA.ATO.125 训练大纲
 model TrainingProgramme {
-  id              String  @id @default(cuid())
-  courseId        String  @unique
-  stagesJson       Json? // 周/阶段分解表 (CPL/MPL/ATPL类需要)
+  id                String  @id @default(cuid())
+  courseId          String  @unique
+  stagesJson        Json? // 周/阶段分解表 (CPL/MPL/ATPL类需要)
   standardTasksJson Json? // 标准科目清单
-  summary         String?
+  summary           String?
 
   course Course @relation(fields: [courseId], references: [id])
 
@@ -1609,13 +1615,13 @@ model TrainingProgramme {
 // ============================================================
 
 model Student {
-  id                    String    @id @default(cuid())
-  organizationId        String
-  firstName             String
-  lastName              String
-  licenceNo             String?
-  medicalCertExpiry     DateTime? // ORA.ATO.120(c) 强制记录字段, 训练前置条件校验依赖此字段
-  createdAt             DateTime  @default(now())
+  id                String    @id @default(cuid())
+  organizationId    String
+  firstName         String
+  lastName          String
+  licenceNo         String?
+  medicalCertExpiry DateTime? // ORA.ATO.120(c) 强制记录字段, 训练前置条件校验依赖此字段
+  createdAt         DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
   enrollments  Enrollment[]
@@ -1624,15 +1630,15 @@ model Student {
 }
 
 model Enrollment {
-  id           String    @id @default(cuid())
-  studentId    String
-  courseId     String
-  enrolledAt   DateTime  @default(now())
-  completedAt  DateTime?
-  status       String    @default("active") // active / completed / withdrawn
+  id          String    @id @default(cuid())
+  studentId   String
+  courseId    String
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  status      String    @default("active") // active / completed / withdrawn
 
-  student Student @relation(fields: [studentId], references: [id])
-  course  Course  @relation(fields: [courseId], references: [id])
+  student         Student          @relation(fields: [studentId], references: [id])
+  course          Course           @relation(fields: [courseId], references: [id])
   trainingRecords TrainingRecord[]
 
   @@map("enrollments")
@@ -1697,7 +1703,7 @@ model Booking {
   examinerName   String? // 检查员/公司评估员姓名, 自由文本 (熟练检查、考试类训练填写)
   trainingType   String? // 训练类型, 自由文本 (如"定期飞行模拟机复训（CRM）"、"熟练检查"); 与taskCode不同, 不参与设备能力校验
   contactPhone   String?
-  revenue        Decimal? @db.Decimal(12, 2) // 该次排班产生的收入, 自由填写 (不做财务对账用途)
+  revenue        Decimal?            @db.Decimal(12, 2) // 该次排班产生的收入, 自由填写 (不做财务对账用途)
   notes          String?
   createdAt      DateTime            @default(now())
 
@@ -1705,4 +1711,91 @@ model Booking {
 
   @@index([resourceType, resourceId, startAt])
   @@map("bookings")
+}
+
+// ---- 人员班表 (R2): 班次配置、班组、班表 ----
+
+enum ShiftCategory {
+  WORK // 工作班次, 计入工时
+  BUSINESS_TRIP // 出差
+  SICK_LEAVE // 病假
+  COMPENSATORY_LEAVE // 倒休
+  ANNUAL_LEAVE // 年假
+  OTHER // 其他
+}
+
+/// 机构级班次: 工作班次有起止时间 (北京时间, endsNextDay 表示次日结束, 如 E晚班 17:00→次日08:30), 非工作班次没有
+model ShiftType {
+  id                        String        @id @default(cuid())
+  organizationId            String
+  code                      String // 班次代码, 如 M/E/D, 机构内唯一
+  name                      String
+  category                  ShiftCategory
+  startTime                 String? // "HH:mm", 仅工作班次
+  endTime                   String? // "HH:mm", 仅工作班次
+  endsNextDay               Boolean       @default(false)
+  restMinutes               Int           @default(0) // 休息时长, 计工时时扣除
+  color                     String // #RRGGBB
+  generatesMaintenanceTasks Boolean       @default(false) // 是否生成维护任务 (出单联动属于 R4b, 这里只记录配置)
+  description               String?
+  sortOrder                 Int           @default(0)
+  isActive                  Boolean       @default(true)
+  createdAt                 DateTime      @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  entries      RosterEntry[]
+
+  @@unique([organizationId, code])
+  @@map("shift_types")
+}
+
+/// 项目组/班组: 机构内给班表人员分组展示与统计
+model RosterGroup {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  members      RosterMember[]
+
+  @@unique([organizationId, name])
+  @@map("roster_groups")
+}
+
+/// 进入某机构班表的人员 (Personnel 是租户级档案, 不一定都排班)
+model RosterMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  personnelId    String
+  groupId        String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  personnel    Personnel    @relation(fields: [personnelId], references: [id])
+  group        RosterGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, personnelId])
+  @@map("roster_members")
+}
+
+/// 某人某日(北京时间日历日)的班次; 一人一天最多一条
+model RosterEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  personnelId    String
+  date           DateTime @db.Date
+  shiftTypeId    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  personnel    Personnel    @relation(fields: [personnelId], references: [id])
+  shiftType    ShiftType    @relation(fields: [shiftTypeId], references: [id])
+
+  @@unique([organizationId, personnelId, date])
+  @@index([organizationId, date])
+  @@map("roster_entries")
 }

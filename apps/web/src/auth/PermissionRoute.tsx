@@ -5,10 +5,10 @@ import { useAuth } from './AuthContext'
 import type { Permission } from '../api/users'
 
 /// 路由级权限守卫: 用于防止STAFF账户绕过菜单直接输入URL访问无权限的模块
-export function PermissionRoute({ permission }: { permission: Permission }) {
+export function PermissionRoute({ permission }: { permission: Permission | Permission[] }) {
   const { t } = useTranslation()
   const { hasPermission } = useAuth()
-  if (!hasPermission(permission)) {
+  if (![permission].flat().some((p) => hasPermission(p))) {
     return <Result status="403" title={t('common.noAccessTitle')} subTitle={t('common.noAccessSubtitle')} />
   }
   return <Outlet />
