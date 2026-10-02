@@ -52,6 +52,13 @@ const POLICY_SEED: Array<{
     description: 'FSTD安全设施年检记录: 未注明期限, 按5年兜底',
   },
   {
+    documentType: 'fstd_fault_record',
+    retentionMonths: 60,
+    anchorEvent: 'reported_at',
+    basisRegulation: 'AMC1 ORA.GEN.220(b)(d) / CCAR-60 第60.41(a)(4)条',
+    description: 'FSTD故障记录 (缺陷登记及纠正措施): EASA侧未注明期限按5年兜底; CAAC要求至少保留前2年',
+  },
+  {
     documentType: 'compliance_monitoring_finding',
     retentionMonths: 60,
     anchorEvent: 'created_at',
@@ -60,11 +67,30 @@ const POLICY_SEED: Array<{
   },
 ];
 
+/// CAAC最低保存期限 (CCAR-142第142.91条(c)款、CCAR-60第60.41条)。CAAC是在EASA基础上叠加要求而非替换,
+/// 实际执行期限取"EASA策略表"与"CAAC最低要求"中较长者——目前CAAC各项最低期限均短于已配置的EASA期限, 因此不会缩短任何现有保存期限,
+/// 这里的意义是在CAAC机构下明示法规依据, 并防止将来EASA策略被调低时低于CAAC底线。
+const CAAC_MINIMUMS: Record<string, { months: number; basis: string; note: string }> = {
+  student_training_record: { months: 24, basis: 'CCAR-142 第142.91(c)(1)条', note: '学员训练记录: 完成训练、考试或检查后至少2年' },
+  personnel_qualification_record: {
+    months: 24,
+    basis: 'CCAR-142 第142.91(c)(2)条',
+    note: '教员/检查员资质记录: 受雇期间及解雇后2年内; 系统暂无解聘日期字段, 沿用自录入起5年的兜底期限',
+  },
+  fstd_periodic_documentation: {
+    months: 24,
+    basis: 'CCAR-60 第60.41(a)(3)条',
+    note: '客观测试与性能验证结果保存2年; 最近3次或2年定期鉴定结果取较长者',
+  },
+  fstd_fault_record: { months: 24, basis: 'CCAR-60 第60.41(a)(4)条', note: '故障记录本/系统中前2年的故障记录(缺件、故障、纠正措施及日期)' },
+};
+
 export interface RetentionStatusItem {
   documentType: string;
   description: string | null;
   basisRegulation: string | null;
   retentionMonths: number | null;
+  caacMinimum?: { months: number; basis: string; note: string };
   totalCount: number;
   protectedCount: number; // 仍在强制保存期内 (或尚无法计算起算点, 如训练未结课), 禁止删除/归档
   eligibleForArchivalCount: number; // 已满最低保存期, 可以考虑归档 (非强制删除)
@@ -122,16 +148,22 @@ export class RetentionService implements OnModuleInit {
     const policies = await this.listPolicies();
     const byType = new Map(policies.map((p) => [p.documentType, p]));
     const results: RetentionStatusItem[] = [];
+    const hasCaacOrg = (await this.prisma.organization.count({ where: { tenantId, regulatoryStandard: 'CAAC' } })) > 0;
 
     const push = (documentType: string, anchorDates: Array<Date | null>) => {
       const policy = byType.get(documentType);
       if (!policy) return;
-      const { protectedCount, eligibleForArchivalCount } = this.summarize(policy.retentionMonths, anchorDates);
+      const caacMinimum = hasCaacOrg ? CAAC_MINIMUMS[documentType] : undefined;
+      // 取较严者; retentionMonths=null(永久)本身已最严
+      const effectiveMonths =
+        policy.retentionMonths === null || !caacMinimum ? policy.retentionMonths : Math.max(policy.retentionMonths, caacMinimum.months);
+      const { protectedCount, eligibleForArchivalCount } = this.summarize(effectiveMonths, anchorDates);
       results.push({
         documentType,
         description: policy.description,
         basisRegulation: policy.basisRegulation,
-        retentionMonths: policy.retentionMonths,
+        retentionMonths: effectiveMonths,
+        caacMinimum,
         totalCount: anchorDates.length,
         protectedCount,
         eligibleForArchivalCount,
@@ -174,6 +206,11 @@ export class RetentionService implements OnModuleInit {
       ...socVdrDocs.map((d) => d.createdAt),
       ...quarterlyRuns.map((r) => r.completedAt),
     ]);
+
+    if (hasCaacOrg) {
+      const discrepancies = await this.prisma.discrepancyLog.findMany({ where: { fstd: { organization: { tenantId } } } });
+      push('fstd_fault_record', discrepancies.map((d) => d.reportedAt));
+    }
 
     const findings = await this.prisma.finding.findMany({
       where: { auditTask: { auditSchedule: { organization: { tenantId } } } },

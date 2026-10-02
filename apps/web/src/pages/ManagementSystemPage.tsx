@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag } from 'antd'
+import { Alert, App, Button, Card, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tag, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -410,6 +410,22 @@ export function ManagementSystemPage() {
               render: (v?: number | null) =>
                 v == null ? t('managementSystemPage.retentionLifetime') : t('managementSystemPage.retentionYears', { years: (v / 12).toFixed(1) }),
             },
+            ...(retentionStatus.some((r) => r.caacMinimum)
+              ? [
+                  {
+                    title: t('managementSystemPage.columnCaacMinimum'),
+                    dataIndex: 'caacMinimum',
+                    render: (v?: RetentionStatusItem['caacMinimum']) =>
+                      v ? (
+                        <Tooltip title={`${v.basis}: ${v.note}`}>
+                          <Tag color="blue">{t('managementSystemPage.caacMinimumMonths', { months: v.months })}</Tag>
+                        </Tooltip>
+                      ) : (
+                        '-'
+                      ),
+                  },
+                ]
+              : []),
             { title: t('managementSystemPage.columnTotalCount'), dataIndex: 'totalCount' },
             {
               title: t('managementSystemPage.columnProtectedCount'),

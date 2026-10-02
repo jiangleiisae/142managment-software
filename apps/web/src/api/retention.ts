@@ -14,6 +14,7 @@ export interface RetentionStatusItem {
   description?: string | null
   basisRegulation?: string | null
   retentionMonths?: number | null
+  caacMinimum?: { months: number; basis: string; note: string }
   totalCount: number
   protectedCount: number
   eligibleForArchivalCount: number

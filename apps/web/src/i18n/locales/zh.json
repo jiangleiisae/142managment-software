@@ -585,12 +585,15 @@
       "fstd_initial_qualification": "FSTD初始鉴定文件",
       "fstd_periodic_documentation": "FSTD周期性复检文档",
       "fstd_safety_facility_check": "FSTD安全设施年检记录",
-      "compliance_monitoring_finding": "合规监督记录 (发现项/纠正措施)"
+      "compliance_monitoring_finding": "合规监督记录 (发现项/纠正措施)",
+      "fstd_fault_record": "FSTD故障记录"
     },
     "retentionCardTitle": "记录保存策略 (3.9 跨模块基础设施, 全租户范围)",
     "retentionCardNote": "保存期限来自配置表而非硬编码; 满足最低保存期限前禁止物理删除, 到期后也仅表示\"可归档\"而非自动删除。",
     "columnDocumentType": "记录类型",
     "columnBasisRegulation": "法规依据",
+    "columnCaacMinimum": "CAAC最低要求",
+    "caacMinimumMonths": "≥{{months}}个月",
     "columnRetentionPeriod": "保存期限",
     "retentionLifetime": "设备/记录全生命周期",
     "retentionYears": "{{years}} 年",

@@ -585,12 +585,15 @@
       "fstd_initial_qualification": "FSTD initial qualification document",
       "fstd_periodic_documentation": "FSTD periodic re-evaluation documentation",
       "fstd_safety_facility_check": "FSTD annual safety facility inspection record",
-      "compliance_monitoring_finding": "Compliance monitoring record (findings/corrective actions)"
+      "compliance_monitoring_finding": "Compliance monitoring record (findings/corrective actions)",
+      "fstd_fault_record": "FSTD Fault Records"
     },
     "retentionCardTitle": "Record Retention Policy (3.9 cross-module infrastructure, tenant-wide)",
     "retentionCardNote": "Retention periods come from a configuration table rather than being hardcoded; physical deletion is blocked before the minimum retention period is met, and once it's reached a record is only \"eligible for archival\", never auto-deleted.",
     "columnDocumentType": "Record Type",
     "columnBasisRegulation": "Regulatory Basis",
+    "columnCaacMinimum": "CAAC Minimum",
+    "caacMinimumMonths": "≥{{months}} months",
     "columnRetentionPeriod": "Retention Period",
     "retentionLifetime": "Lifetime of the equipment/record",
     "retentionYears": "{{years}} years",
