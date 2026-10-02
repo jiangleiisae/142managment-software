@@ -153,7 +153,7 @@ describe('bookings import: training plan format', () => {
     expect(res.status).toBe(201);
     expect(res.body.createdCount).toBe(5);
     expect(res.body.errorCount).toBe(2);
-    expect(res.body.missingDevices).toEqual(['NO-SUCH']);
+    expect(res.body.missingDevices).toEqual(['某地/NO-SUCH']);
     expect(res.body.errors.map((e: { row: number }) => e.row)).toEqual([8, 9]);
     expect(res.body.errors[1].message).toContain('时间');
     expect(res.body.warnings).toHaveLength(1);
@@ -177,5 +177,33 @@ describe('bookings import: training plan format', () => {
     expect(toMidnight.endAt).toBe('2026-09-04T16:00:00.000Z');
     expect(byType['熟练检查'].examinerName).toBe('赵检查员');
     expect(fstdB.id).toBeTruthy();
+  });
+
+  it('设备列写法 "FFS#1 B757/767" / "地点/FFS#1" / 大小写空格差异都能匹配到 FFS#1, 但不会误配 FFS#10', async () => {
+    const ffs1 = await createFstd(call, token, org.id, { deviceCode: 'FFS#1', representedAircraft: 'B757/767' });
+    const d = (day: number) => new Date(Date.UTC(2026, 8, day));
+
+    const buffer = await buildTrainingPlanWorkbook([
+      ['FFS#1 B757/767', '训练甲', d(10), '0800-0900', 'A', '教员一', ''],
+      ['天津飞安/FFS#1', '训练乙', d(10), '0900-1000', 'B', '教员二', ''],
+      ['ffs#1  b757/767', '训练丙', d(10), '1000-1100', 'C', '教员三', ''],
+      ['FFS#1B757/767', '训练丁', d(10), '1100-1200', 'D', '教员四', ''],
+      ['FFS#10 B757/767', '训练戊', d(10), '1200-1300', 'E', '教员五', ''],
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .post('/bookings/import-excel')
+      .set('Authorization', `Bearer ${token}`)
+      .field('organizationId', org.id)
+      .attach('file', buffer, { filename: 'plan.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.createdCount).toBe(4);
+    expect(res.body.errorCount).toBe(1);
+    expect(res.body.errors[0].row).toBe(7);
+    expect(res.body.missingDevices).toEqual(['FFS#10 B757/767']);
+
+    const list = await call('GET', `/bookings?resourceType=FSTD&resourceId=${ffs1.id}`, undefined, token);
+    expect(list.body.map((b: { trainingType: string }) => b.trainingType).sort()).toEqual(['训练甲', '训练乙', '训练丙', '训练丁'].sort());
   });
 });

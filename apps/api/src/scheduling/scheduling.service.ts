@@ -96,6 +96,24 @@ function parseTimeRange(value: unknown): { start: { hours: number; minutes: numb
   return { start, end };
 }
 
+/// 表里"训练地点/模拟机编号"一列的写法不固定: "天津飞安/FSD-051"(地点/编号)、"FFS#1 B757/767"(编号 机型)、"FFS#1"等,
+/// 按"设备编号"或"设备编号+代表机型"与已登记的模拟机匹配。顺序: 整串精确匹配 → 按"/"、空白拆出的片段与设备编号精确匹配 →
+/// 以设备编号开头(其后不是数字, 避免 FFS#1 误配 FFS#10)且只有唯一一台设备符合。匹配不上返回 undefined。
+function resolveFstdByLabel<T extends { deviceCode: string; representedAircraft: string }>(raw: string, fstds: T[]): T | undefined {
+  const norm = (v: string) => v.toLowerCase().replace(/\s+/g, '');
+  const whole = norm(raw);
+  const byWhole = fstds.find((f) => whole === norm(f.deviceCode) || whole === norm(f.deviceCode + f.representedAircraft));
+  if (byWhole) return byWhole;
+  const tokens = new Set(raw.split(/[/／\s,，、]+/).map(norm).filter(Boolean));
+  const byToken = fstds.find((f) => tokens.has(norm(f.deviceCode)));
+  if (byToken) return byToken;
+  const prefixed = fstds.filter((f) => {
+    const code = norm(f.deviceCode);
+    return code.length > 0 && whole.startsWith(code) && !/\d/.test(whole.charAt(code.length));
+  });
+  return prefixed.length === 1 ? prefixed[0] : undefined;
+}
+
 /// 训练计划表(如"XX航空B737机型2026年9月模拟机训练计划")的表头识别: 按列名而不是列序号映射, 兼容列顺序不同的变体
 interface TrainingPlanHeader {
   row: number;
@@ -433,7 +451,6 @@ export class SchedulingService {
   /// 因此同一教员/检查员时间重叠只给出警告, 不阻断导入。
   private async importTrainingPlan(tenantId: string, organizationId: string, sheet: ExcelJS.Worksheet, header: TrainingPlanHeader) {
     const fstds = await this.prisma.fstd.findMany({ where: { organizationId } });
-    const fstdByCode = new Map(fstds.map((f) => [f.deviceCode.trim().toLowerCase(), f]));
     const deviceCodeById = new Map(fstds.map((f) => [f.id, f.deviceCode]));
 
     // 标题形如 "奥凯航空B737机型2026年9月模拟机训练计划", 前半段作为客户(航司)名称
@@ -456,12 +473,10 @@ export class SchedulingService {
 
       try {
         if (!deviceRaw) throw new BadRequestException('训练地点/模拟机编号 为必填');
-        // "天津飞安/FSD-051": 斜杠前是训练地点, 后面才是设备编号
-        const deviceCode = deviceRaw.split('/').pop()!.trim();
-        const fstd = fstdByCode.get(deviceCode.toLowerCase()) ?? fstdByCode.get(deviceRaw.trim().toLowerCase());
+        const fstd = resolveFstdByLabel(deviceRaw, fstds);
         if (!fstd) {
-          missingDevices.add(deviceCode);
-          throw new BadRequestException(`找不到设备编号 "${deviceCode}", 请先在「模拟机」模块中添加该设备`);
+          missingDevices.add(deviceRaw);
+          throw new BadRequestException(`找不到模拟机 "${deviceRaw}", 请先在「模拟机」模块中添加该设备 (设备编号需与表中写法一致, 如 FFS#1)`);
         }
 
         const dateVal = parseExcelDate(dateCell);
