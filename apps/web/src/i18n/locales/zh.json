@@ -20,7 +20,8 @@
     "isms": "信息安全 ISMS",
     "users": "用户与权限",
     "auditLogs": "审计轨迹",
-    "help": "使用说明"
+    "help": "使用说明",
+    "trainingPlan": "训练计划"
   },
   "header": {
     "logout": "退出登录"
@@ -1406,5 +1407,41 @@
     "noAccessTitle": "无访问权限",
     "noAccessSubtitle": "您的账户没有该模块的访问权限, 请联系管理员",
     "noAccessAdminOnlySubtitle": "仅管理账户(OWNER/ADMIN)可访问该页面"
+  },
+  "trainingPlan": {
+    "title": "训练计划",
+    "timezoneNote": "所有日期与时间按北京时间显示。计划来自「排班预订」的训练计划表导入或手工预订；计划块按客户着色，未配置颜色的客户使用自动配色。",
+    "tabTotal": "总计划（按日）",
+    "tabDevice": "设备计划（按月）",
+    "instructorPlaceholder": "教员或检查员姓名",
+    "search": "查询",
+    "reset": "重置",
+    "today": "今天",
+    "exportDay": "导出当日",
+    "exportMonth": "导出本月",
+    "exportFailed": "导出失败",
+    "customerConfig": "客户配置",
+    "customerHint": "为每个客户设置计划块颜色。保存时会以列表为准：删除某行只会去掉该客户的配色，不影响已有预订上的客户名称。",
+    "customerName": "客户名称",
+    "addCustomer": "添加客户",
+    "customerSaved": "客户配置已保存",
+    "customerSaveFailed": "保存失败",
+    "save": "保存",
+    "cancel": "取消",
+    "selectDevice": "选择设备",
+    "noDevices": "该机构还没有模拟机，请先在「模拟机」模块中添加",
+    "columnDate": "日期",
+    "columnSessions": "训练安排",
+    "noTrainingType": "(未填训练类型)",
+    "clickForDetail": "点击查看详情",
+    "detailTitle": "训练安排详情",
+    "device": "设备",
+    "trainingType": "训练类型",
+    "time": "时间（北京时间）",
+    "customer": "客户",
+    "trainees": "受训人员",
+    "instructor": "教员",
+    "examiner": "检查员",
+    "notes": "备注"
   }
 }

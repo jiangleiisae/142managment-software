@@ -212,6 +212,7 @@ model Organization {
   infoSecurityIncidents InfoSecurityIncident[]
   selfReviews          OrganisationalSelfReview[]
   fstdQms              FstdQms?
+  bookingCustomers     BookingCustomer[]
   partDemandRequests   PartDemandRequest[]
   stocktakeSessions    StocktakeSession[]
   warehouses           Warehouse[]
@@ -1647,6 +1648,20 @@ enum BookingResourceType {
   FSTD
   CLASSROOM
   INSTRUCTOR
+}
+
+/// 训练计划视图的"客户配置": 机构级维护客户名称与计划块配色。目前只是颜色标签, 与预订按 customerName 文本对应, 不是独立客户实体
+model BookingCustomer {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  color          String // #RRGGBB
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, name])
+  @@map("booking_customers")
 }
 
 model Booking {

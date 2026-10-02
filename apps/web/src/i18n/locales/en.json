@@ -20,7 +20,8 @@
     "isms": "Information Security (ISMS)",
     "users": "Users & Permissions",
     "auditLogs": "Audit Trail",
-    "help": "Help"
+    "help": "Help",
+    "trainingPlan": "Training Plan"
   },
   "header": {
     "logout": "Log out"
@@ -1406,5 +1407,41 @@
     "noAccessTitle": "Access Denied",
     "noAccessSubtitle": "Your account does not have access to this module. Please contact an administrator.",
     "noAccessAdminOnlySubtitle": "Only administrator accounts (OWNER/ADMIN) can access this page"
+  },
+  "trainingPlan": {
+    "title": "Training Plan",
+    "timezoneNote": "All dates and times are shown in China Standard Time (UTC+8). Plans come from the training plan sheet import or manual bookings; blocks are coloured by customer, with an automatic colour for customers that have none configured.",
+    "tabTotal": "Overall (by day)",
+    "tabDevice": "Per device (by month)",
+    "instructorPlaceholder": "Instructor or examiner name",
+    "search": "Search",
+    "reset": "Reset",
+    "today": "Today",
+    "exportDay": "Export day",
+    "exportMonth": "Export month",
+    "exportFailed": "Export failed",
+    "customerConfig": "Customers",
+    "customerHint": "Set a block colour for each customer. Saving replaces the list: removing a row only removes that customer's colour and does not change customer names on existing bookings.",
+    "customerName": "Customer name",
+    "addCustomer": "Add customer",
+    "customerSaved": "Customer settings saved",
+    "customerSaveFailed": "Save failed",
+    "save": "Save",
+    "cancel": "Cancel",
+    "selectDevice": "Select device",
+    "noDevices": "This organization has no simulators yet. Add one in the FSTD module first.",
+    "columnDate": "Date",
+    "columnSessions": "Sessions",
+    "noTrainingType": "(no training type)",
+    "clickForDetail": "Click for details",
+    "detailTitle": "Session details",
+    "device": "Device",
+    "trainingType": "Training type",
+    "time": "Time (China time)",
+    "customer": "Customer",
+    "trainees": "Trainees",
+    "instructor": "Instructor",
+    "examiner": "Examiner",
+    "notes": "Notes"
   }
 }

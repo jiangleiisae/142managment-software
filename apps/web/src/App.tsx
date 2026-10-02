@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { AuditLogPage } from './pages/AuditLogPage'
 import { BookingsPage } from './pages/BookingsPage'
+import { TrainingPlanPage } from './pages/TrainingPlanPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
 import { HelpPage } from './pages/HelpPage'
@@ -52,6 +53,7 @@ function App() {
           </Route>
           <Route element={<PermissionRoute permission="SCHEDULING" />}>
             <Route path="/bookings" element={<BookingsPage />} />
+            <Route path="/training-plan" element={<TrainingPlanPage />} />
           </Route>
           {/* Kiosk故障报告面向任何在场人员开放, 不受模块权限限制, 与后端 @SkipPermissionCheck() 一致 */}
           <Route path="/kiosk" element={<KioskPage />} />

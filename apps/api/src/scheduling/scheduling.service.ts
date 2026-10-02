@@ -124,6 +124,7 @@ interface TrainingPlanHeader {
   trainees?: number;
   instructor?: number;
   examiner?: number;
+  customer?: number;
 }
 
 function findTrainingPlanHeader(sheet: ExcelJS.Worksheet): TrainingPlanHeader | undefined {
@@ -139,6 +140,7 @@ function findTrainingPlanHeader(sheet: ExcelJS.Worksheet): TrainingPlanHeader | 
       else if (text.includes('受训')) cols.trainees = colNumber;
       else if (text === '教员') cols.instructor = colNumber;
       else if (text.includes('检查员')) cols.examiner = colNumber;
+      else if (text === '客户' || text.includes('客户名称')) cols.customer = colNumber;
     });
     if (cols.device && cols.date && cols.time) return { row: r, ...cols } as TrainingPlanHeader;
   }
@@ -348,6 +350,103 @@ export class SchedulingService {
     return booking;
   }
 
+  private requireOrganizationId(organizationId: string | undefined): string {
+    if (!organizationId) throw new BadRequestException('缺少 organizationId');
+    return organizationId;
+  }
+
+  /// 训练计划视图: 机构内与 [from, to) 有重叠的模拟机预订, 可按设备、教员(教员或检查员姓名包含)筛选。
+  /// 不返回收入/联系电话等商业字段, 计划视图用不到。
+  listPlan(organizationId: string | undefined, from: string, to: string, resourceId?: string, instructor?: string) {
+    const orgId = this.requireOrganizationId(organizationId);
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) throw new BadRequestException('from/to 必须是有效的日期时间');
+    if (fromDate >= toDate) throw new BadRequestException('from 必须早于 to');
+    if (toDate.getTime() - fromDate.getTime() > 93 * 24 * 60 * 60 * 1000) throw new BadRequestException('查询范围不能超过93天');
+    const keyword = instructor?.trim();
+    return this.prisma.booking.findMany({
+      where: {
+        organizationId: orgId,
+        resourceType: 'FSTD',
+        status: 'confirmed',
+        startAt: { lt: toDate },
+        endAt: { gt: fromDate },
+        ...(resourceId ? { resourceId } : {}),
+        ...(keyword
+          ? { OR: [{ instructorName: { contains: keyword, mode: 'insensitive' as const } }, { examinerName: { contains: keyword, mode: 'insensitive' as const } }] }
+          : {}),
+      },
+      omit: { revenue: true, contactPhone: true },
+      orderBy: { startAt: 'asc' },
+    });
+  }
+
+  listCustomers(organizationId: string | undefined) {
+    return this.prisma.bookingCustomer.findMany({ where: { organizationId: this.requireOrganizationId(organizationId) }, orderBy: { name: 'asc' } });
+  }
+
+  /// 整体保存客户配置: 提交列表里没有的客户会被移除 (只影响配色, 已有预订上的客户名称文本不受影响)
+  async setCustomers(tenantId: string, organizationId: string, customers: { name: string; color: string }[]) {
+    const normalized = customers.map((c) => ({ name: c.name.trim(), color: c.color.toLowerCase() }));
+    const names = normalized.map((c) => c.name);
+    if (names.some((n) => !n)) throw new BadRequestException('客户名称不能为空');
+    if (new Set(names).size !== names.length) throw new BadRequestException('客户名称不能重复');
+    const before = await this.listCustomers(organizationId);
+    await this.prisma.$transaction([
+      this.prisma.bookingCustomer.deleteMany({ where: { organizationId, name: { notIn: names } } }),
+      ...normalized.map((c) =>
+        this.prisma.bookingCustomer.upsert({
+          where: { organizationId_name: { organizationId, name: c.name } },
+          create: { organizationId, name: c.name, color: c.color },
+          update: { color: c.color },
+        }),
+      ),
+    ]);
+    const after = await this.listCustomers(organizationId);
+    await this.auditLog.write(tenantId, 'BookingCustomer', organizationId, 'set', before, after);
+    return after;
+  }
+
+  /// 导出训练计划为 Excel, 版式与"训练计划表导入"一致(可原样再导入), 日期/时间按北京时间输出。
+  async exportPlan(organizationId: string | undefined, from: string, to: string, resourceId?: string, instructor?: string): Promise<Buffer> {
+    const orgId = this.requireOrganizationId(organizationId);
+    const bookings = await this.listPlan(orgId, from, to, resourceId, instructor);
+    const fstds = await this.prisma.fstd.findMany({ where: { organizationId: orgId } });
+    const fstdById = new Map(fstds.map((f) => [f.id, f]));
+    const local = (d: Date) => new Date(d.getTime() + 8 * 60 * 60 * 1000);
+    const two = (n: number) => String(n).padStart(2, '0');
+    const hhmm = (d: Date) => `${two(d.getUTCHours())}${two(d.getUTCMinutes())}`;
+    const ymd = (d: Date) => `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`;
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('训练计划');
+    sheet.addRow([`模拟机训练计划 ${ymd(local(new Date(from)))} ~ ${ymd(local(new Date(new Date(to).getTime() - 1)))}`]);
+    sheet.addRow(['训练地点/模拟机编号', '训练类型', '日期', '时间', '受训人员', '教员', '检查员/公司评估员', '客户']);
+    for (const b of bookings) {
+      const start = local(b.startAt);
+      const end = local(b.endAt);
+      const fstd = fstdById.get(b.resourceId);
+      const crossesMidnight = ymd(end) > ymd(start);
+      const endText = crossesMidnight && end.getUTCHours() === 0 && end.getUTCMinutes() === 0 ? '2400' : hhmm(end);
+      const row = sheet.addRow([
+        fstd ? `${fstd.deviceCode} ${fstd.representedAircraft}` : b.resourceId,
+        b.trainingType ?? '',
+        new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())),
+        `${hhmm(start)}-${endText}`,
+        b.pilotName ?? '',
+        b.instructorName ?? '',
+        b.examinerName ?? '',
+        b.customerName ?? '',
+      ]);
+      row.getCell(3).numFmt = 'yyyy-mm-dd';
+    }
+    [24, 34, 12, 12, 26, 12, 18, 16].forEach((width, i) => {
+      sheet.getColumn(i + 1).width = width;
+    });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
   findByResource(resourceType: BookingResourceType, resourceId: string, tenantId: string) {
     return this.prisma.booking.findMany({
       where: { resourceType, resourceId, status: 'confirmed', organization: { tenantId } },
@@ -506,7 +605,7 @@ export class SchedulingService {
           resourceId: fstd.id,
           startAt: startAt.toISOString(),
           endAt: endAt.toISOString(),
-          customerName,
+          customerName: (header.customer ? cellText(row.getCell(header.customer).value) : undefined) ?? customerName,
           pilotName: header.trainees ? cellText(row.getCell(header.trainees).value) : undefined,
           instructorName,
           examinerName,
