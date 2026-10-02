@@ -4,6 +4,14 @@
 # native binding with no prebuilt musl/alpine binary, so python3/make/g++ are needed to compile
 # it from source. ----
 FROM node:24-alpine AS deps
+# 默认使用 npmmirror 镜像: 生产服务器在中国大陆, 直连 registry.npmjs.org / nodejs.org / binaries.prisma.sh
+# 经常超时或中断。ENV 会被下游的 build / prod-deps 阶段继承。在可直连官方源的环境构建时可覆盖:
+#   docker compose build --build-arg NPM_REGISTRY=https://registry.npmjs.org
+#   (同理可覆盖 NODEJS_ORG_MIRROR=https://nodejs.org/dist 与 PRISMA_ENGINES_MIRROR=https://binaries.prisma.sh)
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG NODEJS_ORG_MIRROR=https://npmmirror.com/mirrors/node
+ARG PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+ENV NPM_CONFIG_REGISTRY=$NPM_REGISTRY NODEJS_ORG_MIRROR=$NODEJS_ORG_MIRROR PRISMA_ENGINES_MIRROR=$PRISMA_ENGINES_MIRROR
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./

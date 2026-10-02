@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 
 FROM node:24-alpine AS build
+# 默认使用 npmmirror 镜像 (原因见 apps/api/Dockerfile), 可用 --build-arg NPM_REGISTRY=... 覆盖
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV NPM_CONFIG_REGISTRY=$NPM_REGISTRY
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

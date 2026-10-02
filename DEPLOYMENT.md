@@ -69,6 +69,8 @@ tar --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='upload
 ssh <部署用户>@<服务器IP> "cd ~/tcms && sudo docker compose up -d --build"
 ```
 
+镜像构建默认走 npmmirror (npm 包、Node 头文件、Prisma 引擎都从国内镜像下载), 配置在 `apps/api/Dockerfile` 和 `apps/web/Dockerfile` 里, 已提交进仓库, 解压覆盖代码不会丢失; 在能直连官方源的环境构建时可用 `--build-arg NPM_REGISTRY=...` 等参数覆盖。
+
 `migrate` 服务会在每次 `up` 时自动重新运行 `prisma migrate deploy` (对已应用的迁移是幂等的, 只会应用新增的迁移)。
 
 ### 回滚
