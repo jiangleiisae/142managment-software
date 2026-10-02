@@ -25,7 +25,15 @@
     "grounding": "停飞日历",
     "reports": "统计报表",
     "roster": "人员班表",
-    "duty": "值班日志"
+    "duty": "值班日志",
+    "group": {
+      "compliance": "合规管理",
+      "fstd": "模拟机管理",
+      "training": "人员与培训",
+      "scheduling": "排班管理",
+      "records": "工作记录",
+      "system": "系统管理"
+    }
   },
   "header": {
     "logout": "退出登录"

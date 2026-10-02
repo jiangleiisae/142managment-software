@@ -25,7 +25,15 @@
     "grounding": "Grounding Calendar",
     "reports": "Reports",
     "roster": "Roster",
-    "duty": "Duty Log"
+    "duty": "Duty Log",
+    "group": {
+      "compliance": "Compliance",
+      "fstd": "FSTD",
+      "training": "People & Training",
+      "scheduling": "Scheduling",
+      "records": "Work Records",
+      "system": "System"
+    }
   },
   "header": {
     "logout": "Log out"
