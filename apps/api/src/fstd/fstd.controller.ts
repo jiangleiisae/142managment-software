@@ -26,6 +26,7 @@ import { SetFcsCapabilityDto } from './dto/set-fcs-capability.dto.js';
 import { SetPmChecklistTemplateDto } from './dto/set-pm-checklist-template.dto.js';
 import { UpdateFstdDto } from './dto/update-fstd.dto.js';
 import { UpsertFstdQmsDto } from './dto/upsert-fstd-qms.dto.js';
+import { GroundingEntriesDto } from './dto/grounding-entries.dto.js';
 import { FstdService } from './fstd.service.js';
 import { qtgFileUploadOptions } from './qtg-file-storage.js';
 
@@ -98,6 +99,23 @@ export class FstdController {
   @Post('pm-tasks/:taskId/review')
   reviewPmTask(@CurrentUser() user: AuthContext, @Param('taskId') taskId: string, @Body() dto: ReviewPmTaskDto) {
     return this.fstdService.reviewPmTask(taskId, user.tenantId, dto);
+  }
+
+  // ---- 停飞日历 (R3; 单段路径须在 :id 路由之前注册) ----
+
+  @Get('groundings')
+  listGroundings(@Query('organizationId') organizationId: string, @Query('month') month: string) {
+    return this.fstdService.listGroundings(organizationId, month);
+  }
+
+  @Post('groundings')
+  markGroundings(@CurrentUser() user: AuthContext, @Body() dto: GroundingEntriesDto) {
+    return this.fstdService.markGroundings(user.tenantId, dto.organizationId, dto.entries, dto.note);
+  }
+
+  @Post('groundings/cancel')
+  cancelGroundings(@CurrentUser() user: AuthContext, @Body() dto: GroundingEntriesDto) {
+    return this.fstdService.cancelGroundings(user.tenantId, dto.organizationId, dto.entries);
   }
 
   @Get(':id')

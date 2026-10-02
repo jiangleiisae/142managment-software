@@ -193,6 +193,15 @@ export class SchedulingService {
       if (fstd.status !== 'active') {
         throw new BadRequestException(`FSTD ${fstd.deviceCode} 当前状态为 ${fstd.status}, 不可排课`);
       }
+      // 停飞日历: 预订时间段覆盖的任一北京时间日历日被标记停飞则拒绝
+      const localDay = (ms: number) => new Date(Math.floor((ms + 8 * 60 * 60 * 1000) / 86400000) * 86400000);
+      const grounded = await this.prisma.fstdGrounding.findFirst({
+        where: { fstdId: fstd.id, date: { gte: localDay(data.startAt.getTime()), lte: localDay(data.endAt.getTime() - 1) } },
+        orderBy: { date: 'asc' },
+      });
+      if (grounded) {
+        throw new BadRequestException(`FSTD ${fstd.deviceCode} 在 ${grounded.date.toISOString().slice(0, 10)} 已标记停飞, 不可排课`);
+      }
       if (data.taskCode) {
         // 统一能力判定入口 (需求清单3.3.3 can_device_perform_task): 内部按qualificationBasisType自动分流到
         // legacy已鉴定任务清单校验, 或FCS体系的训练矩阵逐特征保真度比对, 排课引擎作为消费方无需关心具体判定逻辑。

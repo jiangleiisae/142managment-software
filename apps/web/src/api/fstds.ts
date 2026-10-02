@@ -268,7 +268,35 @@ export interface PmTaskDueSoonItem {
   nextDueDate?: string | null
 }
 
+export interface GroundingRecord {
+  fstdId: string
+  date: string
+  note?: string | null
+}
+
+export interface GroundingConflict {
+  bookingId: string
+  fstdId: string
+  date: string
+  startAt: string
+  endAt: string
+  trainingType?: string | null
+}
+
 export const fstdsApi = {
+  // ---- 停飞日历 (R3) ----
+
+  listGroundings: (organizationId: string, month: string) =>
+    apiClient.get<GroundingRecord[]>('/fstds/groundings', { params: { organizationId, month } }).then((r) => r.data),
+
+  markGroundings: (organizationId: string, entries: { fstdId: string; date: string }[], note?: string) =>
+    apiClient
+      .post<{ requested: number; created: number; conflictingBookings: GroundingConflict[] }>('/fstds/groundings', { organizationId, entries, note })
+      .then((r) => r.data),
+
+  cancelGroundings: (organizationId: string, entries: { fstdId: string; date: string }[]) =>
+    apiClient.post<{ requested: number; removed: number }>('/fstds/groundings/cancel', { organizationId, entries }).then((r) => r.data),
+
   list: (organizationId: string) => apiClient.get<Fstd[]>('/fstds', { params: { organizationId } }).then((r) => r.data),
 
   get: (id: string) => apiClient.get<Fstd>(`/fstds/${id}`).then((r) => r.data),

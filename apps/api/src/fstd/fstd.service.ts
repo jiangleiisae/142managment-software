@@ -14,6 +14,30 @@ import {
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+const CN_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_GROUNDING_DAYS_AHEAD = 366;
+
+/// 训练中心按北京时间(UTC+8, 无夏令时)划分日历日, 停飞日历也按北京时间的日期记录
+function cnTodayString(): string {
+  return new Date(Date.now() + CN_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/// 把 YYYY-MM-DD 解析为当日 00:00 UTC 的 Date (用于 @db.Date 列); 不是真实存在的日期则抛错
+function parseCalendarDate(date: string): Date {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new BadRequestException(`日期 "${date}" 不是有效的日历日`);
+  }
+  return parsed;
+}
+
+/// 北京时间某日历日对应的 [开始, 结束) UTC 时刻
+function cnDayBounds(date: Date): { start: Date; end: Date } {
+  const start = new Date(date.getTime() - CN_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + DAY_MS) };
+}
+
 const FIDELITY_RANK: Record<FcsFidelityLevel, number> = { N: 0, G: 1, R: 2, S: 3 };
 
 type MissingCharacteristic = { characteristic: FcsCharacteristic; required: FcsFidelityLevel; actual: FcsFidelityLevel | null };
@@ -820,15 +844,90 @@ export class FstdService {
     return this.prisma.fstdPreFlightCheck.findMany({ where: { fstdId }, orderBy: { checkDate: 'desc' } });
   }
 
+// ---- 停飞日历 (R3) ----
+
+  /// 机构内某月(YYYY-MM)的停飞记录 (含过去的历史)
+  async listGroundings(organizationId: string | undefined, month: string) {
+    if (!organizationId) throw new BadRequestException('缺少 organizationId');
+    if (!/^\d{4}-\d{2}$/.test(month)) throw new BadRequestException('month 必须是 YYYY-MM 格式');
+    const start = parseCalendarDate(`${month}-01`);
+    const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    const rows = await this.prisma.fstdGrounding.findMany({
+      where: { fstd: { organizationId }, date: { gte: start, lt: next } },
+      orderBy: [{ date: 'asc' }],
+    });
+    return rows.map((r) => ({ fstdId: r.fstdId, date: r.date.toISOString().slice(0, 10), note: r.note }));
+  }
+
+  private async resolveGroundingEntries(organizationId: string, entries: { fstdId: string; date: string }[], maxAhead: boolean) {
+    const today = cnTodayString();
+    const limit = parseCalendarDate(today).getTime() + MAX_GROUNDING_DAYS_AHEAD * DAY_MS;
+    const parsed = entries.map((e) => ({ fstdId: e.fstdId, date: e.date, dateValue: parseCalendarDate(e.date) }));
+    for (const e of parsed) {
+      if (e.date < today) throw new BadRequestException(`不能修改过去日期(${e.date})的停飞标记, 过去的记录作为历史保留`);
+      if (maxAhead && e.dateValue.getTime() > limit) throw new BadRequestException(`停飞日期(${e.date})超出可标记范围 (最多提前${MAX_GROUNDING_DAYS_AHEAD}天)`);
+    }
+    const ids = [...new Set(parsed.map((e) => e.fstdId))];
+    const owned = await this.prisma.fstd.findMany({ where: { id: { in: ids }, organizationId }, select: { id: true } });
+    if (owned.length !== ids.length) throw new BadRequestException('包含不属于该机构的设备');
+    return parsed;
+  }
+
+  /// 标记停飞 (幂等)。返回已存在的预订冲突供用户处理——这里只提示, 不会自动取消预订。
+  async markGroundings(tenantId: string, organizationId: string, entries: { fstdId: string; date: string }[], note?: string) {
+    const parsed = await this.resolveGroundingEntries(organizationId, entries, true);
+    const created = await this.prisma.fstdGrounding.createMany({
+      data: parsed.map((e) => ({ fstdId: e.fstdId, date: e.dateValue, note })),
+      skipDuplicates: true,
+    });
+    const conflicts = await this.findBookingConflicts(parsed);
+    await this.auditLog.write(tenantId, 'FstdGrounding', organizationId, 'mark', null, { entries, note });
+    return { requested: parsed.length, created: created.count, conflictingBookings: conflicts };
+  }
+
+  /// 取消停飞 (只能取消当天及以后)
+  async cancelGroundings(tenantId: string, organizationId: string, entries: { fstdId: string; date: string }[]) {
+    const parsed = await this.resolveGroundingEntries(organizationId, entries, false);
+    const result = await this.prisma.fstdGrounding.deleteMany({
+      where: { OR: parsed.map((e) => ({ fstdId: e.fstdId, date: e.dateValue })) },
+    });
+    await this.auditLog.write(tenantId, 'FstdGrounding', organizationId, 'cancel', { entries }, null);
+    return { requested: parsed.length, removed: result.count };
+  }
+
+  private async findBookingConflicts(entries: { fstdId: string; date: string; dateValue: Date }[]) {
+    const bounds = entries.map((e) => ({ ...e, ...cnDayBounds(e.dateValue) }));
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        resourceType: 'FSTD',
+        status: 'confirmed',
+        resourceId: { in: [...new Set(entries.map((e) => e.fstdId))] },
+        startAt: { lt: new Date(Math.max(...bounds.map((b) => b.end.getTime()))) },
+        endAt: { gt: new Date(Math.min(...bounds.map((b) => b.start.getTime()))) },
+      },
+      select: { id: true, resourceId: true, startAt: true, endAt: true, trainingType: true },
+    });
+    return bounds.flatMap((b) =>
+      bookings
+        .filter((k) => k.resourceId === b.fstdId && k.startAt < b.end && k.endAt > b.start)
+        .map((k) => ({ bookingId: k.id, fstdId: k.resourceId, date: b.date, startAt: k.startAt, endAt: k.endAt, trainingType: k.trainingType })),
+    );
+  }
+
   /// 找出飞行前功能检查已超过7日未做(或从未做过)的设备——60.37条(a)(3)"每7个连续日历日至少一次"的保底要求
   async findPreFlightChecksDueSoon(tenantId: string, withinDays = 2) {
     const fstds = await this.prisma.fstd.findMany({
       where: { organization: { tenantId }, status: 'active' },
-      include: { preFlightChecks: { orderBy: { checkDate: 'desc' }, take: 1 } },
+      include: {
+        preFlightChecks: { orderBy: { checkDate: 'desc' }, take: 1 },
+        groundings: { where: { date: parseCalendarDate(cnTodayString()) }, select: { id: true } },
+      },
     });
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + withinDays);
     return fstds
+      // 今天处于停飞日历内的设备不再提醒飞行前功能检查超期 (停飞期间设备不使用, 无须检查)
+      .filter((f) => f.groundings.length === 0)
       .filter((f) => {
         const latest = f.preFlightChecks[0];
         return !latest || latest.nextDueDate <= cutoff;

@@ -749,6 +749,7 @@ model Fstd {
   recurrentEvals  FstdRecurrentEvaluation[]
   safetyFacilityChecks FstdSafetyFacilityCheck[]
   preFlightChecks FstdPreFlightCheck[]
+  groundings      FstdGrounding[]
   discrepancies   DiscrepancyLog[]
   qtgDocuments    FstdQtgDocument[]
   qtgQuarterlyRuns FstdQtgQuarterlyRun[]
@@ -1005,6 +1006,21 @@ model FstdPreFlightCheck {
 
   @@unique([fstdId, checkDate])
   @@map("fstd_pre_flight_checks")
+}
+
+/// 停飞日历 (R3): 设备在某个日历日(北京时间)停飞。该日不接受预订, 且不再触发该设备的飞行前功能检查超期告警。
+/// 只能标记当天及以后的日期; 过去的记录作为历史保留, 不可修改。
+model FstdGrounding {
+  id        String   @id @default(cuid())
+  fstdId    String
+  date      DateTime @db.Date
+  note      String?
+  createdAt DateTime @default(now())
+
+  fstd Fstd @relation(fields: [fstdId], references: [id])
+
+  @@unique([fstdId, date])
+  @@map("fstd_groundings")
 }
 
 /// 3.3.10 常规维护(PM)排期: 独立于3.3.4 QTG(按季度滚动)和3.3.5周期性评估(按年/三年)的第三套周期性机制,

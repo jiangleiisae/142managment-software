@@ -21,7 +21,8 @@
     "users": "用户与权限",
     "auditLogs": "审计轨迹",
     "help": "使用说明",
-    "trainingPlan": "训练计划"
+    "trainingPlan": "训练计划",
+    "grounding": "停飞日历"
   },
   "header": {
     "logout": "退出登录"
@@ -1443,5 +1444,25 @@
     "instructor": "教员",
     "examiner": "检查员",
     "notes": "备注"
+  },
+  "grounding": {
+    "intro": "按\"设备 × 日期\"标记停飞（日期按北京时间，只能标记当天及以后；过去的记录作为历史保留，不能修改）。停飞日该设备不能被预订，并且不再提醒\"飞行前功能检查超期\"。点击格子选择，点击设备名选中该设备本月全部可编辑日期，点击日期表头选中当天所有设备。",
+    "noDevices": "该机构还没有模拟机，请先在「模拟机」模块中添加",
+    "device": "设备",
+    "notePlaceholder": "备注（可选，如：年度维护）",
+    "mark": "标记停飞",
+    "cancel": "取消停飞",
+    "clearSelection": "清除选择",
+    "selectedCount": "已选 {{count}} 格",
+    "legendGrounded": "停飞",
+    "legendPast": "过去的停飞记录（只读）",
+    "legendSelected": "已选中",
+    "rowHint": "点击选中/取消该设备本月全部可编辑日期",
+    "cellMark": "停",
+    "marked": "已标记 {{count}} 个停飞日",
+    "cancelled": "已取消 {{count}} 个停飞日",
+    "failed": "操作失败",
+    "conflictTitle": "有 {{count}} 条已有预订落在停飞日内",
+    "conflictHint": "系统不会自动取消这些预订，请到「排班预订」中处理："
   }
 }

@@ -21,7 +21,8 @@
     "users": "Users & Permissions",
     "auditLogs": "Audit Trail",
     "help": "Help",
-    "trainingPlan": "Training Plan"
+    "trainingPlan": "Training Plan",
+    "grounding": "Grounding Calendar"
   },
   "header": {
     "logout": "Log out"
@@ -1443,5 +1444,25 @@
     "instructor": "Instructor",
     "examiner": "Examiner",
     "notes": "Notes"
+  },
+  "grounding": {
+    "intro": "Mark simulators as grounded per device and date (China time; only today and later can be changed, past records are kept as history). A grounded device cannot be booked that day and no longer triggers the \"pre-flight check overdue\" alert. Click a cell to select; click a device name to select all editable days this month for it; click a date header to select that day for all devices.",
+    "noDevices": "This organization has no simulators yet. Add one in the FSTD module first.",
+    "device": "Device",
+    "notePlaceholder": "Note (optional, e.g. annual maintenance)",
+    "mark": "Mark grounded",
+    "cancel": "Cancel grounding",
+    "clearSelection": "Clear selection",
+    "selectedCount": "{{count}} cell(s) selected",
+    "legendGrounded": "Grounded",
+    "legendPast": "Past grounding record (read-only)",
+    "legendSelected": "Selected",
+    "rowHint": "Click to select/deselect all editable days this month for this device",
+    "cellMark": "G",
+    "marked": "{{count}} grounded day(s) marked",
+    "cancelled": "{{count}} grounded day(s) cancelled",
+    "failed": "Operation failed",
+    "conflictTitle": "{{count}} existing booking(s) fall on grounded days",
+    "conflictHint": "These bookings are not cancelled automatically. Please handle them in the Bookings page:"
   }
 }
