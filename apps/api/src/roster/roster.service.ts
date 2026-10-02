@@ -1,13 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ShiftCategory, ShiftType } from '@prisma/client';
+import { Prisma, ShiftCategory } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CN_OFFSET_MS, DAY_MS, shiftGrossMinutes, toMinutes } from './shift-time.js';
 import type { CreateShiftTypeDto, UpdateShiftTypeDto } from './dto/roster.dto.js';
 
-const CN_OFFSET_MS = 8 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 const MAX_STAT_DAYS = 366;
 
 /// 新机构第一次打开班表时自动建立的默认班次 (休息时长默认 0, 可在班次配置里改)
@@ -41,14 +40,6 @@ function monthBounds(month: string | undefined): { first: Date; last: Date; days
   const count = Math.round((next.getTime() - first.getTime()) / DAY_MS);
   const days = Array.from({ length: count }, (_, i) => `${month}-${two(i + 1)}`);
   return { first, last: new Date(next.getTime() - DAY_MS), days };
-}
-
-const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-
-/// 工作班次的总时长(分钟, 含休息)
-export function shiftGrossMinutes(s: Pick<ShiftType, 'startTime' | 'endTime' | 'endsNextDay'>): number {
-  if (!s.startTime || !s.endTime) return 0;
-  return toMinutes(s.endTime) - toMinutes(s.startTime) + (s.endsNextDay ? 1440 : 0);
 }
 
 function validateShift(v: { category: ShiftCategory; startTime?: string | null; endTime?: string | null; endsNextDay?: boolean; restMinutes?: number }) {

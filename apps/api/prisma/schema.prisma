@@ -222,6 +222,7 @@ model Organization {
   warehouses                  Warehouse[]
   partTypeConfigs             PartTypeConfig[]
   pmChecklistTemplates        PmChecklistTemplate[]
+  dutyLogs                    DutyLog[]
 
   @@map("organizations")
 }
@@ -1742,8 +1743,10 @@ model ShiftType {
   isActive                  Boolean       @default(true)
   createdAt                 DateTime      @default(now())
 
-  organization Organization  @relation(fields: [organizationId], references: [id])
-  entries      RosterEntry[]
+  organization    Organization   @relation(fields: [organizationId], references: [id])
+  entries         RosterEntry[]
+  dutyLogs        DutyLog[]
+  handoverTargets DutyHandover[]
 
   @@unique([organizationId, code])
   @@map("shift_types")
@@ -1759,6 +1762,7 @@ model RosterGroup {
 
   organization Organization   @relation(fields: [organizationId], references: [id])
   members      RosterMember[]
+  dutyLogs     DutyLog[]
 
   @@unique([organizationId, name])
   @@map("roster_groups")
@@ -1798,4 +1802,83 @@ model RosterEntry {
   @@unique([organizationId, personnelId, date])
   @@index([organizationId, date])
   @@map("roster_entries")
+}
+
+// ---- 值班日志与交接班 (R4a) ----
+
+enum DutyLogStatus {
+  DRAFT // 填写中, 可编辑
+  SUBMITTED // 已提交, 锁定 (需先撤回才能改); 提交时固化 DR 操作记录快照, 其交接事项才会进入下一班
+}
+
+enum DutyEntryKind {
+  ROUTINE // 常规任务
+  NON_ROUTINE // 非常规任务
+}
+
+/// 某机构某日某班次(可选班组)的一份值班日志; 同一 (机构,日期,班次,班组) 只能有一份。
+/// groupKey = groupId ?? "" , 仅用于让"未分组"也参与唯一约束 (PostgreSQL 的唯一索引不把 NULL 视为相同)
+model DutyLog {
+  id             String        @id @default(cuid())
+  organizationId String
+  date           DateTime      @db.Date // 北京时间日历日
+  shiftTypeId    String
+  groupId        String?
+  groupKey       String        @default("")
+  status         DutyLogStatus @default(DRAFT)
+  engineerIds    String[] // 值班工程师 Personnel.id, 创建时按班表预填, 可改
+  drSnapshotJson Json? // 提交时固化的"本班内故障(DR)操作"
+  createdByEmail String?
+  submittedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  shiftType    ShiftType      @relation(fields: [shiftTypeId], references: [id])
+  group        RosterGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  entries      DutyEntry[]
+  handovers    DutyHandover[]
+
+  @@unique([organizationId, date, shiftTypeId, groupKey])
+  @@index([organizationId, date])
+  @@map("duty_logs")
+}
+
+/// 值班内容: 逐条记录, 区分常规/非常规任务, 可挂到某台设备
+model DutyEntry {
+  id        String        @id @default(cuid())
+  logId     String
+  kind      DutyEntryKind @default(ROUTINE)
+  content   String
+  fstdId    String?
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+
+  log DutyLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+
+  @@index([logId])
+  @@map("duty_entries")
+}
+
+/// 交接事项: 由某份日志(logId)交给目标班次(toDate+toShiftTypeId)。目标默认是下一个工作班次, 可指定。
+/// 未完成(completedAt 为空)的事项会一直出现在之后每个班次的"来自上一班"栏, 直到被标记完成。
+model DutyHandover {
+  id               String    @id @default(cuid())
+  logId            String
+  content          String
+  fstdId           String?
+  toDate           DateTime  @db.Date
+  toShiftTypeId    String
+  toStartAt        DateTime // 目标班次开始时刻(UTC), 用于判断"之后的班次"
+  completedAt      DateTime?
+  completedInLogId String?
+  completedByEmail String?
+  createdAt        DateTime  @default(now())
+
+  log     DutyLog   @relation(fields: [logId], references: [id], onDelete: Cascade)
+  toShift ShiftType @relation(fields: [toShiftTypeId], references: [id])
+
+  @@index([logId])
+  @@index([toStartAt])
+  @@map("duty_handovers")
 }

@@ -8,7 +8,7 @@ describe('roster', () => {
   let call: ApiCall;
   let token: string;
   let org: { id: string };
-  let shifts: Record<string, { id: string; code: string }>;
+  let shifts: Record<string, { id: string; code: string; category?: string }>;
 
   const setCells = (cells: { personnelId: string; date: string }[], shiftTypeId: string | null, t = token) =>
     call('POST', '/roster/entries', { organizationId: org.id, cells, shiftTypeId }, t);

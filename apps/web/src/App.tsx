@@ -10,6 +10,7 @@ import { FstdsPage } from './pages/FstdsPage'
 import { GroundingPage } from './pages/GroundingPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { RosterPage } from './pages/RosterPage'
+import { DutyPage } from './pages/DutyPage'
 import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { IsmsPage } from './pages/IsmsPage'
@@ -62,6 +63,7 @@ function App() {
             <Route path="/bookings" element={<BookingsPage />} />
             <Route path="/training-plan" element={<TrainingPlanPage />} />
             <Route path="/roster" element={<RosterPage />} />
+            <Route path="/duty" element={<DutyPage />} />
           </Route>
           {/* Kiosk故障报告面向任何在场人员开放, 不受模块权限限制, 与后端 @SkipPermissionCheck() 一致 */}
           <Route path="/kiosk" element={<KioskPage />} />

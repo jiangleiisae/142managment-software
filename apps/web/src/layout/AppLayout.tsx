@@ -7,6 +7,7 @@ import {
   ScheduleOutlined,
   BarChartOutlined,
   SolutionOutlined,
+  FormOutlined,
   DesktopOutlined,
   FileSearchOutlined,
   InboxOutlined,
@@ -42,6 +43,7 @@ const menuItems: { key: string; icon: React.ReactNode; labelKey: string; permiss
   { key: '/bookings', icon: <CalendarOutlined />, labelKey: 'menu.bookings', permission: 'SCHEDULING' },
   { key: '/training-plan', icon: <ScheduleOutlined />, labelKey: 'menu.trainingPlan', permission: 'SCHEDULING' },
   { key: '/roster', icon: <SolutionOutlined />, labelKey: 'menu.roster', permission: 'SCHEDULING' },
+  { key: '/duty', icon: <FormOutlined />, labelKey: 'menu.duty', permission: 'SCHEDULING' },
   { key: '/reports', icon: <BarChartOutlined />, labelKey: 'menu.reports', permission: ['FSTD', 'INVENTORY'] },
   { key: '/kiosk', icon: <DesktopOutlined />, labelKey: 'menu.kiosk' }, // 任何在场人员均可使用, 不受模块权限限制
   { key: '/isms', icon: <LockOutlined />, labelKey: 'menu.isms', permission: 'ISMS' },
