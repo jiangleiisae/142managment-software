@@ -206,4 +206,31 @@ describe('bookings import: training plan format', () => {
     const list = await call('GET', `/bookings?resourceType=FSTD&resourceId=${ffs1.id}`, undefined, token);
     expect(list.body.map((b: { trainingType: string }) => b.trainingType).sort()).toEqual(['训练甲', '训练乙', '训练丙', '训练丁'].sort());
   });
+
+  it('固定写法 "设备编号 机型" (如 FFS#2 B777): 匹配到对应设备; 机型与登记不一致时导入但给出提醒', async () => {
+    const ffs2 = await createFstd(call, token, org.id, { deviceCode: 'FFS#2', representedAircraft: 'B777' });
+    const d = (day: number) => new Date(Date.UTC(2026, 8, day));
+
+    const buffer = await buildTrainingPlanWorkbook([
+      ['FFS#2 B777', '训练一', d(11), '0800-1000', 'A', '教员甲', ''],
+      ['FFS#2 B777-300', '训练二', d(11), '1000-1200', 'B', '教员乙', ''],
+      ['FFS#2 B737', '训练三', d(11), '1200-1400', 'C', '教员丙', ''],
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .post('/bookings/import-excel')
+      .set('Authorization', `Bearer ${token}`)
+      .field('organizationId', org.id)
+      .attach('file', buffer, { filename: 'plan.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.createdCount).toBe(3);
+    expect(res.body.errorCount).toBe(0);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0].row).toBe(5);
+    expect(res.body.warnings[0].message).toContain('B777');
+
+    const list = await call('GET', `/bookings?resourceType=FSTD&resourceId=${ffs2.id}`, undefined, token);
+    expect(list.body).toHaveLength(3);
+  });
 });

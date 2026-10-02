@@ -479,6 +479,12 @@ export class SchedulingService {
           throw new BadRequestException(`找不到模拟机 "${deviceRaw}", 请先在「模拟机」模块中添加该设备 (设备编号需与表中写法一致, 如 FFS#1)`);
         }
 
+        // 写成"设备编号 机型"(如 "FFS#2 B777")时, 机型与设备登记的机型对不上多半是写错或选错了设备, 只提醒不阻断
+        const compact = (v: string) => v.toLowerCase().replace(/\s+/g, '');
+        const labelRest = compact(deviceRaw).startsWith(compact(fstd.deviceCode)) ? compact(deviceRaw).slice(compact(fstd.deviceCode).length) : '';
+        const registeredAircraft = compact(fstd.representedAircraft);
+        const aircraftMismatch = labelRest !== '' && !labelRest.includes(registeredAircraft) && !registeredAircraft.includes(labelRest);
+
         const dateVal = parseExcelDate(dateCell);
         const range = parseTimeRange(timeText);
         if (!dateVal) throw new BadRequestException('日期 格式无法识别');
@@ -507,6 +513,13 @@ export class SchedulingService {
           trainingType: header.trainingType ? cellText(row.getCell(header.trainingType).value) : undefined,
         });
         createdCount++;
+
+        if (aircraftMismatch) {
+          warnings.push({
+            row: rowNumber,
+            message: `表中写的是 "${deviceRaw.trim()}", 但设备 ${fstd.deviceCode} 登记的机型是 "${fstd.representedAircraft}", 请确认设备是否选对`,
+          });
+        }
 
         const names = [instructorName, examinerName].filter((n): n is string => !!n);
         if (names.length > 0) {
