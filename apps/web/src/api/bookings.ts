@@ -52,6 +52,14 @@ export const bookingsApi = {
     endAt: string
     studentId?: string
     taskCode?: string
+    trainingType?: string
+    customerName?: string
+    pilotName?: string
+    instructorName?: string
+    examinerName?: string
+    contactPhone?: string
+    revenue?: number
+    notes?: string
   }) => apiClient.post<Booking>('/bookings', data).then((r) => r.data),
 
   cancel: (id: string) => apiClient.post(`/bookings/${id}/cancel`).then((r) => r.data),
