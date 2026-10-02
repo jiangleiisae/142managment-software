@@ -22,6 +22,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { OrganizationModule } from './organization/organization.module.js';
 import { PersonnelModule } from './personnel/personnel.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { StudentModule } from './student/student.module.js';
@@ -50,6 +51,7 @@ import { UserModule } from './user/user.module.js';
     CourseModule,
     StudentModule,
     SchedulingModule,
+    ReportsModule,
     RetentionModule,
     IsmsModule,
     UserModule,

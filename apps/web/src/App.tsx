@@ -8,6 +8,7 @@ import { TrainingPlanPage } from './pages/TrainingPlanPage'
 import { CoursesPage } from './pages/CoursesPage'
 import { FstdsPage } from './pages/FstdsPage'
 import { GroundingPage } from './pages/GroundingPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { IsmsPage } from './pages/IsmsPage'
@@ -40,6 +41,7 @@ function App() {
           <Route element={<PermissionRoute permission="FSTD" />}>
             <Route path="/fstds" element={<FstdsPage />} />
             <Route path="/grounding" element={<GroundingPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
           </Route>
           <Route element={<PermissionRoute permission="INVENTORY" />}>
             <Route path="/inventory" element={<InventoryPage />} />

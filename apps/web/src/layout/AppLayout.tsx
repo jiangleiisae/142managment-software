@@ -5,6 +5,7 @@ import {
   CalendarOutlined,
   StopOutlined,
   ScheduleOutlined,
+  BarChartOutlined,
   DesktopOutlined,
   FileSearchOutlined,
   InboxOutlined,
@@ -28,7 +29,7 @@ import feikenLogoWhite from '../assets/feiken-logo-white.png'
 
 const { Header, Sider, Content } = Layout
 
-const menuItems: { key: string; icon: React.ReactNode; labelKey: string; permission?: Permission }[] = [
+const menuItems: { key: string; icon: React.ReactNode; labelKey: string; permission?: Permission | Permission[] }[] = [
   { key: '/organizations', icon: <ApartmentOutlined />, labelKey: 'menu.organizations', permission: 'ORGANIZATION' },
   { key: '/management-system', icon: <AuditOutlined />, labelKey: 'menu.managementSystem', permission: 'MANAGEMENT_SYSTEM' },
   { key: '/fstds', icon: <RocketOutlined />, labelKey: 'menu.fstds', permission: 'FSTD' },
@@ -39,6 +40,7 @@ const menuItems: { key: string; icon: React.ReactNode; labelKey: string; permiss
   { key: '/students', icon: <UserOutlined />, labelKey: 'menu.students', permission: 'STUDENTS' },
   { key: '/bookings', icon: <CalendarOutlined />, labelKey: 'menu.bookings', permission: 'SCHEDULING' },
   { key: '/training-plan', icon: <ScheduleOutlined />, labelKey: 'menu.trainingPlan', permission: 'SCHEDULING' },
+  { key: '/reports', icon: <BarChartOutlined />, labelKey: 'menu.reports', permission: ['FSTD', 'INVENTORY'] },
   { key: '/kiosk', icon: <DesktopOutlined />, labelKey: 'menu.kiosk' }, // 任何在场人员均可使用, 不受模块权限限制
   { key: '/isms', icon: <LockOutlined />, labelKey: 'menu.isms', permission: 'ISMS' },
 ]
@@ -50,7 +52,7 @@ export function AppLayout() {
   const { user, isAdmin, hasPermission, logout } = useAuth()
 
   const visibleItems: MenuProps['items'] = menuItems
-    .filter((item) => !item.permission || hasPermission(item.permission))
+    .filter((item) => !item.permission || [item.permission].flat().some((p) => hasPermission(p)))
     .map(({ key, icon, labelKey }) => ({ key, icon, label: t(labelKey) }))
 
   if (isAdmin) {
