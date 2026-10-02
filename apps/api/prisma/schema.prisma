@@ -1663,6 +1663,8 @@ model Booking {
   customerName   String? // 航司/客户名称 (商业排班场景, 如外部航司包机培训); 可选, 与上面校验逻辑无关
   pilotName      String? // 飞行员姓名, 自由文本 (不要求关联 Personnel 档案)
   instructorName String? // 教员姓名, 自由文本 (不要求关联 Personnel 档案)
+  examinerName   String? // 检查员/公司评估员姓名, 自由文本 (熟练检查、考试类训练填写)
+  trainingType   String? // 训练类型, 自由文本 (如"定期飞行模拟机复训（CRM）"、"熟练检查"); 与taskCode不同, 不参与设备能力校验
   contactPhone   String?
   revenue        Decimal? @db.Decimal(12, 2) // 该次排班产生的收入, 自由填写 (不做财务对账用途)
   notes          String?

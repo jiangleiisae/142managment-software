@@ -139,6 +139,8 @@ export interface Booking {
   customerName?: string | null
   pilotName?: string | null
   instructorName?: string | null
+  examinerName?: string | null
+  trainingType?: string | null
   contactPhone?: string | null
   revenue?: string | null
   notes?: string | null

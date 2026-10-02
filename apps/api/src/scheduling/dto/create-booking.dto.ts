@@ -45,6 +45,14 @@ export class CreateBookingDto {
 
   @IsOptional()
   @IsString()
+  examinerName?: string;
+
+  @IsOptional()
+  @IsString()
+  trainingType?: string;
+
+  @IsOptional()
+  @IsString()
   contactPhone?: string;
 
   @IsOptional()

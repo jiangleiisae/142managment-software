@@ -57,8 +57,12 @@ function parseExcelTime(value: unknown): { hours: number; minutes: number } | un
 function cellText(value: unknown): string | undefined {
   if (value == null) return undefined;
   if (typeof value === 'object') {
-    // exceljs 富文本单元格 { richText: [...] } 或 { text, hyperlink }
-    const text = (value as { text?: unknown }).text;
+    // exceljs 富文本单元格 { richText: [{ text }, ...] } 或 { text, hyperlink }
+    const { richText, text } = value as { richText?: { text?: unknown }[]; text?: unknown };
+    if (Array.isArray(richText)) {
+      const joined = richText.map((r) => (typeof r.text === 'string' ? r.text : '')).join('').trim();
+      return joined || undefined;
+    }
     return typeof text === 'string' ? text.trim() || undefined : undefined;
   }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -73,6 +77,52 @@ function cellNumber(value: unknown): number | undefined {
   if (typeof value === 'string' && value.trim()) {
     const n = Number(value.replace(/[,\s]/g, ''));
     if (!Number.isNaN(n)) return n;
+  }
+  return undefined;
+}
+
+/// "1800-2200" / "18:00-22:00" / "2010-0010"(跨午夜) / "2000-2400"(24点即次日0点)
+function parseTimeRange(value: unknown): { start: { hours: number; minutes: number }; end: { hours: number; minutes: number } } | undefined {
+  const text = cellText(value)?.replace(/[：:\s]/g, '');
+  const m = text?.match(/^(\d{3,4})[-–—~至](\d{3,4})$/);
+  if (!m) return undefined;
+  const toHm = (digits: string) => {
+    const padded = digits.padStart(4, '0');
+    return { hours: Number(padded.slice(0, 2)), minutes: Number(padded.slice(2)) };
+  };
+  const start = toHm(m[1]);
+  const end = toHm(m[2]);
+  if (start.hours > 23 || end.hours > 24 || start.minutes > 59 || end.minutes > 59) return undefined;
+  return { start, end };
+}
+
+/// 训练计划表(如"XX航空B737机型2026年9月模拟机训练计划")的表头识别: 按列名而不是列序号映射, 兼容列顺序不同的变体
+interface TrainingPlanHeader {
+  row: number;
+  device: number;
+  date: number;
+  time: number;
+  trainingType?: number;
+  trainees?: number;
+  instructor?: number;
+  examiner?: number;
+}
+
+function findTrainingPlanHeader(sheet: ExcelJS.Worksheet): TrainingPlanHeader | undefined {
+  for (let r = 1; r <= Math.min(10, sheet.rowCount); r++) {
+    const cols: Record<string, number> = {};
+    sheet.getRow(r).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const text = cellText(cell.value);
+      if (!text) return;
+      if (text.includes('模拟机编号') || text.includes('训练地点')) cols.device = colNumber;
+      else if (text.includes('训练类型')) cols.trainingType = colNumber;
+      else if (text === '日期') cols.date = colNumber;
+      else if (text === '时间') cols.time = colNumber;
+      else if (text.includes('受训')) cols.trainees = colNumber;
+      else if (text === '教员') cols.instructor = colNumber;
+      else if (text.includes('检查员')) cols.examiner = colNumber;
+    });
+    if (cols.device && cols.date && cols.time) return { row: r, ...cols } as TrainingPlanHeader;
   }
   return undefined;
 }
@@ -241,6 +291,8 @@ export class SchedulingService {
       customerName?: string;
       pilotName?: string;
       instructorName?: string;
+      examinerName?: string;
+      trainingType?: string;
       contactPhone?: string;
       revenue?: number;
       notes?: string;
@@ -267,6 +319,8 @@ export class SchedulingService {
         customerName: data.customerName,
         pilotName: data.pilotName,
         instructorName: data.instructorName,
+        examinerName: data.examinerName,
+        trainingType: data.trainingType,
         contactPhone: data.contactPhone,
         revenue: data.revenue,
         notes: data.notes,
@@ -300,6 +354,10 @@ export class SchedulingService {
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    for (const candidate of workbook.worksheets) {
+      const planHeader = findTrainingPlanHeader(candidate);
+      if (planHeader) return this.importTrainingPlan(tenantId, organizationId, candidate, planHeader);
+    }
     const sheet =
       workbook.worksheets.find((ws) => /schedule|排班/i.test(ws.name)) ?? workbook.worksheets[workbook.worksheets.length - 1];
     if (!sheet) throw new BadRequestException('Excel 文件中未找到可识别的工作表');
@@ -368,5 +426,98 @@ export class SchedulingService {
     }
 
     return { createdCount, errorCount: errors.length, errors };
+  }
+
+  /// 按"训练计划表"格式导入 (受训人员/教员/检查员/日期/时间/训练地点-模拟机编号 一行一场训练): 每行生成一条模拟机预订,
+  /// 复用 create() 的全部校验(设备状态、时间冲突); 单行失败不影响其余行。教员与检查员在系统里是自由文本(不要求关联人员档案),
+  /// 因此同一教员/检查员时间重叠只给出警告, 不阻断导入。
+  private async importTrainingPlan(tenantId: string, organizationId: string, sheet: ExcelJS.Worksheet, header: TrainingPlanHeader) {
+    const fstds = await this.prisma.fstd.findMany({ where: { organizationId } });
+    const fstdByCode = new Map(fstds.map((f) => [f.deviceCode.trim().toLowerCase(), f]));
+    const deviceCodeById = new Map(fstds.map((f) => [f.id, f.deviceCode]));
+
+    // 标题形如 "奥凯航空B737机型2026年9月模拟机训练计划", 前半段作为客户(航司)名称
+    const title = cellText(sheet.getRow(1).getCell(1).value);
+    const customerName = title?.match(/^(.+?)[A-Z]\d{2,4}[A-Z0-9-]*\s*机型/)?.[1]?.trim();
+
+    const errors: { row: number; message: string }[] = [];
+    const warnings: { row: number; message: string }[] = [];
+    const missingDevices = new Set<string>();
+    let createdCount = 0;
+    const CHINA_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+    const formatLocal = (d: Date) => d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+
+    for (let rowNumber = header.row + 1; rowNumber <= sheet.rowCount; rowNumber++) {
+      const row = sheet.getRow(rowNumber);
+      const deviceRaw = cellText(row.getCell(header.device).value);
+      const timeText = cellText(row.getCell(header.time).value);
+      const dateCell = row.getCell(header.date).value;
+      if (!deviceRaw && !timeText && dateCell == null) continue;
+
+      try {
+        if (!deviceRaw) throw new BadRequestException('训练地点/模拟机编号 为必填');
+        // "天津飞安/FSD-051": 斜杠前是训练地点, 后面才是设备编号
+        const deviceCode = deviceRaw.split('/').pop()!.trim();
+        const fstd = fstdByCode.get(deviceCode.toLowerCase()) ?? fstdByCode.get(deviceRaw.trim().toLowerCase());
+        if (!fstd) {
+          missingDevices.add(deviceCode);
+          throw new BadRequestException(`找不到设备编号 "${deviceCode}", 请先在「模拟机」模块中添加该设备`);
+        }
+
+        const dateVal = parseExcelDate(dateCell);
+        const range = parseTimeRange(timeText);
+        if (!dateVal) throw new BadRequestException('日期 格式无法识别');
+        if (!range) throw new BadRequestException(`时间 "${timeText ?? ''}" 格式无法识别 (应为 HHmm-HHmm, 如 0800-1200)`);
+
+        const dayUtc = Date.UTC(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate());
+        const startMs = dayUtc + (range.start.hours * 60 + range.start.minutes) * 60000 - CHINA_UTC_OFFSET_MS;
+        let endMs = dayUtc + (range.end.hours * 60 + range.end.minutes) * 60000 - CHINA_UTC_OFFSET_MS;
+        if (endMs <= startMs) endMs += 24 * 60 * 60 * 1000; // 如 "2010-0010" 跨午夜到次日
+        const startAt = new Date(startMs);
+        const endAt = new Date(endMs);
+
+        const instructorName = header.instructor ? cellText(row.getCell(header.instructor).value) : undefined;
+        const examinerName = header.examiner ? cellText(row.getCell(header.examiner).value) : undefined;
+
+        const booking = await this.create(tenantId, {
+          organizationId,
+          resourceType: 'FSTD',
+          resourceId: fstd.id,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          customerName,
+          pilotName: header.trainees ? cellText(row.getCell(header.trainees).value) : undefined,
+          instructorName,
+          examinerName,
+          trainingType: header.trainingType ? cellText(row.getCell(header.trainingType).value) : undefined,
+        });
+        createdCount++;
+
+        const names = [instructorName, examinerName].filter((n): n is string => !!n);
+        if (names.length > 0) {
+          const clash = await this.prisma.booking.findFirst({
+            where: {
+              organizationId,
+              status: 'confirmed',
+              id: { not: booking.id },
+              startAt: { lt: endAt },
+              endAt: { gt: startAt },
+              OR: [{ instructorName: { in: names } }, { examinerName: { in: names } }],
+            },
+          });
+          if (clash) {
+            const clashDevice = deviceCodeById.get(clash.resourceId) ?? clash.resourceType;
+            warnings.push({
+              row: rowNumber,
+              message: `教员/检查员 ${names.join('、')} 与 ${formatLocal(clash.startAt)} 开始的另一场排班(${clashDevice})时间重叠, 请确认`,
+            });
+          }
+        }
+      } catch (e) {
+        errors.push({ row: rowNumber, message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    return { createdCount, errorCount: errors.length, errors, warnings, missingDevices: [...missingDevices] };
   }
 }

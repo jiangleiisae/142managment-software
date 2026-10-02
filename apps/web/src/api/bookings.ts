@@ -1,6 +1,14 @@
 import { apiClient } from './client'
 import type { Booking, BookingResourceType } from './types'
 
+export interface ImportBookingsResult {
+  createdCount: number
+  errorCount: number
+  errors: { row: number; message: string }[]
+  warnings?: { row: number; message: string }[]
+  missingDevices?: string[]
+}
+
 export const bookingsApi = {
   listByResource: (resourceType: BookingResourceType, resourceId: string) =>
     apiClient.get<Booking[]>('/bookings', { params: { resourceType, resourceId } }).then((r) => r.data),
@@ -22,7 +30,7 @@ export const bookingsApi = {
     form.append('organizationId', organizationId)
     form.append('file', file)
     return apiClient
-      .post<{ createdCount: number; errorCount: number; errors: { row: number; message: string }[] }>(
+      .post<ImportBookingsResult>(
         '/bookings/import-excel',
         form,
       )

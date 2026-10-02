@@ -1,7 +1,8 @@
 import { DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
-import { App, Button, DatePicker, Empty, Form, List, Modal, Select, Space, Table, Tag, Typography, Upload } from 'antd'
+import { Alert, App, Button, DatePicker, Empty, Form, List, Modal, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { ImportBookingsResult } from '../api/bookings'
 import { bookingsApi } from '../api/bookings'
 import { fstdsApi } from '../api/fstds'
 import { studentsApi } from '../api/students'
@@ -23,7 +24,7 @@ export function BookingsPage() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ createdCount: number; errorCount: number; errors: { row: number; message: string }[] }>()
+  const [importResult, setImportResult] = useState<ImportBookingsResult>()
   const [form] = Form.useForm()
 
   useEffect(() => {
@@ -132,10 +133,12 @@ export function BookingsPage() {
             columns={[
               { title: t('bookings.columnStartAt'), dataIndex: 'startAt', render: (v: string) => new Date(v).toLocaleString() },
               { title: t('bookings.columnEndAt'), dataIndex: 'endAt', render: (v: string) => new Date(v).toLocaleString() },
+              { title: t('bookings.columnTrainingType'), dataIndex: 'trainingType', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnTaskCode'), dataIndex: 'taskCode', render: (v?: string) => (v ? <Tag color="blue">{v}</Tag> : '-') },
               { title: t('bookings.columnCustomer'), dataIndex: 'customerName', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnPilot'), dataIndex: 'pilotName', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnInstructor'), dataIndex: 'instructorName', render: (v?: string | null) => v ?? '-' },
+              { title: t('bookings.columnExaminer'), dataIndex: 'examinerName', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnRevenue'), dataIndex: 'revenue', render: (v?: string | null) => v ?? '-' },
               { title: t('bookings.columnStatus'), dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> },
               {
@@ -198,6 +201,26 @@ export function BookingsPage() {
                 ? t('bookings.importAllSuccess', { created: importResult.createdCount })
                 : t('bookings.importSuccessSummary', { created: importResult.createdCount, failed: importResult.errorCount })}
             </Typography.Paragraph>
+            {(importResult.missingDevices ?? []).length > 0 && (
+              <Alert
+                style={{ marginBottom: 12 }}
+                type="warning"
+                showIcon
+                message={t('bookings.importMissingDevices', { devices: importResult.missingDevices?.join('、') })}
+              />
+            )}
+            {(importResult.warnings ?? []).length > 0 && (
+              <List
+                size="small"
+                header={t('bookings.importWarningsHeader', { count: importResult.warnings?.length })}
+                dataSource={importResult.warnings}
+                renderItem={(w) => (
+                  <List.Item>
+                    <Typography.Text type="warning">{t('bookings.importErrorRow', { row: w.row, message: w.message })}</Typography.Text>
+                  </List.Item>
+                )}
+              />
+            )}
             {importResult.errors.length > 0 && (
               <List
                 size="small"
