@@ -1,5 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons'
-import { App, Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
+import { App, Button, DatePicker, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag } from 'antd'
+import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { personnelApi } from '../api/personnel'
@@ -14,8 +15,12 @@ export function PersonnelPage() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [instructorModalId, setInstructorModalId] = useState<string>()
+  const [initialTrainingModalId, setInitialTrainingModalId] = useState<string>()
+  const [initialTrainingItems, setInitialTrainingItems] = useState<string[]>([])
+  const [initialTrainingItemState, setInitialTrainingItemState] = useState<Record<string, boolean>>({})
   const [form] = Form.useForm()
   const [instructorForm] = Form.useForm()
+  const [initialTrainingForm] = Form.useForm()
 
   const load = () => {
     setLoading(true)
@@ -26,6 +31,9 @@ export function PersonnelPage() {
   }
 
   useEffect(load, [])
+  useEffect(() => {
+    personnelApi.listInitialTrainingItems().then(setInitialTrainingItems)
+  }, [])
 
   const handleCreate = async () => {
     const values = await form.validateFields()
@@ -48,6 +56,35 @@ export function PersonnelPage() {
     await personnelApi.setInstructorProfile(instructorModalId, values.instructorType)
     message.success(t('personnel.instructorProfileSet'))
     setInstructorModalId(undefined)
+    load()
+  }
+
+  const openInitialTrainingModal = async (p: Personnel) => {
+    const training = await personnelApi.getInitialTraining(p.id)
+    initialTrainingForm.setFieldsValue({
+      completedAt: training.completedAt ? dayjs(training.completedAt) : undefined,
+      totalHours: training.totalHours ?? 8,
+      writtenExamPassed: training.writtenExamPassed ?? false,
+      writtenExamDate: training.writtenExamDate ? dayjs(training.writtenExamDate) : undefined,
+    })
+    setInitialTrainingItemState(
+      Object.fromEntries(initialTrainingItems.map((item) => [item, training.itemsJson?.find((i) => i.item === item)?.completed ?? false])),
+    )
+    setInitialTrainingModalId(p.id)
+  }
+
+  const handleSaveInitialTraining = async () => {
+    if (!initialTrainingModalId) return
+    const values = await initialTrainingForm.validateFields()
+    await personnelApi.upsertInitialTraining(initialTrainingModalId, {
+      completedAt: values.completedAt ? values.completedAt.format('YYYY-MM-DD') : undefined,
+      totalHours: values.totalHours,
+      items: initialTrainingItems.map((item) => ({ item, completed: initialTrainingItemState[item] ?? false })),
+      writtenExamPassed: values.writtenExamPassed,
+      writtenExamDate: values.writtenExamDate ? values.writtenExamDate.format('YYYY-MM-DD') : undefined,
+    })
+    message.success(t('personnel.initialTrainingSaved'))
+    setInitialTrainingModalId(undefined)
     load()
   }
 
@@ -90,8 +127,21 @@ export function PersonnelPage() {
               profile ? <Tag color="blue">{profile.instructorType}</Tag> : <Tag>{t('personnel.notInstructor')}</Tag>,
           },
           {
+            title: t('personnel.columnInitialTraining'),
+            dataIndex: 'instructorProfile',
+            render: (profile: Personnel['instructorProfile']) =>
+              profile ? (
+                <Tag color={profile.initialTraining?.isComplete ? 'green' : 'orange'}>
+                  {profile.initialTraining?.isComplete ? t('personnel.initialTrainingComplete') : t('personnel.initialTrainingIncomplete')}
+                </Tag>
+              ) : (
+                '-'
+              ),
+          },
+          {
             title: t('personnel.columnActions'),
             render: (_, p) => (
+              <Space>
               <Button
                 size="small"
                 onClick={() => {
@@ -101,6 +151,12 @@ export function PersonnelPage() {
               >
                 {t('personnel.setInstructorType')}
               </Button>
+              {p.instructorProfile && (
+                <Button size="small" onClick={() => openInitialTrainingModal(p)}>
+                  {t('personnel.setInitialTraining')}
+                </Button>
+              )}
+              </Space>
             ),
           },
         ]}
@@ -136,6 +192,49 @@ export function PersonnelPage() {
             <Select options={INSTRUCTOR_TYPES.map((v) => ({ value: v, label: v }))} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={t('personnel.initialTrainingModalTitle')}
+        open={!!initialTrainingModalId}
+        onOk={handleSaveInitialTraining}
+        onCancel={() => setInitialTrainingModalId(undefined)}
+        width={600}
+      >
+        <Form form={initialTrainingForm} layout="vertical">
+          <Space size="large" wrap>
+            <Form.Item name="completedAt" label={t('personnel.fieldCompletedAt')}>
+              <DatePicker />
+            </Form.Item>
+            <Form.Item name="totalHours" label={t('personnel.fieldTotalHours')}>
+              <InputNumber min={0} step={0.5} />
+            </Form.Item>
+            <Form.Item name="writtenExamPassed" label={t('personnel.fieldWrittenExamPassed')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item name="writtenExamDate" label={t('personnel.fieldWrittenExamDate')}>
+              <DatePicker />
+            </Form.Item>
+          </Space>
+        </Form>
+        <List
+          size="small"
+          header={t('personnel.initialTrainingItemsHeader')}
+          dataSource={initialTrainingItems}
+          renderItem={(item) => (
+            <List.Item>
+              <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
+                <span>{item}</span>
+                <Switch
+                  checked={initialTrainingItemState[item] ?? false}
+                  checkedChildren={t('fstdsPage.passedSwitch')}
+                  unCheckedChildren={t('fstdsPage.notPassedSwitch')}
+                  onChange={(checked) => setInitialTrainingItemState((s) => ({ ...s, [item]: checked }))}
+                />
+              </Space>
+            </List.Item>
+          )}
+        />
       </Modal>
     </div>
   )

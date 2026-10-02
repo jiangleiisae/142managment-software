@@ -43,8 +43,8 @@ export async function registerTenant(call: ApiCall, tenantName = 'E2E Test ATO')
   return { token: res.body.accessToken as string, tenantId: res.body.tenant.id as string, userId: res.body.user.id as string, email };
 }
 
-export async function createOrg(call: ApiCall, token: string, name = 'E2E Test Org') {
-  const res = await call('POST', '/organizations', { name: unique(name) }, token);
+export async function createOrg(call: ApiCall, token: string, name = 'E2E Test Org', overrides: Record<string, unknown> = {}) {
+  const res = await call('POST', '/organizations', { name: unique(name), ...overrides }, token);
   if (res.status !== 201) throw new Error(`create org failed: ${res.status} ${JSON.stringify(res.body)}`);
   return res.body;
 }

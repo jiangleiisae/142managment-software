@@ -3,7 +3,12 @@ import { BookingResourceType } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { FstdService } from '../fstd/fstd.service.js';
+import { isInstructorInitialTrainingComplete } from '../personnel/personnel.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+/// CCAR-142第142.69条(b)款: 任何连续24个小时内的教学时间不得超过8小时(讲评时间除外, 本系统暂未区分讲评与教学时段)
+const INSTRUCTOR_FATIGUE_WINDOW_HOURS = 24;
+const INSTRUCTOR_FATIGUE_LIMIT_HOURS = 8;
 
 /// Excel 导入排班表固定列顺序(对应 scripts/生成的"排班登记表模板.xlsx"的"排班登记 Schedule"工作表):
 /// A日期 B开始时间 C结束时间 D模拟机/设备编号 E训练科目 F航司/客户名称 G飞行员姓名 H教员姓名 I联系电话 J收入 K备注
@@ -107,6 +112,8 @@ export class SchedulingService {
     resourceId: string;
     taskCode?: string;
     studentId?: string;
+    startAt: Date;
+    endAt: Date;
   }) {
     if (data.resourceType === 'FSTD') {
       const fstd = await this.prisma.fstd.findUnique({ where: { id: data.resourceId } });
@@ -159,7 +166,7 @@ export class SchedulingService {
       if (!org) throw new BadRequestException(`Organization ${data.organizationId} 不存在`);
       const instructor = await this.prisma.personnel.findUnique({
         where: { id: data.resourceId },
-        include: { instructorProfile: true, qualifications: true },
+        include: { instructorProfile: { include: { initialTraining: true } }, qualifications: true },
       });
       if (!instructor || instructor.tenantId !== org.tenantId) {
         throw new BadRequestException(`Instructor ${data.resourceId} 不属于该机构`);
@@ -171,6 +178,50 @@ export class SchedulingService {
       if (expired) {
         throw new BadRequestException(
           `教员 ${instructor.firstName}${instructor.lastName} 的资质 "${expired.qualificationType}" 已于 ${expired.validUntil!.toLocaleDateString()} 过期, 不能安排训练`,
+        );
+      }
+      if (org.regulatoryStandard === 'CAAC') {
+        // CCAR-142第142.61条(c)款: 初始聘任前须完成≥8小时地面训练并通过笔试
+        if (!isInstructorInitialTrainingComplete(instructor.instructorProfile.initialTraining)) {
+          throw new BadRequestException(
+            `教员 ${instructor.firstName}${instructor.lastName} 尚未完成CCAR-142第142.61(c)条规定的初始培训(≥8小时地面训练+笔试), 不能安排教学`,
+          );
+        }
+        // CCAR-142第142.69条(b)款: 任何连续24小时内教学时间不得超过8小时
+        await this.assertInstructorNotFatigued(data.resourceId, data.startAt, data.endAt, `${instructor.firstName}${instructor.lastName}`);
+      }
+    }
+  }
+
+  /// 检查将该教员的新预订加入后, 是否会导致"任何连续24小时窗口内教学时长超过8小时" (142.69(b))。
+  /// 候选锚点取"新预订+范围内已有预订"各自的开始时刻——对于固定长度的滑动窗口求最大覆盖时长, 最大值必在某个区间起点处取得, 故枚举这些锚点即可保证不遗漏任何真实超限情形。
+  private async assertInstructorNotFatigued(resourceId: string, newStartAt: Date, newEndAt: Date, instructorName: string) {
+    const windowMs = INSTRUCTOR_FATIGUE_WINDOW_HOURS * 60 * 60 * 1000;
+    const candidateFrom = new Date(newStartAt.getTime() - windowMs);
+    const candidateTo = new Date(newEndAt.getTime() + windowMs);
+    const existing = await this.prisma.booking.findMany({
+      where: {
+        resourceType: 'INSTRUCTOR',
+        resourceId,
+        status: 'confirmed',
+        startAt: { lt: candidateTo },
+        endAt: { gt: candidateFrom },
+      },
+      select: { startAt: true, endAt: true },
+    });
+    const sessions = [...existing, { startAt: newStartAt, endAt: newEndAt }];
+    const anchors = [...new Set(sessions.map((s) => s.startAt.getTime()))];
+    for (const anchor of anchors) {
+      const windowEnd = anchor + windowMs;
+      const overlapMs = sessions.reduce((sum, s) => {
+        const start = Math.max(s.startAt.getTime(), anchor);
+        const end = Math.min(s.endAt.getTime(), windowEnd);
+        return end > start ? sum + (end - start) : sum;
+      }, 0);
+      const overlapHours = overlapMs / (60 * 60 * 1000);
+      if (overlapHours > INSTRUCTOR_FATIGUE_LIMIT_HOURS) {
+        throw new BadRequestException(
+          `教员 ${instructorName} 在 ${new Date(anchor).toLocaleString()} 起的连续24小时内教学时长将达到 ${overlapHours.toFixed(1)} 小时, 超过CCAR-142第142.69(b)条规定的8小时上限`,
         );
       }
     }
@@ -200,7 +251,7 @@ export class SchedulingService {
     if (startAt >= endAt) throw new BadRequestException('startAt must be before endAt');
 
     // organizationId 的租户归属已由全局 TenantGuard 校验
-    await this.assertResourceEligible(data);
+    await this.assertResourceEligible({ ...data, startAt, endAt });
     await this.assertNoConflict(data.resourceType, data.resourceId, startAt, endAt);
 
     const booking = await this.prisma.booking.create({

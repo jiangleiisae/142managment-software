@@ -63,6 +63,22 @@ export interface Fstd {
 
 export type InstructorType = 'FI' | 'TRI' | 'SFI' | 'THEORETICAL' | 'EXAMINER'
 
+export interface InstructorInitialTrainingItem {
+  item: string
+  completed: boolean
+}
+
+export interface InstructorInitialTraining {
+  id?: string
+  instructorProfileId?: string
+  completedAt?: string | null
+  totalHours?: number | null
+  itemsJson?: InstructorInitialTrainingItem[]
+  writtenExamPassed?: boolean
+  writtenExamDate?: string | null
+  isComplete: boolean
+}
+
 export interface Personnel {
   id: string
   tenantId: string
@@ -71,7 +87,7 @@ export interface Personnel {
   email?: string | null
   phone?: string | null
   qualifications?: QualificationRecord[]
-  instructorProfile?: { instructorType: InstructorType } | null
+  instructorProfile?: { instructorType: InstructorType; initialTraining?: InstructorInitialTraining | null } | null
   user?: { id: string; email: string } | null
 }
 

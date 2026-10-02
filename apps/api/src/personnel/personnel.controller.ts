@@ -7,6 +7,7 @@ import { PersonnelService } from './personnel.service.js';
 import { AddQualificationDto } from './dto/add-qualification.dto.js';
 import { CreatePersonnelDto } from './dto/create-personnel.dto.js';
 import { SetInstructorProfileDto } from './dto/set-instructor-profile.dto.js';
+import { UpsertInitialTrainingDto } from './dto/upsert-initial-training.dto.js';
 
 @Controller('personnel')
 @RequirePermissions(Permission.PERSONNEL)
@@ -28,6 +29,13 @@ export class PersonnelController {
     return this.personnelService.findExpiringSoon(user.tenantId, Number(withinDays) || 30);
   }
 
+  // ---- CCAR-142第142.61条(c)款: 教员初始培训 (须在 :id 路由之前注册) ----
+
+  @Get('initial-training/checklist')
+  listInitialTrainingItems() {
+    return this.personnelService.listInitialTrainingItems();
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: AuthContext, @Param('id') id: string) {
     return this.personnelService.findOne(id, user.tenantId);
@@ -41,5 +49,15 @@ export class PersonnelController {
   @Post(':id/instructor-profile')
   setInstructorProfile(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: SetInstructorProfileDto) {
     return this.personnelService.setInstructorProfile(id, user.tenantId, dto.instructorType);
+  }
+
+  @Get(':id/initial-training')
+  getInitialTraining(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.personnelService.getInitialTraining(id, user.tenantId);
+  }
+
+  @Post(':id/initial-training')
+  upsertInitialTraining(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpsertInitialTrainingDto) {
+    return this.personnelService.upsertInitialTraining(id, user.tenantId, dto);
   }
 }

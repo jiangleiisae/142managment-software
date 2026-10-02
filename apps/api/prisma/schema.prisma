@@ -1485,9 +1485,27 @@ model InstructorProfile {
   personnelId  String         @unique
   instructorType InstructorType
 
-  personnel Personnel @relation(fields: [personnelId], references: [id])
+  personnel       Personnel                   @relation(fields: [personnelId], references: [id])
+  initialTraining InstructorInitialTraining?
 
   @@map("instructor_profiles")
+}
+
+/// CCAR-142第142.61条(c)款: 教员初始聘任前应完成的≥8小时地面训练(7个科目)并通过笔试, 一次性建档(非周期性记录)
+model InstructorInitialTraining {
+  id                   String    @id @default(cuid())
+  instructorProfileId  String    @unique
+  completedAt          DateTime? // 培训完成日期; 为空视为未完成
+  totalHours           Float? // 实际完成的地面训练小时数, 须≥8
+  itemsJson            Json      @default("[]") // [{ item, completed }, ...] (142.61(c)(1)-(7) 7个科目)
+  writtenExamPassed    Boolean   @default(false)
+  writtenExamDate      DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  instructorProfile InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+
+  @@map("instructor_initial_trainings")
 }
 
 /// 通用证照/资质记录 + 到期提醒 (人员/学员/设备均可复用此模式, 此处聚焦人员)
