@@ -363,6 +363,68 @@ export class ReportsService {
     ]);
   }
 
+  /// CCAR-60 第60.41(b)条 "每12个日历月向民航局提交设备运行报告" 的数据底稿: 把运行效率、月度性能指标、故障汇总、
+  /// 升级与改装记录汇总到一个 Excel 里。只做数据汇总, 不是民航局规定的报告格式, 提交前仍需按局方要求整理。
+  async exportAnnualOperations(tenantId: string, organizationId: string | undefined, from: string | undefined, to: string | undefined) {
+    const orgId = this.requireOrganizationId(organizationId);
+    const range = parseReportRange(from, to);
+    const efficiency = await this.operationalEfficiency(orgId, from, to);
+    const faults = await this.faultStatistics(tenantId, orgId, from, to);
+
+    const fstds = await this.prisma.fstd.findMany({ where: { organizationId: orgId }, orderBy: { deviceCode: 'asc' } });
+    const codeById = new Map(fstds.map((f) => [f.id, f.deviceCode]));
+    const months = monthsBetween(range.from, range.to);
+    const metrics = await this.prisma.fstdPerformanceMetric.findMany({
+      where: { fstdId: { in: fstds.map((f) => f.id) }, OR: months.map((m) => ({ year: m.year, month: m.month })) },
+      orderBy: [{ year: 'asc' }, { month: 'asc' }],
+    });
+    const upgrades = await this.prisma.fstdUpgradeRecord.findMany({
+      where: { fstd: { organizationId: orgId }, performedOn: { gte: new Date(`${range.from}T00:00:00.000Z`), lte: new Date(`${range.to}T00:00:00.000Z`) } },
+      orderBy: [{ performedOn: 'asc' }, { createdAt: 'asc' }],
+    });
+    const categoryText: Record<string, string> = { MODEL_UPGRADE: '模拟机升级', SUBSYSTEM_UPGRADE: '子系统升级', INSTRUMENT_CALIBRATION: '仪表校准', DATABASE_UPDATE: '数据库更新' };
+    const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '');
+
+    return this.toWorkbook(`CCAR-60 第60.41(b)条 设备运行报告底稿 ${range.from} ~ ${range.to} (数据汇总, 非局方规定格式)`, [
+      {
+        name: '运行效率汇总',
+        headers: ['训练设备', '机型', '登记月数/应登记月数', '计划可用时间(h)', '检修总时长(h)', '中断总时长(h)', '中断次数', '故障次数', '故障中断率(%)', '故障按期关闭率(%)', '运行效率(%)', '设备可用率(%)'],
+        rows: efficiency.rows.map((x) => [x.deviceCode, x.representedAircraft, `${x.monthsWithData}/${x.monthsExpected}`, x.plannedAvailableHours, x.supportHours, x.interruptionHours, x.interruptionCount, x.discrepancyCount, x.interruptionRatePercent, x.onTimeClosureRatePercent, x.operatingEfficiencyPercent, x.availabilityPercent]),
+      },
+      {
+        name: '月度性能指标',
+        headers: ['训练设备', '年月', '计划可用(h)', '计划训练(h)', '检修(h)', '设备故障(h)', '外部原因(h)', '损失训练(h)', '故障次数', '中断次数', '可用率(%)', '可靠率(%)'],
+        rows: metrics.map((m) => {
+          const down = m.fstdFailureHours + m.externalFailureHours;
+          return [
+            codeById.get(m.fstdId) ?? m.fstdId,
+            `${m.year}-${String(m.month).padStart(2, '0')}`,
+            m.plannedAvailableHours,
+            m.scheduledTrainingHours,
+            m.supportHours,
+            m.fstdFailureHours,
+            m.externalFailureHours,
+            m.lostTrainingHours,
+            m.discrepancyCount,
+            m.interruptionCount,
+            m.plannedAvailableHours > 0 ? round(((m.plannedAvailableHours - down) / m.plannedAvailableHours) * 100) : null,
+            m.plannedAvailableHours > 0 ? round(((m.plannedAvailableHours - m.fstdFailureHours) / m.plannedAvailableHours) * 100) : null,
+          ];
+        }),
+      },
+      {
+        name: '故障汇总',
+        headers: ['训练设备', '机型', '故障次数', '已关闭', '未关闭', '逾期未关闭', 'MMI次数', '保留(延期)数', '培训损失(分钟)', '平均修复天数', '按期关闭率(%)'],
+        rows: faults.rows.map((x) => [x.deviceCode, x.representedAircraft, x.total, x.corrected, x.open, x.overdueOpen, x.mmi, x.deferred, x.trainingTimeLostMinutes, x.averageRepairDays, x.onTimeClosureRatePercent]),
+      },
+      {
+        name: '升级与改装记录',
+        headers: ['训练设备', '类别', '执行日期', '标题', '子系统', '版本(从)', '版本(到)', '结果', '是否改装', '改装报告文号', '报告日期'],
+        rows: upgrades.map((u) => [codeById.get(u.fstdId) ?? u.fstdId, categoryText[u.category] ?? u.category, day(u.performedOn), u.title, u.subsystem ?? '', u.versionFrom ?? '', u.versionTo ?? '', u.result === 'pass' ? '合格' : '不合格', u.isModification ? '是' : '', u.caacReportRef ?? '', day(u.caacReportedOn)]),
+      },
+    ]);
+  }
+
   async exportPartStatistics(organizationId: string | undefined, from: string | undefined, to: string | undefined) {
     const r = await this.partStatistics(organizationId, from, to);
     return this.toWorkbook(`备件统计 ${r.from} ~ ${r.to}`, [

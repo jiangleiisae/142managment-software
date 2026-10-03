@@ -55,6 +55,12 @@ export class ReportsController {
     return this.file(res, await this.reportsService.exportPmStatistics(user.tenantId, organizationId, from, to), 'PM统计.xlsx');
   }
 
+  @Get('annual-operations/export')
+  @RequirePermissions(Permission.FSTD)
+  async exportAnnualOperations(@CurrentUser() user: AuthContext, @Res({ passthrough: true }) res: Response, @Query('organizationId') organizationId: string, @Query('from') from: string, @Query('to') to: string) {
+    return this.file(res, await this.reportsService.exportAnnualOperations(user.tenantId, organizationId, from, to), '设备运行报告底稿.xlsx');
+  }
+
   @Get('parts')
   @RequirePermissions(Permission.INVENTORY)
   parts(@Query('organizationId') organizationId: string, @Query('from') from: string, @Query('to') to: string) {

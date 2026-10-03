@@ -760,6 +760,8 @@ model Fstd {
   groundings                  FstdGrounding[]
   checklistTemplates          ChecklistTemplate[]
   checklistRecords            ChecklistRecord[]
+  upgradeRecords              FstdUpgradeRecord[]
+  qtgPlans                    FstdQtgPlan[]
   discrepancies               DiscrepancyLog[]
   qtgDocuments                FstdQtgDocument[]
   qtgQuarterlyRuns            FstdQtgQuarterlyRun[]
@@ -1942,4 +1944,61 @@ model ChecklistRecord {
   @@unique([fstdId, type, date, shiftTypeId])
   @@index([organizationId, date])
   @@map("checklist_records")
+}
+
+// ---- 升级校准记录与 QTG 计划配置 (R7) ----
+
+enum UpgradeCategory {
+  MODEL_UPGRADE // 模拟机升级
+  SUBSYSTEM_UPGRADE // 子系统升级
+  INSTRUMENT_CALIBRATION // 仪表校准
+  DATABASE_UPDATE // 数据库更新(视景/导航等)
+}
+
+/// 设备的升级、改装、校准历史。工具校准不在此表, 沿用 Tool/ToolCalibrationRecord。
+/// isModification/caacReportRef 用于跟踪 CCAR-60 第60.45(c)条"改装前向民航局提交改装报告"的办理情况(只记录, 不代替正式报告)。
+model FstdUpgradeRecord {
+  id                     String          @id @default(cuid())
+  fstdId                 String
+  category               UpgradeCategory
+  performedOn            DateTime        @db.Date // 北京时间日历日
+  title                  String
+  description            String?
+  subsystem              String? // 子系统升级时: 运动/视景/操纵负荷/音响/IOS ...
+  versionFrom            String?
+  versionTo              String?
+  performedByPersonnelId String?
+  performedByName        String? // 外部厂商/工程师等自由文本
+  result                 String          @default("pass") // pass / fail
+  nextDueDate            DateTime?       @db.Date // 仪表校准的下次到期日
+  isModification         Boolean         @default(false) // 是否构成设备改装 (CAAC: 需向民航局报告)
+  caacReportRef          String? // 改装报告编号/文号
+  caacReportedOn         DateTime?       @db.Date
+  notes                  String?
+  createdByEmail         String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  fstd Fstd @relation(fields: [fstdId], references: [id], onDelete: Cascade)
+
+  @@index([fstdId, performedOn])
+  @@map("fstd_upgrade_records")
+}
+
+/// QTG 执行计划: 每台设备每个季度一个计划执行时段 (年内每年重复, 格式 MM-DD) 和责任人。
+/// 没有配置时按整个日历季度计。实际完成情况仍记在 FstdQtgQuarterlyRun。
+model FstdQtgPlan {
+  id             String   @id @default(cuid())
+  fstdId         String
+  quarter        Int // 1-4
+  windowStart    String // "MM-DD"
+  windowEnd      String // "MM-DD"
+  responsibleIds String[] // Personnel.id, 可多人
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  fstd Fstd @relation(fields: [fstdId], references: [id], onDelete: Cascade)
+
+  @@unique([fstdId, quarter])
+  @@map("fstd_qtg_plans")
 }

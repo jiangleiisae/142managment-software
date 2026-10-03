@@ -12,6 +12,8 @@ import { ReportsPage } from './pages/ReportsPage'
 import { RosterPage } from './pages/RosterPage'
 import { DutyPage } from './pages/DutyPage'
 import { ChecklistConfigPage } from './pages/ChecklistConfigPage'
+import { QtgPlanPage } from './pages/QtgPlanPage'
+import { UpgradePage } from './pages/UpgradePage'
 import { ChecklistRecordPage } from './pages/ChecklistRecordPage'
 import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
@@ -48,6 +50,8 @@ function App() {
             <Route path="/pre-flight" element={<ChecklistRecordPage type="PRE_FLIGHT" />} />
             <Route path="/post-flight" element={<ChecklistRecordPage type="POST_FLIGHT" />} />
             <Route path="/checklist-config" element={<ChecklistConfigPage />} />
+            <Route path="/upgrades" element={<UpgradePage />} />
+            <Route path="/qtg-plans" element={<QtgPlanPage />} />
           </Route>
           <Route element={<PermissionRoute permission={["FSTD", "INVENTORY"]} />}>
             <Route path="/reports" element={<ReportsPage />} />

@@ -86,6 +86,8 @@ const menuEntries: MenuEntry[] = [
       { key: '/pre-flight', labelKey: 'menu.preFlightRecord', permission: 'FSTD' },
       { key: '/post-flight', labelKey: 'menu.postFlightRecord', permission: 'FSTD' },
       { key: '/checklist-config', labelKey: 'menu.checklistConfig', permission: 'FSTD' },
+      { key: '/qtg-plans', labelKey: 'menu.qtgPlan', permission: 'FSTD' },
+      { key: '/upgrades', labelKey: 'menu.upgrade', permission: 'FSTD' },
     ],
   },
   { type: 'item', icon: <BarChartOutlined />, leaf: { key: '/reports', labelKey: 'menu.reports', permission: ['FSTD', 'INVENTORY'] } },
