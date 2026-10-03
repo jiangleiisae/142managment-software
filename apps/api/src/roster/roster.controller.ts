@@ -6,6 +6,7 @@ import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import {
   AddRosterMembersDto,
+  CreateRosterMemberDto,
   CreateRosterGroupDto,
   CreateShiftTypeDto,
   SetRosterEntriesDto,
@@ -66,6 +67,16 @@ export class RosterController {
   @Get('members')
   listMembers(@Query('organizationId') organizationId: string) {
     return this.rosterService.listMembers(organizationId);
+  }
+
+  @Get('personnel-options')
+  personnelOptions(@CurrentUser() user: AuthContext, @Query('organizationId') organizationId: string) {
+    return this.rosterService.personnelOptions(user.tenantId, organizationId);
+  }
+
+  @Post('members/new')
+  createMember(@CurrentUser() user: AuthContext, @Body() dto: CreateRosterMemberDto) {
+    return this.rosterService.createMember(user.tenantId, user.email, dto.organizationId, dto);
   }
 
   @Post('members')

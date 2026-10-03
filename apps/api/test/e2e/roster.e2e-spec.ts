@@ -161,4 +161,43 @@ describe('roster', () => {
     expect((await call('GET', `/roster/shift-types?organizationId=${org.id}`, undefined, other.token)).status).toBe(403);
     expect((await call('PATCH', `/roster/shift-types/${shifts.M.id}`, { name: 'x' }, other.token)).status).toBe(404);
   });
+
+  it('只有"排班预订"权限的账号也能添加人员: 候选列表由班表提供, 可直接新建人员并加入班表', async () => {
+    const email = `sched-${Date.now()}@example.com`;
+    expect((await call('POST', '/users', { email, password: 'StaffPass12345', role: 'STAFF', permissions: ['SCHEDULING'] }, token)).status).toBe(201);
+    const staffToken = (await call('POST', '/auth/login', { email, password: 'StaffPass12345' })).body.accessToken as string;
+    // 这个账号没有"人员资质"权限, 直接读人员档案会被拒; 班表自己的候选接口不受影响
+    expect((await call('GET', '/personnel', undefined, staffToken)).status).toBe(403);
+
+    const spare = await createPersonnel(call, token, { firstName: '芳', lastName: '赵' });
+    const options = await call('GET', `/roster/personnel-options?organizationId=${org.id}`, undefined, staffToken);
+    expect(options.status).toBe(200);
+    expect(options.body).toContainEqual({ id: spare.id, name: '赵芳' });
+
+    // 已经在班表里的人不再出现在候选里
+    await call('POST', '/roster/members', { organizationId: org.id, personnelIds: [spare.id] }, token);
+    const after = await call('GET', `/roster/personnel-options?organizationId=${org.id}`, undefined, staffToken);
+    expect(after.body.some((p: { id: string }) => p.id === spare.id)).toBe(false);
+
+    // 直接新建并加入 (带班组)
+    const group = await call('POST', '/roster/groups', { organizationId: org.id, name: '新建人员组' }, staffToken);
+    expect(group.status).toBe(201);
+    const created = await call('POST', '/roster/members/new', { organizationId: org.id, lastName: '孙', firstName: '强', groupId: group.body.id }, staffToken);
+    expect(created.status).toBe(201);
+    expect(created.body.name).toBe('孙强');
+    const members = await call('GET', `/roster/members?organizationId=${org.id}`, undefined, staffToken);
+    expect(members.body.find((m: { personnelId: string }) => m.personnelId === created.body.personnelId)).toMatchObject({ name: '孙强', groupName: '新建人员组' });
+    // 新建的人员出现在人员档案里 (有"人员资质"权限的账号能看到), 并写了审计轨迹
+    const personnel = await call('GET', '/personnel', undefined, token);
+    expect(personnel.body.some((p: { id: string }) => p.id === created.body.personnelId)).toBe(true);
+    const audit = await call('GET', `/audit-logs?entityType=Personnel&entityId=${created.body.personnelId}`, undefined, token);
+    expect(audit.body.map((a: { action: string }) => a.action)).toEqual(['create']);
+
+    // 校验与隔离
+    expect((await call('POST', '/roster/members/new', { organizationId: org.id, lastName: '  ', firstName: '强' }, staffToken)).status).toBe(400);
+    expect((await call('POST', '/roster/members/new', { organizationId: org.id, lastName: '孙', firstName: '强', groupId: 'nope' }, staffToken)).status).toBe(400);
+    const stranger = await registerTenant(call);
+    expect((await call('GET', `/roster/personnel-options?organizationId=${org.id}`, undefined, stranger.token)).status).toBe(403);
+    expect((await call('POST', '/roster/members/new', { organizationId: org.id, lastName: '孙', firstName: '强' }, stranger.token)).status).toBe(403);
+  });
 });

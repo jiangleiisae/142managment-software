@@ -75,7 +75,6 @@ const menuEntries: MenuEntry[] = [
     children: [
       { key: '/bookings', labelKey: 'menu.bookings', permission: 'SCHEDULING' },
       { key: '/training-plan', labelKey: 'menu.trainingPlan', permission: 'SCHEDULING' },
-      { key: '/roster', labelKey: 'menu.roster', permission: 'SCHEDULING' },
     ],
   },
   {
@@ -84,6 +83,7 @@ const menuEntries: MenuEntry[] = [
     icon: <FormOutlined />,
     labelKey: 'menu.group.records',
     children: [
+      { key: '/roster', labelKey: 'menu.roster', permission: 'SCHEDULING' },
       { key: '/duty', labelKey: 'menu.duty', permission: 'SCHEDULING' },
       { key: '/pre-flight', labelKey: 'menu.preFlightRecord', permission: 'FSTD' },
       { key: '/post-flight', labelKey: 'menu.postFlightRecord', permission: 'FSTD' },

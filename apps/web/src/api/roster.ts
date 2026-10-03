@@ -88,6 +88,8 @@ export const rosterApi = {
   deleteGroup: (id: string) => apiClient.delete(`/roster/groups/${id}`).then((r) => r.data),
 
   listMembers: (organizationId: string) => apiClient.get<RosterMember[]>('/roster/members', { params: { organizationId } }).then((r) => r.data),
+  personnelOptions: (organizationId: string) => apiClient.get<{ id: string; name: string }[]>('/roster/personnel-options', { params: { organizationId } }).then((r) => r.data),
+  createMember: (organizationId: string, data: { lastName: string; firstName: string; groupId?: string }) => apiClient.post<{ id: string; personnelId: string; name: string }>('/roster/members/new', { organizationId, ...data }).then((r) => r.data),
   addMembers: (organizationId: string, personnelIds: string[], groupId?: string) => apiClient.post('/roster/members', { organizationId, personnelIds, groupId }).then((r) => r.data),
   updateMember: (id: string, data: { groupId?: string | null; sortOrder?: number }) => apiClient.patch(`/roster/members/${id}`, data).then((r) => r.data),
   removeMember: (id: string) => apiClient.delete(`/roster/members/${id}`).then((r) => r.data),

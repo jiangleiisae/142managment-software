@@ -211,6 +211,31 @@ export class RosterService {
     return { requested: unique.length, added: res.count };
   }
 
+  /// 可加入班表的人员: 本租户里还不在该机构班表中的人员档案。
+  /// 班表模块自己提供这个列表, 这样只有"排班预订"权限的账号也能添加人员, 不必同时拥有"人员资质"权限。
+  async personnelOptions(tenantId: string, organizationId: string | undefined) {
+    const orgId = this.requireOrganizationId(organizationId);
+    const [people, members] = await Promise.all([
+      this.prisma.personnel.findMany({ where: { tenantId }, select: { id: true, firstName: true, lastName: true }, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] }),
+      this.prisma.rosterMember.findMany({ where: { organizationId: orgId }, select: { personnelId: true } }),
+    ]);
+    const taken = new Set(members.map((m) => m.personnelId));
+    return people.filter((p) => !taken.has(p.id)).map((p) => ({ id: p.id, name: `${p.lastName}${p.firstName}`.trim() }));
+  }
+
+  /// 新建人员(只有姓名)并直接加入班表; 同名不阻止(可能真的重名), 创建写审计轨迹
+  async createMember(tenantId: string, email: string, organizationId: string, data: { lastName: string; firstName: string; groupId?: string }) {
+    await this.assertGroupInOrg(data.groupId, organizationId);
+    const lastName = data.lastName.trim();
+    const firstName = data.firstName.trim();
+    if (!lastName || !firstName) throw new BadRequestException('姓和名都不能为空');
+    const personnel = await this.prisma.personnel.create({ data: { tenantId, lastName, firstName } });
+    await this.auditLog.write(tenantId, 'Personnel', personnel.id, 'create', null, { ...personnel, via: 'roster', by: email });
+    const max = await this.prisma.rosterMember.aggregate({ where: { organizationId }, _max: { sortOrder: true } });
+    const member = await this.prisma.rosterMember.create({ data: { organizationId, personnelId: personnel.id, groupId: data.groupId ?? null, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
+    return { id: member.id, personnelId: personnel.id, name: `${lastName}${firstName}` };
+  }
+
   async updateMember(tenantId: string, id: string, data: { groupId?: string | null; sortOrder?: number }) {
     const member = await this.prisma.rosterMember.findFirst({ where: { id, organization: { tenantId } } });
     if (!member) throw new NotFoundException('班表人员不存在');

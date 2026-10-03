@@ -167,6 +167,27 @@ export class AddRosterMembersDto {
   groupId?: string;
 }
 
+/// 在班表里直接新建人员 (只有姓名), 不需要先去"人员资质"里建档案
+export class CreateRosterMemberDto {
+  @IsString()
+  @IsNotEmpty()
+  organizationId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  lastName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  firstName!: string;
+
+  @IsOptional()
+  @IsString()
+  groupId?: string;
+}
+
 export class UpdateRosterMemberDto {
   /// null 表示移出分组
   @IsOptional()

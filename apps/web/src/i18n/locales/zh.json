@@ -42,7 +42,7 @@
       "fstd": "模拟机管理",
       "training": "人员与培训",
       "scheduling": "排班管理",
-      "records": "工作记录",
+      "records": "维护记录",
       "system": "系统管理"
     }
   },
@@ -1585,6 +1585,12 @@
     "totalsBelowMin": "低于最低库存的备件"
   },
   "roster": {
+    "noPersonnelOptions": "没有可添加的人员：人员档案里的人都已经在班表里了，或还没有建过档案。可以在下面直接新建。",
+    "orCreate": "或者直接新建人员",
+    "createHint": "只需要姓名，会同时在「人员资质」里建立一份人员档案（之后可以补充资质），并加入上面选择的班组。",
+    "lastName": "姓",
+    "firstName": "名",
+    "createAndAdd": "新建并加入班表",
     "intro": "维护/运行人员的值班班表：配置班次，按\"人员 × 日期\"排班，统计工时，保留每一次修改。日期按北京时间。",
     "tabRoster": "班表",
     "tabMembers": "人员与班组",

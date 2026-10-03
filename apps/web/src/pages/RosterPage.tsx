@@ -1,13 +1,11 @@
 import { DownloadOutlined, PlusOutlined, QrcodeOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Checkbox, ColorPicker, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, TimePicker, Typography } from 'antd'
+import { Alert, App, Button, Card, Checkbox, ColorPicker, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, TimePicker, Typography, Divider } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { personnelApi } from '../api/personnel'
 import type { HoursRow, MyRoster, RosterEntry, RosterGroup, RosterHistoryRow, RosterMember, ShiftCategory, ShiftType } from '../api/roster'
 import { rosterApi } from '../api/roster'
-import type { Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { ShareQrModal } from '../components/ShareQrModal'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
@@ -185,16 +183,38 @@ export function RosterPage() {
 
   // ---------------- 人员与班组 ----------------
   const [addOpen, setAddOpen] = useState(false)
-  const [personnel, setPersonnel] = useState<Personnel[]>([])
+  const [personnel, setPersonnel] = useState<{ id: string; name: string }[]>([])
+  const [newLast, setNewLast] = useState('')
+  const [newFirst, setNewFirst] = useState('')
   const [addIds, setAddIds] = useState<string[]>([])
   const [addGroup, setAddGroup] = useState<string>()
   const [newGroup, setNewGroup] = useState('')
 
   const openAdd = async () => {
-    setPersonnel(await personnelApi.list())
+    if (!selectedId) return
+    try {
+      setPersonnel(await rosterApi.personnelOptions(selectedId))
+    } catch (e) {
+      message.error(apiError(e, t('roster.failed')))
+      return
+    }
     setAddIds([])
     setAddGroup(undefined)
+    setNewLast('')
+    setNewFirst('')
     setAddOpen(true)
+  }
+
+  const createAndAdd = async () => {
+    if (!selectedId) return
+    try {
+      await rosterApi.createMember(selectedId, { lastName: newLast.trim(), firstName: newFirst.trim(), groupId: addGroup })
+      message.success(t('roster.membersAdded'))
+      setAddOpen(false)
+      await reloadBase()
+    } catch (e) {
+      message.error(apiError(e, t('roster.failed')))
+    }
   }
 
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
@@ -282,12 +302,22 @@ export function RosterPage() {
               optionFilterProp="label"
               value={addIds}
               onChange={setAddIds}
-              options={personnel.filter((p) => !members.some((m) => m.personnelId === p.id)).map((p) => ({ value: p.id, label: `${p.lastName}${p.firstName}` }))}
+              notFoundContent={t('roster.noPersonnelOptions')}
+              options={personnel.map((p) => ({ value: p.id, label: p.name }))}
             />
           </Form.Item>
           <Form.Item label={t('roster.group')}>
             <Select allowClear value={addGroup} onChange={setAddGroup} placeholder={t('roster.noGroup')} options={groups.map((g) => ({ value: g.id, label: g.name }))} />
           </Form.Item>
+          <Divider style={{ margin: '8px 0' }}>{t('roster.orCreate')}</Divider>
+          <Typography.Paragraph type="secondary">{t('roster.createHint')}</Typography.Paragraph>
+          <Space.Compact style={{ width: '100%' }}>
+            <Input style={{ width: 90 }} maxLength={50} placeholder={t('roster.lastName')} value={newLast} onChange={(e) => setNewLast(e.target.value)} />
+            <Input style={{ width: 140 }} maxLength={50} placeholder={t('roster.firstName')} value={newFirst} onChange={(e) => setNewFirst(e.target.value)} />
+            <Button type="primary" disabled={!newLast.trim() || !newFirst.trim()} onClick={createAndAdd}>
+              {t('roster.createAndAdd')}
+            </Button>
+          </Space.Compact>
         </Form>
       </Modal>
     </>

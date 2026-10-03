@@ -42,7 +42,7 @@
       "fstd": "FSTD",
       "training": "People & Training",
       "scheduling": "Scheduling",
-      "records": "Work Records",
+      "records": "Maintenance Records",
       "system": "System"
     }
   },
@@ -1585,6 +1585,12 @@
     "totalsBelowMin": "Parts below minimum"
   },
   "roster": {
+    "noPersonnelOptions": "Nobody left to add: everyone in the personnel records is already on the roster, or no records exist yet. You can create someone below.",
+    "orCreate": "Or create a person directly",
+    "createHint": "Only a name is needed. It also creates a personnel record (qualifications can be added later) and puts the person in the group selected above.",
+    "lastName": "Last name",
+    "firstName": "First name",
+    "createAndAdd": "Create and add to roster",
     "intro": "Duty roster for maintenance/operations staff: configure shifts, schedule by person × date, count working hours, and keep every change. Dates are Beijing time.",
     "tabRoster": "Roster",
     "tabMembers": "People & groups",
