@@ -1,4 +1,4 @@
-import { DeleteOutlined, DownloadOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownloadOutlined, LeftOutlined, PlusOutlined, QrcodeOutlined, RightOutlined } from '@ant-design/icons'
 import { App, Button, ColorPicker, DatePicker, Descriptions, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
@@ -8,6 +8,7 @@ import type { BookingCustomer } from '../api/bookings'
 import { fstdsApi } from '../api/fstds'
 import type { Booking, Fstd } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
+import { ShareQrModal } from '../components/ShareQrModal'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 import {
   cnDateTimeLabel,
@@ -33,6 +34,7 @@ export function TrainingPlanPage() {
   const [fstds, setFstds] = useState<Fstd[]>([])
   const [customers, setCustomers] = useState<BookingCustomer[]>([])
   const [detail, setDetail] = useState<Booking>()
+  const [qrOpen, setQrOpen] = useState(false)
 
   const [day, setDay] = useState(cnTodayString())
   const [instructorInput, setInstructorInput] = useState('')
@@ -244,12 +246,16 @@ export function TrainingPlanPage() {
         {t('trainingPlan.exportDay')}
       </Button>
       <Button onClick={openCustomerModal}>{t('trainingPlan.customerConfig')}</Button>
+      <Button icon={<QrcodeOutlined />} disabled={!selectedId} onClick={() => setQrOpen(true)}>
+        {t('share.qrButton')}
+      </Button>
     </Space>
   )
 
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
+      <ShareQrModal open={qrOpen} onClose={() => setQrOpen(false)} organizationId={selectedId} type="TRAINING_PLAN" />
       <Typography.Paragraph type="secondary">{t('trainingPlan.timezoneNote')}</Typography.Paragraph>
 
       {!selectedId ? (

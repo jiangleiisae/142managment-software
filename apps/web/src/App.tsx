@@ -29,6 +29,7 @@ import { OrganizationsPage } from './pages/OrganizationsPage'
 import { PersonnelPage } from './pages/PersonnelPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { StudentsPage } from './pages/StudentsPage'
+import { PublicSharePage } from './pages/PublicSharePage'
 import { UsersPage } from './pages/UsersPage'
 
 function App() {
@@ -36,6 +37,8 @@ function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* 二维码打开的公开只读页, 无需登录, 凭链接里的 token 读取 */}
+      <Route path="/s/:token" element={<PublicSharePage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>

@@ -34,6 +34,8 @@ services:
       DATABASE_URL: postgresql://tcms_app:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/tcms
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       PORT: 3000
+      # API 前面有 Caddy 和 nginx 两层代理, 按真实客户端 IP 限流 (见 apps/api/src/main.ts)
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://${DOMAIN:-localhost}}
       # 默认本地磁盘存储 (STORAGE_DRIVER=local), 文件落在下面的 api_uploads volume 里。
       # 要切到 S3/OSS/R2, 在 .env 里设置 STORAGE_DRIVER=s3 及 S3_* 变量, 见 DEPLOYMENT.md。

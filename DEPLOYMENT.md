@@ -85,7 +85,7 @@ git checkout v1.0.0   # 或具体的 commit hash
 
 ## 环境变量参考
 
-见 [.env.example](.env.example)。后端还支持但通常不需要覆盖的变量 (有开发环境默认值), 详见 [apps/api/README.md](apps/api/README.md) 和 [apps/api/.env.test](apps/api/.env.test) (测试专用, 已 gitignore)。
+见 [.env.example](.env.example)。`TRUST_PROXY_HOPS`（默认 2，对应 Caddy → nginx 两层代理）让后端按真实客户端 IP 限流；不设置时所有访客会被当成同一个 IP 共用限流额度，改了代理层数时要同步调整。后端还支持但通常不需要覆盖的变量 (有开发环境默认值), 详见 [apps/api/README.md](apps/api/README.md) 和 [apps/api/.env.test](apps/api/.env.test) (测试专用, 已 gitignore)。
 
 ## 文件存储: 本地磁盘 vs 对象存储
 

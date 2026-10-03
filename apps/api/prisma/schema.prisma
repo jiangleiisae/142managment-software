@@ -230,6 +230,7 @@ model Organization {
   inspectionItems             InspectionItem[]
   otherInspections            OtherInspection[]
   surveys                     Survey[]
+  publicShares                PublicShare[]
 
   @@map("organizations")
 }
@@ -2133,4 +2134,30 @@ model SurveyResponse {
 
   @@unique([surveyId, userId])
   @@map("survey_responses")
+}
+
+// ---- 公开分享链接 (二维码): 训练计划 / 人员班表的只读页面 ----
+
+enum ShareType {
+  TRAINING_PLAN
+  ROSTER
+}
+
+/// 机构某类计划的公开只读分享: 持有链接(二维码)的任何人无需登录即可查看最新计划。
+/// token 是 256 位随机串, 不可猜测; 重新生成会让旧二维码立即失效, 停用后链接返回 404。
+/// 公开页面只返回计划本身需要的字段, 不含收入、联系电话、备注等商业信息。
+model PublicShare {
+  id             String    @id @default(cuid())
+  organizationId String
+  type           ShareType
+  token          String    @unique
+  enabled        Boolean   @default(true)
+  createdByEmail String?
+  createdAt      DateTime  @default(now())
+  rotatedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, type])
+  @@map("public_shares")
 }

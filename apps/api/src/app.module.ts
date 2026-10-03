@@ -28,6 +28,7 @@ import { DutyModule } from './duty/duty.module.js';
 import { ChecklistModule } from './checklist/checklist.module.js';
 import { UpgradeModule } from './upgrade/upgrade.module.js';
 import { QualityModule } from './quality/quality.module.js';
+import { ShareModule } from './share/share.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { StudentModule } from './student/student.module.js';
@@ -62,6 +63,7 @@ import { UserModule } from './user/user.module.js';
     ChecklistModule,
     UpgradeModule,
     QualityModule,
+    ShareModule,
     RetentionModule,
     IsmsModule,
     UserModule,

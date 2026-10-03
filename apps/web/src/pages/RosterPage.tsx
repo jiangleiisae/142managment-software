@@ -1,4 +1,4 @@
-import { DownloadOutlined, PlusOutlined } from '@ant-design/icons'
+import { DownloadOutlined, PlusOutlined, QrcodeOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Checkbox, ColorPicker, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, TimePicker, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
@@ -9,6 +9,7 @@ import type { HoursRow, MyRoster, RosterEntry, RosterGroup, RosterHistoryRow, Ro
 import { rosterApi } from '../api/roster'
 import type { Personnel } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
+import { ShareQrModal } from '../components/ShareQrModal'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
 import { cnDateTimeLabel, cnMonthRange, cnTodayString, weekdayLabel } from '../utils/trainingPlanTime'
 import { readableTextColor } from '../utils/trainingPlanTime'
@@ -31,6 +32,7 @@ export function RosterPage() {
   const [groups, setGroups] = useState<RosterGroup[]>([])
   const [members, setMembers] = useState<RosterMember[]>([])
   const [my, setMy] = useState<MyRoster>()
+  const [qrOpen, setQrOpen] = useState(false)
 
   const reloadBase = useCallback(async () => {
     if (!selectedId) return
@@ -101,6 +103,9 @@ export function RosterPage() {
         </Button>
         <Button icon={<DownloadOutlined />} disabled={!selectedId} onClick={() => selectedId && rosterApi.exportMonth(selectedId, month)}>
           {t('roster.export')}
+        </Button>
+        <Button icon={<QrcodeOutlined />} disabled={!selectedId} onClick={() => setQrOpen(true)}>
+          {t('share.qrButton')}
         </Button>
       </Space>
       <Space wrap style={{ marginBottom: 12 }}>
@@ -479,6 +484,7 @@ export function RosterPage() {
   return (
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
+      <ShareQrModal open={qrOpen} onClose={() => setQrOpen(false)} organizationId={selectedId} type="ROSTER" />
       <Typography.Paragraph type="secondary">{t('roster.intro')}</Typography.Paragraph>
       {myCard}
       {!selectedId ? (
