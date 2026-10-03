@@ -174,25 +174,26 @@ export class ShareService {
     const dayCount = Math.round((next.getTime() - first.getTime()) / DAY_MS);
     const days = Array.from({ length: dayCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 
-    const [members, shifts, entries] = await Promise.all([
-      this.prisma.rosterMember.findMany({ where: { organizationId }, include: { personnel: { select: { firstName: true, lastName: true } }, group: { select: { name: true, sortOrder: true } } } }),
-      this.prisma.shiftType.findMany({ where: { organizationId }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] }),
-      this.prisma.rosterEntry.findMany({ where: { organizationId, date: { gte: first, lt: next } }, select: { personnelId: true, date: true, shiftTypeId: true } }),
+    // 公开的班表只给维护部门 (行政综合暂不提供公开二维码)
+    const [staff, shifts, entries] = await Promise.all([
+      this.prisma.staffMember.findMany({ where: { organizationId, department: 'MAINTENANCE', isActive: true }, include: { group: { select: { name: true, sortOrder: true } } } }),
+      this.prisma.shiftType.findMany({ where: { organizationId, department: 'MAINTENANCE' }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] }),
+      this.prisma.rosterEntry.findMany({ where: { organizationId, staff: { department: 'MAINTENANCE' }, date: { gte: first, lt: next } }, select: { staffId: true, date: true, shiftTypeId: true } }),
     ]);
     const codeById = new Map(shifts.map((s) => [s.id, s.code]));
     const cellsByPerson = new Map<string, Record<string, string>>();
     for (const e of entries) {
-      const cells = cellsByPerson.get(e.personnelId) ?? {};
+      const cells = cellsByPerson.get(e.staffId) ?? {};
       cells[e.date.toISOString().slice(0, 10)] = codeById.get(e.shiftTypeId) ?? '';
-      cellsByPerson.set(e.personnelId, cells);
+      cellsByPerson.set(e.staffId, cells);
     }
-    const rows = members
+    const rows = staff
       .map((m) => ({
-        name: `${m.personnel.lastName}${m.personnel.firstName}`.trim(),
+        name: m.name,
         groupName: m.group?.name ?? null,
         groupSort: m.group?.sortOrder ?? Number.MAX_SAFE_INTEGER,
         sortOrder: m.sortOrder,
-        cells: cellsByPerson.get(m.personnelId) ?? {},
+        cells: cellsByPerson.get(m.id) ?? {},
       }))
       .sort((a, b) => a.groupSort - b.groupSort || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'zh'))
       .map(({ name, groupName, cells }) => ({ name, groupName, cells }));

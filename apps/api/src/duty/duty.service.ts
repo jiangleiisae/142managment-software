@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { nextShiftSlot, shiftWindow } from '../roster/shift-time.js';
+import { resolveStaffNames } from '../roster/staff-names.js';
 import type { CreateDutyHandoverDto, UpdateDutyHandoverDto } from './dto/duty.dto.js';
 
 const MAX_LIST = 500;
@@ -59,15 +60,13 @@ export class DutyService {
     if (!fstd) throw new BadRequestException('设备不属于该机构');
   }
 
-  private async personnelNames(tenantId: string, ids: string[]) {
-    const unique = [...new Set(ids)];
-    if (unique.length === 0) return new Map<string, string>();
-    const people = await this.prisma.personnel.findMany({ where: { tenantId, id: { in: unique } } });
-    return new Map(people.map((p) => [p.id, `${p.lastName}${p.firstName}`.trim()]));
+  /// 值班工程师现在是排班人员(维护部门); 老数据里存的是人员档案ID, 按人员档案兜底
+  private staffNames(tenantId: string, ids: string[]) {
+    return resolveStaffNames(this.prisma, tenantId, ids);
   }
 
   private activeWorkShifts(organizationId: string) {
-    return this.prisma.shiftType.findMany({ where: { organizationId, isActive: true, category: 'WORK' }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] });
+    return this.prisma.shiftType.findMany({ where: { organizationId, department: 'MAINTENANCE', isActive: true, category: 'WORK' }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] });
   }
 
   // ---- 值班日志 ----
@@ -76,7 +75,7 @@ export class DutyService {
     const date = parseDay(dto.date, 'date');
     const shift = await this.prisma.shiftType.findFirst({ where: { id: dto.shiftTypeId, organizationId: dto.organizationId } });
     if (!shift) throw new BadRequestException('班次不属于该机构');
-    if (shift.category !== 'WORK' || !shift.isActive) throw new BadRequestException('只能为启用中的工作班次建立值班日志');
+    if (shift.category !== 'WORK' || !shift.isActive || shift.department !== 'MAINTENANCE') throw new BadRequestException('只能为启用中的维护部门工作班次建立值班日志');
     if (dto.groupId) {
       const group = await this.prisma.rosterGroup.findFirst({ where: { id: dto.groupId, organizationId: dto.organizationId } });
       if (!group) throw new BadRequestException('班组不属于该机构');
@@ -86,11 +85,11 @@ export class DutyService {
     if (exists) throw new BadRequestException(`${dto.date} ${shift.code} 班${dto.groupId ? '(该班组)' : ''}已有值班日志`);
 
     // 值班工程师默认取班表里当天排了这个班次的人 (指定班组时只取该班组成员)
-    const rostered = await this.prisma.rosterEntry.findMany({ where: { organizationId: dto.organizationId, date, shiftTypeId: shift.id }, select: { personnelId: true } });
-    let engineerIds = rostered.map((r) => r.personnelId);
+    const rostered = await this.prisma.rosterEntry.findMany({ where: { organizationId: dto.organizationId, date, shiftTypeId: shift.id, staff: { isActive: true } }, select: { staffId: true } });
+    let engineerIds = rostered.map((r) => r.staffId);
     if (dto.groupId && engineerIds.length > 0) {
-      const members = await this.prisma.rosterMember.findMany({ where: { organizationId: dto.organizationId, groupId: dto.groupId, personnelId: { in: engineerIds } }, select: { personnelId: true } });
-      engineerIds = members.map((m) => m.personnelId);
+      const members = await this.prisma.staffMember.findMany({ where: { organizationId: dto.organizationId, groupId: dto.groupId, id: { in: engineerIds } }, select: { id: true } });
+      engineerIds = members.map((m) => m.id);
     }
 
     return this.prisma.dutyLog.create({
@@ -103,8 +102,8 @@ export class DutyService {
     this.assertDraft(log.status);
     if (data.engineerIds) {
       const unique = [...new Set(data.engineerIds)];
-      const found = await this.prisma.personnel.count({ where: { tenantId, id: { in: unique } } });
-      if (found !== unique.length) throw new BadRequestException('包含不属于当前租户的人员');
+      const found = await this.prisma.staffMember.count({ where: { organizationId: log.organizationId, department: 'MAINTENANCE', id: { in: unique } } });
+      if (found !== unique.length) throw new BadRequestException('包含不属于该机构维护部门的人员');
       return this.prisma.dutyLog.update({ where: { id }, data: { engineerIds: unique } });
     }
     return log;
@@ -185,7 +184,7 @@ export class DutyService {
       : [];
 
     const dr = log.drSnapshotJson ? (log.drSnapshotJson as unknown as DrRecord[]) : await this.computeDr(orgId, log.date, log.shiftType);
-    const names = await this.personnelNames(tenantId, log.engineerIds);
+    const names = await this.staffNames(tenantId, log.engineerIds);
     const next = nextShiftSlot(shifts, log.date, log.shiftType);
 
     return {
@@ -197,7 +196,7 @@ export class DutyService {
       createdByEmail: log.createdByEmail,
       shift: { id: log.shiftType.id, code: log.shiftType.code, name: log.shiftType.name, startTime: log.shiftType.startTime, endTime: log.shiftType.endTime, endsNextDay: log.shiftType.endsNextDay },
       group: log.group ? { id: log.group.id, name: log.group.name } : null,
-      engineers: log.engineerIds.map((pid) => ({ personnelId: pid, name: names.get(pid) ?? pid })),
+      engineers: log.engineerIds.map((pid) => ({ staffId: pid, name: names.get(pid) ?? pid })),
       entries: entries.map((e) => ({ ...e, deviceCode: e.fstdId ? (code.get(e.fstdId) ?? null) : null })),
       outgoing: outgoing.map((h) => ({
         id: h.id,
@@ -251,7 +250,7 @@ export class DutyService {
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       take: MAX_LIST,
     });
-    const names = await this.personnelNames(tenantId, logs.flatMap((l) => l.engineerIds));
+    const names = await this.staffNames(tenantId, logs.flatMap((l) => l.engineerIds));
     return logs.map((l) => ({
       id: l.id,
       date: ymd(l.date),
@@ -275,7 +274,7 @@ export class DutyService {
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       take: MAX_LIST,
     });
-    const names = await this.personnelNames(tenantId, logs.flatMap((l) => l.engineerIds));
+    const names = await this.staffNames(tenantId, logs.flatMap((l) => l.engineerIds));
     const fstds = await this.prisma.fstd.findMany({ where: { organizationId: orgId }, select: { id: true, deviceCode: true } });
     const code = new Map(fstds.map((f) => [f.id, f.deviceCode]));
 

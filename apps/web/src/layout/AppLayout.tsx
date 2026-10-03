@@ -3,6 +3,7 @@ import {
   CalendarOutlined,
   DesktopOutlined,
   FormOutlined,
+  IdcardOutlined,
   ProfileOutlined,
   AuditOutlined,
   InboxOutlined,
@@ -75,6 +76,17 @@ const menuEntries: MenuEntry[] = [
     children: [
       { key: '/bookings', labelKey: 'menu.bookings', permission: 'SCHEDULING' },
       { key: '/training-plan', labelKey: 'menu.trainingPlan', permission: 'SCHEDULING' },
+      { key: '/maintenance-staff', labelKey: 'menu.maintenanceStaff', permission: 'SCHEDULING' },
+    ],
+  },
+  {
+    type: 'group',
+    key: 'group:admin',
+    icon: <IdcardOutlined />,
+    labelKey: 'menu.group.admin',
+    children: [
+      { key: '/admin/roster', labelKey: 'menu.adminRoster', permission: 'SCHEDULING' },
+      { key: '/admin/staff', labelKey: 'menu.adminStaff', permission: 'SCHEDULING' },
     ],
   },
   {

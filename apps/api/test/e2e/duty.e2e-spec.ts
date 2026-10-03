@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaService } from '../../src/prisma/prisma.service.js';
-import { ApiCall, apiFor, createFstd, createOrg, createPersonnel, createTestApp, registerTenant } from './helpers.js';
+import { ApiCall, apiFor, createFstd, createOrg, createStaff, createTestApp, registerTenant } from './helpers.js';
 
 /// 值班日志与交接班 (R4a): 用 2026-09 的固定日期, 与运行日期无关。北京时间 = UTC+8。
 describe('duty logs and handovers', () => {
@@ -30,9 +30,8 @@ describe('duty logs and handovers', () => {
     org = await createOrg(call, token);
     const list = await call('GET', `/roster/shift-types?organizationId=${org.id}`, undefined, token);
     shifts = Object.fromEntries(list.body.map((s: { code: string; id: string }) => [s.code, s]));
-    wang = await createPersonnel(call, token, { firstName: '明', lastName: '王' });
-    await call('POST', '/roster/members', { organizationId: org.id, personnelIds: [wang.id] }, token);
-    await call('POST', '/roster/entries', { organizationId: org.id, cells: [{ personnelId: wang.id, date: '2026-09-10' }], shiftTypeId: shifts.M.id }, token);
+    wang = await createStaff(call, token, org.id, '王明');
+    await call('POST', '/roster/entries', { organizationId: org.id, cells: [{ staffId: wang.id, date: '2026-09-10' }], shiftTypeId: shifts.M.id }, token);
     fstd = await createFstd(call, token, org.id);
   });
 

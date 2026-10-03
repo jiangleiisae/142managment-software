@@ -1,4 +1,4 @@
-import { ShiftCategory } from '@prisma/client';
+import { ShiftCategory, StaffDepartment } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -23,6 +23,11 @@ export class CreateShiftTypeDto {
   @IsString()
   @IsNotEmpty()
   organizationId!: string;
+
+  /// 不传默认维护部门
+  @IsOptional()
+  @IsEnum(StaffDepartment)
+  department?: StaffDepartment;
 
   @Matches(/^[A-Za-z0-9]{1,8}$/, { message: 'code 只能是 1-8 位字母或数字' })
   code!: string;
@@ -72,7 +77,7 @@ export class CreateShiftTypeDto {
   sortOrder?: number;
 }
 
-/// 班次代码创建后不可改 (班表、统计、导出都按代码展示), 其余字段可改; 停用而不是删除
+/// 班次代码和所属部门创建后不可改 (班表、统计、导出都按代码展示), 其余字段可改; 停用而不是删除
 export class UpdateShiftTypeDto {
   @IsOptional()
   @IsString()
@@ -131,6 +136,10 @@ export class CreateRosterGroupDto {
   @IsNotEmpty()
   organizationId!: string;
 
+  @IsOptional()
+  @IsEnum(StaffDepartment)
+  department?: StaffDepartment;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
@@ -151,60 +160,101 @@ export class UpdateRosterGroupDto {
   sortOrder?: number;
 }
 
-export class AddRosterMembersDto {
+/// 排班人员 (维护人员 / 行政综合人员)
+export class CreateStaffDto {
   @IsString()
   @IsNotEmpty()
   organizationId!: string;
 
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(200)
-  @IsString({ each: true })
-  personnelIds!: string[];
+  @IsEnum(StaffDepartment)
+  department!: StaffDepartment;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  employeeNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  position?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
 
   @IsOptional()
   @IsString()
   groupId?: string;
+
+  /// 关联登录账号 (用于"我的排班")
+  @IsOptional()
+  @IsString()
+  userId?: string;
 }
 
-/// 在班表里直接新建人员 (只有姓名), 不需要先去"人员资质"里建档案
-export class CreateRosterMemberDto {
+/// 部门创建后不可改; groupId/userId 传 null 表示取消分组/取消关联账号
+export class UpdateStaffDto {
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  organizationId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  lastName!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  firstName!: string;
+  @MaxLength(100)
+  name?: string;
 
   @IsOptional()
   @IsString()
-  groupId?: string;
-}
+  @MaxLength(50)
+  employeeNo?: string;
 
-export class UpdateRosterMemberDto {
-  /// null 表示移出分组
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  position?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
   @IsOptional()
   @IsString()
   groupId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  userId?: string | null;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100000)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class RosterCellDto {
   @IsString()
   @IsNotEmpty()
-  personnelId!: string;
+  staffId!: string;
 
   /// 北京时间日历日 YYYY-MM-DD
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date 必须是 YYYY-MM-DD 格式' })
@@ -223,7 +273,7 @@ export class SetRosterEntriesDto {
   @Type(() => RosterCellDto)
   cells!: RosterCellDto[];
 
-  /// 不传或 null 表示清除这些格子的班次
+  /// 不传或 null 表示清除这些格子的班次; 班次必须和这些人员属于同一个部门
   @IsOptional()
   @IsString()
   shiftTypeId?: string | null;

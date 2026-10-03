@@ -5,20 +5,20 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthContext } from '../auth/jwt-payload.interface.js';
 import { RequirePermissions, SkipPermissionCheck } from '../auth/permissions.decorator.js';
 import {
-  AddRosterMembersDto,
-  CreateRosterMemberDto,
   CreateRosterGroupDto,
   CreateShiftTypeDto,
+  CreateStaffDto,
   SetRosterEntriesDto,
   UpdateRosterGroupDto,
-  UpdateRosterMemberDto,
   UpdateShiftTypeDto,
+  UpdateStaffDto,
 } from './dto/roster.dto.js';
-import { RosterService } from './roster.service.js';
+import { parseDepartment, RosterService } from './roster.service.js';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-/// 人员班表 (R2): 班次配置、班组与人员、班表、工时统计。权限沿用 SCHEDULING; "我的排班"对任意已登录用户开放(只返回本人)。
+/// 人员班表: 班次配置、班组、排班人员(维护人员/行政综合人员)、班表、工时统计。权限沿用 SCHEDULING;
+/// "我的排班"对任意已登录用户开放(只返回本人)。维护和行政综合两个部门用 department 参数区分, 不传默认维护。
 @Controller('roster')
 @RequirePermissions(Permission.SCHEDULING)
 export class RosterController {
@@ -30,8 +30,8 @@ export class RosterController {
   }
 
   @Get('shift-types')
-  listShiftTypes(@Query('organizationId') organizationId: string) {
-    return this.rosterService.listShiftTypes(organizationId);
+  listShiftTypes(@Query('organizationId') organizationId: string, @Query('department') department?: string) {
+    return this.rosterService.listShiftTypes(organizationId, parseDepartment(department));
   }
 
   @Post('shift-types')
@@ -45,13 +45,13 @@ export class RosterController {
   }
 
   @Get('groups')
-  listGroups(@Query('organizationId') organizationId: string) {
-    return this.rosterService.listGroups(organizationId);
+  listGroups(@Query('organizationId') organizationId: string, @Query('department') department?: string) {
+    return this.rosterService.listGroups(organizationId, parseDepartment(department));
   }
 
   @Post('groups')
   createGroup(@Body() dto: CreateRosterGroupDto) {
-    return this.rosterService.createGroup(dto.organizationId, dto.name);
+    return this.rosterService.createGroup(dto.organizationId, dto.department ?? 'MAINTENANCE', dto.name);
   }
 
   @Patch('groups/:id')
@@ -64,39 +64,38 @@ export class RosterController {
     return this.rosterService.deleteGroup(user.tenantId, id);
   }
 
-  @Get('members')
-  listMembers(@Query('organizationId') organizationId: string) {
-    return this.rosterService.listMembers(organizationId);
+  // ---- 排班人员 (单段字面量路由 user-options 在带参数的路由之前) ----
+
+  @Get('staff/user-options')
+  userOptions(@CurrentUser() user: AuthContext) {
+    return this.rosterService.userOptions(user.tenantId);
   }
 
-  @Get('personnel-options')
-  personnelOptions(@CurrentUser() user: AuthContext, @Query('organizationId') organizationId: string) {
-    return this.rosterService.personnelOptions(user.tenantId, organizationId);
+  @Get('staff')
+  listStaff(@Query('organizationId') organizationId: string, @Query('department') department?: string, @Query('includeInactive') includeInactive?: string) {
+    return this.rosterService.listStaff(organizationId, parseDepartment(department), includeInactive === 'true');
   }
 
-  @Post('members/new')
-  createMember(@CurrentUser() user: AuthContext, @Body() dto: CreateRosterMemberDto) {
-    return this.rosterService.createMember(user.tenantId, user.email, dto.organizationId, dto);
+  @Post('staff')
+  createStaff(@CurrentUser() user: AuthContext, @Body() dto: CreateStaffDto) {
+    return this.rosterService.createStaff(user.tenantId, user.email, dto);
   }
 
-  @Post('members')
-  addMembers(@CurrentUser() user: AuthContext, @Body() dto: AddRosterMembersDto) {
-    return this.rosterService.addMembers(user.tenantId, dto.organizationId, dto.personnelIds, dto.groupId);
+  @Patch('staff/:id')
+  updateStaff(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateStaffDto) {
+    return this.rosterService.updateStaff(user.tenantId, user.email, id, dto);
   }
 
-  @Patch('members/:id')
-  updateMember(@CurrentUser() user: AuthContext, @Param('id') id: string, @Body() dto: UpdateRosterMemberDto) {
-    return this.rosterService.updateMember(user.tenantId, id, dto);
+  @Delete('staff/:id')
+  deleteStaff(@CurrentUser() user: AuthContext, @Param('id') id: string) {
+    return this.rosterService.deleteStaff(user.tenantId, user.email, id);
   }
 
-  @Delete('members/:id')
-  removeMember(@CurrentUser() user: AuthContext, @Param('id') id: string) {
-    return this.rosterService.removeMember(user.tenantId, id);
-  }
+  // ---- 班表 ----
 
   @Get('entries')
-  listEntries(@Query('organizationId') organizationId: string, @Query('month') month: string) {
-    return this.rosterService.listEntries(organizationId, month);
+  listEntries(@Query('organizationId') organizationId: string, @Query('month') month: string, @Query('department') department?: string) {
+    return this.rosterService.listEntries(organizationId, parseDepartment(department), month);
   }
 
   @Post('entries')
@@ -108,26 +107,34 @@ export class RosterController {
   history(
     @CurrentUser() user: AuthContext,
     @Query('organizationId') organizationId: string,
-    @Query('personnelId') personnelId?: string,
+    @Query('department') department?: string,
+    @Query('staffId') staffId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.rosterService.history(user.tenantId, organizationId, personnelId, from, to);
+    return this.rosterService.history(user.tenantId, organizationId, parseDepartment(department), staffId, from, to);
   }
 
   @Get('hours')
-  hours(@Query('organizationId') organizationId: string, @Query('from') from: string, @Query('to') to: string, @Query('groupId') groupId?: string) {
-    return this.rosterService.hours(organizationId, from, to, groupId);
+  hours(@Query('organizationId') organizationId: string, @Query('from') from: string, @Query('to') to: string, @Query('department') department?: string, @Query('groupId') groupId?: string) {
+    return this.rosterService.hours(organizationId, parseDepartment(department), from, to, groupId);
   }
 
   @Get('hours/export')
-  async exportHours(@Res({ passthrough: true }) res: Response, @Query('organizationId') organizationId: string, @Query('from') from: string, @Query('to') to: string, @Query('groupId') groupId?: string) {
-    return this.file(res, await this.rosterService.exportHours(organizationId, from, to, groupId), '工时统计.xlsx');
+  async exportHours(
+    @Res({ passthrough: true }) res: Response,
+    @Query('organizationId') organizationId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('department') department?: string,
+    @Query('groupId') groupId?: string,
+  ) {
+    return this.file(res, await this.rosterService.exportHours(organizationId, parseDepartment(department), from, to, groupId), '工时统计.xlsx');
   }
 
   @Get('export')
-  async exportMonth(@Res({ passthrough: true }) res: Response, @Query('organizationId') organizationId: string, @Query('month') month: string) {
-    return this.file(res, await this.rosterService.exportMonth(organizationId, month), `人员班表-${month}.xlsx`);
+  async exportMonth(@Res({ passthrough: true }) res: Response, @Query('organizationId') organizationId: string, @Query('month') month: string, @Query('department') department?: string) {
+    return this.file(res, await this.rosterService.exportMonth(organizationId, parseDepartment(department), month), `人员班表-${month}.xlsx`);
   }
 
   @Get('my')

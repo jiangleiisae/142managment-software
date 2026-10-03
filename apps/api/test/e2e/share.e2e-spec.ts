@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiCall, apiFor, createFstd, createOrg, createPersonnel, createTestApp, registerTenant } from './helpers.js';
+import { ApiCall, apiFor, createFstd, createOrg, createStaff, createTestApp, registerTenant } from './helpers.js';
 
 /// 公开分享(二维码): 训练计划 / 人员班表。公开接口不带任何认证信息。
 const cnDate = (offsetDays: number) => new Date(Date.now() + 8 * 60 * 60 * 1000 + offsetDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -80,9 +80,12 @@ describe('public share links', () => {
   it('人员班表: 公开页给出人员×日期的班次代码和班次说明', async () => {
     const roster = (await call('GET', `/shares?organizationId=${org.id}`, undefined, token)).body.find((s: { type: string }) => s.type === 'ROSTER');
     const shifts = Object.fromEntries((await call('GET', `/roster/shift-types?organizationId=${org.id}`, undefined, token)).body.map((s: { code: string; id: string }) => [s.code, s.id]));
-    const wang = await createPersonnel(call, token, { firstName: '明', lastName: '王', email: 'wang-private@example.com', phone: '13999990000' });
-    await call('POST', '/roster/members', { organizationId: org.id, personnelIds: [wang.id] }, token);
-    await call('POST', '/roster/entries', { organizationId: org.id, cells: [{ personnelId: wang.id, date: '2031-05-02' }], shiftTypeId: shifts.M }, token);
+    const wang = await createStaff(call, token, org.id, '王明', { phone: '13999990000', employeeNo: 'EMP-SECRET-7', position: '维护工程师', notes: '内部备注' });
+    await call('POST', '/roster/entries', { organizationId: org.id, cells: [{ staffId: wang.id, date: '2031-05-02' }], shiftTypeId: shifts.M }, token);
+    // 行政综合部门的人和班表不会出现在公开的维护班表里
+    const driver = await createStaff(call, token, org.id, '司机老赵', { department: 'ADMIN' });
+    const adminShifts = Object.fromEntries((await call('GET', `/roster/shift-types?organizationId=${org.id}&department=ADMIN`, undefined, token)).body.map((s: { code: string; id: string }) => [s.code, s.id]));
+    await call('POST', '/roster/entries', { organizationId: org.id, cells: [{ staffId: driver.id, date: '2031-05-02' }], shiftTypeId: adminShifts.Z }, token);
 
     const res = await publicGet(`/public/share/${roster.token}?month=2031-05`);
     expect(res.status).toBe(200);
@@ -91,8 +94,10 @@ describe('public share links', () => {
     expect(res.body.rows).toEqual([{ name: '王明', groupName: null, cells: { '2031-05-02': 'M' } }]);
     expect(res.body.shifts.find((s: { code: string }) => s.code === 'M')).toMatchObject({ name: '白班', startTime: '08:30', endTime: '17:00' });
     const raw = JSON.stringify(res.body);
-    expect(raw).not.toContain('wang-private@example.com');
     expect(raw).not.toContain('13999990000');
+    expect(raw).not.toContain('EMP-SECRET-7');
+    expect(raw).not.toContain('内部备注');
+    expect(raw).not.toContain('司机老赵');
     expect((await publicGet(`/public/share/${roster.token}?month=2031-13`)).status).toBe(400);
   });
 

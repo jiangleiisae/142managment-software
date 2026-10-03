@@ -71,6 +71,13 @@ export async function createStudent(call: ApiCall, token: string, organizationId
   return res.body;
 }
 
+/// 在班表里新建一名排班人员 (默认维护部门)
+export async function createStaff(call: ApiCall, token: string, organizationId: string, name: string, overrides: Record<string, unknown> = {}) {
+  const res = await call('POST', '/roster/staff', { organizationId, department: 'MAINTENANCE', name, ...overrides }, token);
+  if (res.status !== 201) throw new Error(`create staff failed: ${res.status} ${JSON.stringify(res.body)}`);
+  return res.body;
+}
+
 export async function createFstd(call: ApiCall, token: string, organizationId: string, overrides: Record<string, unknown> = {}) {
   const res = await call(
     'POST',

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiCall, apiFor, createFstd, createOrg, createPersonnel, createTestApp, registerTenant } from './helpers.js';
+import { ApiCall, apiFor, createFstd, createOrg, createStaff, createTestApp, registerTenant } from './helpers.js';
 
 /// 设备级检查单 (R4b): 模板、"今天应做"推算(班表+开关+停飞+模板)、执行记录。日期都相对北京时间的今天。
 const DAY = 24 * 60 * 60 * 1000;
@@ -27,7 +27,7 @@ describe('device checklists', () => {
   const record = (extra: Record<string, unknown>) =>
     call('POST', '/checklists/records', { organizationId: org.id, fstdId: devA.id, type: 'PRE_FLIGHT', date: cnDate(-3), shiftTypeId: shifts.M.id, results: [{ no: '1', passed: true }, { no: '2', passed: true }], ...extra }, token);
   const roster = (date: string, code: string) =>
-    call('POST', '/roster/entries', { organizationId: org.id, cells: [{ personnelId: wang.id, date }], shiftTypeId: shifts[code].id }, token);
+    call('POST', '/roster/entries', { organizationId: org.id, cells: [{ staffId: wang.id, date }], shiftTypeId: shifts[code].id }, token);
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -36,8 +36,7 @@ describe('device checklists', () => {
     org = await createOrg(call, token);
     const list = await call('GET', `/roster/shift-types?organizationId=${org.id}`, undefined, token);
     shifts = Object.fromEntries(list.body.map((s: { code: string; id: string }) => [s.code, s]));
-    wang = await createPersonnel(call, token, { firstName: '明', lastName: '王' });
-    await call('POST', '/roster/members', { organizationId: org.id, personnelIds: [wang.id] }, token);
+    wang = await createStaff(call, token, org.id, '王明');
     devA = await createFstd(call, token, org.id);
     devB = await createFstd(call, token, org.id);
     devC = await createFstd(call, token, org.id);

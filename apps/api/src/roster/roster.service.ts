@@ -1,28 +1,49 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ShiftCategory } from '@prisma/client';
+import { Prisma, ShiftCategory, StaffDepartment } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import type { CreateShiftTypeDto, CreateStaffDto, UpdateShiftTypeDto, UpdateStaffDto } from './dto/roster.dto.js';
+import { resolveStaffNames } from './staff-names.js';
 import { CN_OFFSET_MS, DAY_MS, shiftGrossMinutes, toMinutes } from './shift-time.js';
-import type { CreateShiftTypeDto, UpdateShiftTypeDto } from './dto/roster.dto.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 const MAX_STAT_DAYS = 366;
 
-/// 新机构第一次打开班表时自动建立的默认班次 (休息时长默认 0, 可在班次配置里改)
-const DEFAULT_SHIFTS: Omit<Prisma.ShiftTypeCreateManyInput, 'organizationId'>[] = [
-  { code: 'M', name: '白班', category: 'WORK', startTime: '08:30', endTime: '17:00', endsNextDay: false, color: '#1677ff', sortOrder: 1 },
-  { code: 'E', name: '晚班', category: 'WORK', startTime: '17:00', endTime: '08:30', endsNextDay: true, color: '#722ed1', sortOrder: 2 },
-  { code: 'D', name: '24小时班次', category: 'WORK', startTime: '08:30', endTime: '08:30', endsNextDay: true, color: '#fa8c16', sortOrder: 3 },
-  { code: 'B', name: '出差', category: 'BUSINESS_TRIP', color: '#13c2c2', sortOrder: 4 },
-  { code: 'S', name: '病假', category: 'SICK_LEAVE', color: '#f5222d', sortOrder: 5 },
-  { code: 'V', name: '倒休', category: 'COMPENSATORY_LEAVE', color: '#52c41a', sortOrder: 6 },
-  { code: 'Q', name: '其他', category: 'OTHER', color: '#8c8c8c', sortOrder: 7 },
-  { code: 'A', name: '年假', category: 'ANNUAL_LEAVE', color: '#eb2f96', sortOrder: 8 },
-];
+type DefaultShift = Omit<Prisma.ShiftTypeCreateManyInput, 'organizationId' | 'department'>;
+
+/// 新机构第一次打开某个部门的班表时自动建立的默认班次 (休息时长默认 0, 可在班次配置里改)
+const DEFAULT_SHIFTS: Record<StaffDepartment, DefaultShift[]> = {
+  MAINTENANCE: [
+    { code: 'M', name: '白班', category: 'WORK', startTime: '08:30', endTime: '17:00', endsNextDay: false, color: '#1677ff', sortOrder: 1 },
+    { code: 'E', name: '晚班', category: 'WORK', startTime: '17:00', endTime: '08:30', endsNextDay: true, color: '#722ed1', sortOrder: 2 },
+    { code: 'D', name: '24小时班次', category: 'WORK', startTime: '08:30', endTime: '08:30', endsNextDay: true, color: '#fa8c16', sortOrder: 3 },
+    { code: 'B', name: '出差', category: 'BUSINESS_TRIP', color: '#13c2c2', sortOrder: 4 },
+    { code: 'S', name: '病假', category: 'SICK_LEAVE', color: '#f5222d', sortOrder: 5 },
+    { code: 'V', name: '倒休', category: 'COMPENSATORY_LEAVE', color: '#52c41a', sortOrder: 6 },
+    { code: 'Q', name: '其他', category: 'OTHER', color: '#8c8c8c', sortOrder: 7 },
+    { code: 'A', name: '年假', category: 'ANNUAL_LEAVE', color: '#eb2f96', sortOrder: 8 },
+  ],
+  // 行政综合只给一个最常用的正常班和假别, 早班/晚班/待命等按各岗位实际情况在"班次配置"里自己加
+  ADMIN: [
+    { code: 'Z', name: '正常班', category: 'WORK', startTime: '09:00', endTime: '18:00', endsNextDay: false, restMinutes: 60, color: '#1677ff', sortOrder: 1 },
+    { code: 'B', name: '出差', category: 'BUSINESS_TRIP', color: '#13c2c2', sortOrder: 2 },
+    { code: 'S', name: '病假', category: 'SICK_LEAVE', color: '#f5222d', sortOrder: 3 },
+    { code: 'V', name: '倒休', category: 'COMPENSATORY_LEAVE', color: '#52c41a', sortOrder: 4 },
+    { code: 'Q', name: '事假/其他', category: 'OTHER', color: '#8c8c8c', sortOrder: 5 },
+    { code: 'A', name: '年假', category: 'ANNUAL_LEAVE', color: '#eb2f96', sortOrder: 6 },
+  ],
+};
 
 const cnToday = () => new Date(Date.now() + CN_OFFSET_MS).toISOString().slice(0, 10);
 const two = (n: number) => String(n).padStart(2, '0');
+
+/// 查询参数里的部门: 不传默认维护; 传了必须合法
+export function parseDepartment(value: string | undefined | null): StaffDepartment {
+  if (value === undefined || value === null || value === '') return 'MAINTENANCE';
+  if (value === 'MAINTENANCE' || value === 'ADMIN') return value;
+  throw new BadRequestException('department 只能是 MAINTENANCE 或 ADMIN');
+}
 
 function parseDay(value: string | undefined, label: string): Date {
   if (!value) throw new BadRequestException(`缺少 ${label}`);
@@ -51,6 +72,9 @@ function validateShift(v: { category: ShiftCategory; startTime?: string | null; 
   if ((v.restMinutes ?? 0) >= gross) throw new BadRequestException('休息时长必须小于班次时长');
 }
 
+const DEPARTMENT_TEXT: Record<StaffDepartment, string> = { MAINTENANCE: '维护', ADMIN: '行政综合' };
+
+/// 人员班表 (R2 + 行政综合): 班次、班组、人员、班表、工时统计。维护和行政综合两个部门各有自己的人员/班组/班次/班表。
 @Injectable()
 export class RosterService {
   constructor(
@@ -65,24 +89,26 @@ export class RosterService {
 
   // ---- 班次配置 ----
 
-  async listShiftTypes(organizationId: string | undefined) {
+  async listShiftTypes(organizationId: string | undefined, department: StaffDepartment = 'MAINTENANCE') {
     const orgId = this.requireOrganizationId(organizationId);
-    const count = await this.prisma.shiftType.count({ where: { organizationId: orgId } });
+    const count = await this.prisma.shiftType.count({ where: { organizationId: orgId, department } });
     if (count === 0) {
-      await this.prisma.shiftType.createMany({ data: DEFAULT_SHIFTS.map((s) => ({ ...s, organizationId: orgId })), skipDuplicates: true });
+      await this.prisma.shiftType.createMany({ data: DEFAULT_SHIFTS[department].map((s) => ({ ...s, organizationId: orgId, department })), skipDuplicates: true });
     }
-    return this.prisma.shiftType.findMany({ where: { organizationId: orgId }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] });
+    return this.prisma.shiftType.findMany({ where: { organizationId: orgId, department }, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }] });
   }
 
   async createShiftType(tenantId: string, dto: CreateShiftTypeDto) {
     validateShift(dto);
+    const department = dto.department ?? 'MAINTENANCE';
     const code = dto.code.toUpperCase();
-    const exists = await this.prisma.shiftType.findUnique({ where: { organizationId_code: { organizationId: dto.organizationId, code } } });
+    const exists = await this.prisma.shiftType.findUnique({ where: { organizationId_department_code: { organizationId: dto.organizationId, department, code } } });
     if (exists) throw new BadRequestException(`班次代码 ${code} 已存在`);
     const isWork = dto.category === 'WORK';
     const created = await this.prisma.shiftType.create({
       data: {
         organizationId: dto.organizationId,
+        department,
         code,
         name: dto.name.trim(),
         category: dto.category,
@@ -134,16 +160,16 @@ export class RosterService {
 
   // ---- 班组 ----
 
-  listGroups(organizationId: string | undefined) {
-    return this.prisma.rosterGroup.findMany({ where: { organizationId: this.requireOrganizationId(organizationId) }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  listGroups(organizationId: string | undefined, department: StaffDepartment = 'MAINTENANCE') {
+    return this.prisma.rosterGroup.findMany({ where: { organizationId: this.requireOrganizationId(organizationId), department }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
   }
 
-  async createGroup(organizationId: string, name: string) {
+  async createGroup(organizationId: string, department: StaffDepartment, name: string) {
     const trimmed = name.trim();
-    const exists = await this.prisma.rosterGroup.findUnique({ where: { organizationId_name: { organizationId, name: trimmed } } });
+    const exists = await this.prisma.rosterGroup.findUnique({ where: { organizationId_department_name: { organizationId, department, name: trimmed } } });
     if (exists) throw new BadRequestException(`班组 ${trimmed} 已存在`);
-    const max = await this.prisma.rosterGroup.aggregate({ where: { organizationId }, _max: { sortOrder: true } });
-    return this.prisma.rosterGroup.create({ data: { organizationId, name: trimmed, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
+    const max = await this.prisma.rosterGroup.aggregate({ where: { organizationId, department }, _max: { sortOrder: true } });
+    return this.prisma.rosterGroup.create({ data: { organizationId, department, name: trimmed, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
   }
 
   private async findGroupOrThrow(id: string, tenantId: string) {
@@ -156,7 +182,7 @@ export class RosterService {
     const group = await this.findGroupOrThrow(id, tenantId);
     const name = data.name?.trim();
     if (name && name !== group.name) {
-      const dup = await this.prisma.rosterGroup.findUnique({ where: { organizationId_name: { organizationId: group.organizationId, name } } });
+      const dup = await this.prisma.rosterGroup.findUnique({ where: { organizationId_department_name: { organizationId: group.organizationId, department: group.department, name } } });
       if (dup) throw new BadRequestException(`班组 ${name} 已存在`);
     }
     return this.prisma.rosterGroup.update({ where: { id }, data: { name, sortOrder: data.sortOrder } });
@@ -164,188 +190,217 @@ export class RosterService {
 
   async deleteGroup(tenantId: string, id: string) {
     await this.findGroupOrThrow(id, tenantId);
-    await this.prisma.rosterGroup.delete({ where: { id } }); // 成员的 groupId 自动置空
+    await this.prisma.rosterGroup.delete({ where: { id } }); // 人员的 groupId 自动置空
     return { deleted: true };
   }
 
-  // ---- 班表人员 ----
+  // ---- 排班人员 (维护人员 / 行政综合人员) ----
 
-  listMembers(organizationId: string | undefined) {
-    return this.prisma.rosterMember
-      .findMany({
-        where: { organizationId: this.requireOrganizationId(organizationId) },
-        include: { personnel: { select: { id: true, firstName: true, lastName: true } }, group: { select: { id: true, name: true, sortOrder: true } } },
-      })
-      .then((rows) =>
-        rows
-          .map((m) => ({
-            id: m.id,
-            personnelId: m.personnelId,
-            name: `${m.personnel.lastName}${m.personnel.firstName}`.trim(),
-            groupId: m.groupId,
-            groupName: m.group?.name ?? null,
-            groupSort: m.group?.sortOrder ?? Number.MAX_SAFE_INTEGER,
-            sortOrder: m.sortOrder,
-          }))
-          .sort((a, b) => a.groupSort - b.groupSort || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'zh')),
-      );
+  private staffView(s: { id: string; name: string; employeeNo: string | null; position: string | null; phone: string | null; notes: string | null; groupId: string | null; userId: string | null; sortOrder: number; isActive: boolean; department: StaffDepartment; group: { name: string; sortOrder: number } | null; user: { email: string } | null }) {
+    return {
+      id: s.id,
+      department: s.department,
+      name: s.name,
+      employeeNo: s.employeeNo,
+      position: s.position,
+      phone: s.phone,
+      notes: s.notes,
+      groupId: s.groupId,
+      groupName: s.group?.name ?? null,
+      userId: s.userId,
+      userEmail: s.user?.email ?? null,
+      sortOrder: s.sortOrder,
+      isActive: s.isActive,
+    };
   }
 
-  private async assertGroupInOrg(groupId: string | undefined | null, organizationId: string) {
-    if (!groupId) return;
-    const group = await this.prisma.rosterGroup.findFirst({ where: { id: groupId, organizationId } });
-    if (!group) throw new BadRequestException('班组不属于该机构');
-  }
-
-  async addMembers(tenantId: string, organizationId: string, personnelIds: string[], groupId?: string) {
-    await this.assertGroupInOrg(groupId, organizationId);
-    const unique = [...new Set(personnelIds)];
-    const people = await this.prisma.personnel.findMany({ where: { tenantId, id: { in: unique } }, select: { id: true } });
-    if (people.length !== unique.length) throw new BadRequestException('包含不属于当前租户的人员');
-    const max = await this.prisma.rosterMember.aggregate({ where: { organizationId }, _max: { sortOrder: true } });
-    let next = (max._max.sortOrder ?? 0) + 1;
-    const res = await this.prisma.rosterMember.createMany({
-      data: unique.map((personnelId) => ({ organizationId, personnelId, groupId: groupId ?? null, sortOrder: next++ })),
-      skipDuplicates: true,
-    });
-    return { requested: unique.length, added: res.count };
-  }
-
-  /// 可加入班表的人员: 本租户里还不在该机构班表中的人员档案。
-  /// 班表模块自己提供这个列表, 这样只有"排班预订"权限的账号也能添加人员, 不必同时拥有"人员资质"权限。
-  async personnelOptions(tenantId: string, organizationId: string | undefined) {
+  /// 按 在岗优先 → 班组顺序 → 排序号 → 姓名 排列; includeInactive=false 时不含已停用的人员 (班表里只显示在岗人员)
+  async listStaff(organizationId: string | undefined, department: StaffDepartment, includeInactive = false) {
     const orgId = this.requireOrganizationId(organizationId);
-    const [people, members] = await Promise.all([
-      this.prisma.personnel.findMany({ where: { tenantId }, select: { id: true, firstName: true, lastName: true }, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] }),
-      this.prisma.rosterMember.findMany({ where: { organizationId: orgId }, select: { personnelId: true } }),
-    ]);
-    const taken = new Set(members.map((m) => m.personnelId));
-    return people.filter((p) => !taken.has(p.id)).map((p) => ({ id: p.id, name: `${p.lastName}${p.firstName}`.trim() }));
+    const rows = await this.prisma.staffMember.findMany({
+      where: { organizationId: orgId, department, ...(includeInactive ? {} : { isActive: true }) },
+      include: { group: { select: { name: true, sortOrder: true } }, user: { select: { email: true } } },
+    });
+    return rows
+      .map((r) => ({ view: this.staffView(r), groupSort: r.group?.sortOrder ?? Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => Number(b.view.isActive) - Number(a.view.isActive) || a.groupSort - b.groupSort || a.view.sortOrder - b.view.sortOrder || a.view.name.localeCompare(b.view.name, 'zh'))
+      .map((x) => x.view);
   }
 
-  /// 新建人员(只有姓名)并直接加入班表; 同名不阻止(可能真的重名), 创建写审计轨迹
-  async createMember(tenantId: string, email: string, organizationId: string, data: { lastName: string; firstName: string; groupId?: string }) {
-    await this.assertGroupInOrg(data.groupId, organizationId);
-    const lastName = data.lastName.trim();
-    const firstName = data.firstName.trim();
-    if (!lastName || !firstName) throw new BadRequestException('姓和名都不能为空');
-    const personnel = await this.prisma.personnel.create({ data: { tenantId, lastName, firstName } });
-    await this.auditLog.write(tenantId, 'Personnel', personnel.id, 'create', null, { ...personnel, via: 'roster', by: email });
-    const max = await this.prisma.rosterMember.aggregate({ where: { organizationId }, _max: { sortOrder: true } });
-    const member = await this.prisma.rosterMember.create({ data: { organizationId, personnelId: personnel.id, groupId: data.groupId ?? null, sortOrder: (max._max.sortOrder ?? 0) + 1 } });
-    return { id: member.id, personnelId: personnel.id, name: `${lastName}${firstName}` };
+  private async assertGroup(groupId: string | undefined | null, organizationId: string, department: StaffDepartment) {
+    if (!groupId) return;
+    const group = await this.prisma.rosterGroup.findFirst({ where: { id: groupId, organizationId, department } });
+    if (!group) throw new BadRequestException('班组不属于该机构的这个部门');
   }
 
-  async updateMember(tenantId: string, id: string, data: { groupId?: string | null; sortOrder?: number }) {
-    const member = await this.prisma.rosterMember.findFirst({ where: { id, organization: { tenantId } } });
-    if (!member) throw new NotFoundException('班表人员不存在');
-    await this.assertGroupInOrg(data.groupId, member.organizationId);
-    return this.prisma.rosterMember.update({ where: { id }, data: { groupId: data.groupId, sortOrder: data.sortOrder } });
+  /// 关联的登录账号必须属于本租户、启用中、且还没关联别的排班人员
+  private async assertUserLinkable(tenantId: string, userId: string | undefined | null, exceptStaffId?: string) {
+    if (!userId) return;
+    const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true } });
+    if (!user) throw new BadRequestException('登录账号不属于当前租户或已停用');
+    const taken = await this.prisma.staffMember.findUnique({ where: { userId }, select: { id: true } });
+    if (taken && taken.id !== exceptStaffId) throw new BadRequestException('该登录账号已经关联了另一位排班人员');
   }
 
-  /// 移出班表只删除成员关系, 已排的历史班次保留 (工时统计与修改历史仍可追溯)
-  async removeMember(tenantId: string, id: string) {
-    const member = await this.prisma.rosterMember.findFirst({ where: { id, organization: { tenantId } } });
-    if (!member) throw new NotFoundException('班表人员不存在');
-    await this.prisma.rosterMember.delete({ where: { id } });
+  async createStaff(tenantId: string, email: string, dto: CreateStaffDto) {
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException('姓名不能为空');
+    await this.assertGroup(dto.groupId, dto.organizationId, dto.department);
+    await this.assertUserLinkable(tenantId, dto.userId);
+    const max = await this.prisma.staffMember.aggregate({ where: { organizationId: dto.organizationId, department: dto.department }, _max: { sortOrder: true } });
+    const created = await this.prisma.staffMember.create({
+      data: {
+        organizationId: dto.organizationId,
+        department: dto.department,
+        name,
+        employeeNo: dto.employeeNo?.trim() || null,
+        position: dto.position?.trim() || null,
+        phone: dto.phone?.trim() || null,
+        notes: dto.notes?.trim() || null,
+        groupId: dto.groupId ?? null,
+        userId: dto.userId ?? null,
+        sortOrder: (max._max.sortOrder ?? 0) + 1,
+      },
+    });
+    await this.auditLog.write(tenantId, 'StaffMember', created.id, 'create', null, { ...created, by: email });
+    return created;
+  }
+
+  private async findStaffOrThrow(id: string, tenantId: string) {
+    const staff = await this.prisma.staffMember.findFirst({ where: { id, organization: { tenantId } } });
+    if (!staff) throw new NotFoundException('人员不存在');
+    return staff;
+  }
+
+  async updateStaff(tenantId: string, email: string, id: string, dto: UpdateStaffDto) {
+    const before = await this.findStaffOrThrow(id, tenantId);
+    if (dto.name !== undefined && !dto.name.trim()) throw new BadRequestException('姓名不能为空');
+    await this.assertGroup(dto.groupId, before.organizationId, before.department);
+    await this.assertUserLinkable(tenantId, dto.userId, id);
+    const clean = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
+    const updated = await this.prisma.staffMember.update({
+      where: { id },
+      data: {
+        name: dto.name?.trim(),
+        employeeNo: clean(dto.employeeNo),
+        position: clean(dto.position),
+        phone: clean(dto.phone),
+        notes: clean(dto.notes),
+        groupId: dto.groupId,
+        userId: dto.userId,
+        sortOrder: dto.sortOrder,
+        isActive: dto.isActive,
+      },
+    });
+    await this.auditLog.write(tenantId, 'StaffMember', id, 'update', before, { ...updated, by: email });
+    return updated;
+  }
+
+  /// 没有任何历史班次时才能删除; 否则请停用 (停用后不再出现在班表里, 历史班次、工时统计和修改历史都保留)
+  async deleteStaff(tenantId: string, email: string, id: string) {
+    const staff = await this.findStaffOrThrow(id, tenantId);
+    const entries = await this.prisma.rosterEntry.count({ where: { staffId: id } });
+    if (entries > 0) throw new BadRequestException('该人员已有历史班次, 不能删除, 请改为停用');
+    await this.prisma.staffMember.delete({ where: { id } });
+    await this.auditLog.write(tenantId, 'StaffMember', id, 'delete', staff, { by: email });
     return { deleted: true };
+  }
+
+  /// 可关联到排班人员的登录账号: 本租户启用中、还没关联排班人员的账号
+  userOptions(tenantId: string) {
+    return this.prisma.user.findMany({ where: { tenantId, isActive: true, staffMember: null }, select: { id: true, email: true }, orderBy: { email: 'asc' } });
   }
 
   // ---- 班表 ----
 
-  async listEntries(organizationId: string | undefined, month: string | undefined) {
+  async listEntries(organizationId: string | undefined, department: StaffDepartment, month: string | undefined) {
     const orgId = this.requireOrganizationId(organizationId);
     const { first, last } = monthBounds(month);
     const entries = await this.prisma.rosterEntry.findMany({
-      where: { organizationId: orgId, date: { gte: first, lte: last } },
-      select: { personnelId: true, date: true, shiftTypeId: true },
+      where: { organizationId: orgId, staff: { department }, date: { gte: first, lte: last } },
+      select: { staffId: true, date: true, shiftTypeId: true },
     });
-    return entries.map((e) => ({ personnelId: e.personnelId, date: e.date.toISOString().slice(0, 10), shiftTypeId: e.shiftTypeId }));
+    return entries.map((e) => ({ staffId: e.staffId, date: e.date.toISOString().slice(0, 10), shiftTypeId: e.shiftTypeId }));
   }
 
-  /// 批量设置/清除班次; 过去的日期也可修改 (补录/更正), 每个变化的格子都写入修改历史
-  async setEntries(
-    tenantId: string,
-    actorEmail: string,
-    organizationId: string,
-    cells: { personnelId: string; date: string }[],
-    shiftTypeId: string | null | undefined,
-  ) {
+  /// 批量设置/清除班次; 过去的日期也可修改 (补录/更正), 每个变化的格子都写入修改历史。
+  /// 人员必须是该机构在岗的排班人员, 班次必须和这些人员属于同一个部门。
+  async setEntries(tenantId: string, actorEmail: string, organizationId: string, cells: { staffId: string; date: string }[], shiftTypeId: string | null | undefined) {
     const shift = shiftTypeId ? await this.prisma.shiftType.findFirst({ where: { id: shiftTypeId, organizationId } }) : null;
     if (shiftTypeId && !shift) throw new BadRequestException('班次不属于该机构');
     if (shift && !shift.isActive) throw new BadRequestException(`班次 ${shift.code} 已停用`);
 
-    const unique = new Map<string, { personnelId: string; date: string; dateObj: Date }>();
-    for (const c of cells) unique.set(`${c.personnelId}|${c.date}`, { ...c, dateObj: parseDay(c.date, 'date') });
+    const unique = new Map<string, { staffId: string; date: string; dateObj: Date }>();
+    for (const c of cells) unique.set(`${c.staffId}|${c.date}`, { ...c, dateObj: parseDay(c.date, 'date') });
     const list = [...unique.values()];
 
-    const personnelIds = [...new Set(list.map((c) => c.personnelId))];
-    const members = await this.prisma.rosterMember.findMany({ where: { organizationId, personnelId: { in: personnelIds } }, select: { personnelId: true } });
-    if (members.length !== personnelIds.length) throw new BadRequestException('包含不在该机构班表中的人员');
+    const staffIds = [...new Set(list.map((c) => c.staffId))];
+    const staff = await this.prisma.staffMember.findMany({ where: { organizationId, id: { in: staffIds } }, select: { id: true, department: true, isActive: true, name: true } });
+    if (staff.length !== staffIds.length) throw new BadRequestException('包含不属于该机构的人员');
+    const inactive = staff.find((s) => !s.isActive);
+    if (inactive && shift) throw new BadRequestException(`${inactive.name} 已停用, 不能排班`);
+    if (shift) {
+      const wrong = staff.find((s) => s.department !== shift.department);
+      if (wrong) throw new BadRequestException(`班次 ${shift.code} 属于${DEPARTMENT_TEXT[shift.department]}部门, 不能给${DEPARTMENT_TEXT[wrong.department]}部门的 ${wrong.name} 排`);
+    }
 
     const existing = await this.prisma.rosterEntry.findMany({
-      where: { organizationId, OR: list.map((c) => ({ personnelId: c.personnelId, date: c.dateObj })) },
+      where: { organizationId, OR: list.map((c) => ({ staffId: c.staffId, date: c.dateObj })) },
       include: { shiftType: { select: { code: true } } },
     });
-    const existingByKey = new Map(existing.map((e) => [`${e.personnelId}|${e.date.toISOString().slice(0, 10)}`, e]));
+    const existingByKey = new Map(existing.map((e) => [`${e.staffId}|${e.date.toISOString().slice(0, 10)}`, e]));
 
     let changed = 0;
     for (const c of list) {
-      const before = existingByKey.get(`${c.personnelId}|${c.date}`);
+      const before = existingByKey.get(`${c.staffId}|${c.date}`);
       const beforeCode = before?.shiftType.code ?? null;
       const afterCode = shift?.code ?? null;
       if (beforeCode === afterCode) continue;
       if (shift) {
         await this.prisma.rosterEntry.upsert({
-          where: { organizationId_personnelId_date: { organizationId, personnelId: c.personnelId, date: c.dateObj } },
-          create: { organizationId, personnelId: c.personnelId, date: c.dateObj, shiftTypeId: shift.id },
+          where: { organizationId_staffId_date: { organizationId, staffId: c.staffId, date: c.dateObj } },
+          create: { organizationId, staffId: c.staffId, date: c.dateObj, shiftTypeId: shift.id },
           update: { shiftTypeId: shift.id },
         });
       } else if (before) {
         await this.prisma.rosterEntry.delete({ where: { id: before.id } });
       }
       changed += 1;
-      await this.auditLog.write(tenantId, 'RosterEntry', `${organizationId}:${c.personnelId}:${c.date}`, beforeCode ? (afterCode ? 'update' : 'delete') : 'create', { shift: beforeCode }, { shift: afterCode, by: actorEmail });
+      await this.auditLog.write(tenantId, 'RosterEntry', `${organizationId}:${c.staffId}:${c.date}`, beforeCode ? (afterCode ? 'update' : 'delete') : 'create', { shift: beforeCode }, { shift: afterCode, by: actorEmail });
     }
     return { requested: list.length, changed, unchanged: list.length - changed };
   }
 
-  /// 修改历史: 谁在何时把哪个人哪一天的班次从什么改成什么 (来自审计轨迹)
-  async history(tenantId: string, organizationId: string | undefined, personnelId?: string, from?: string, to?: string) {
+  /// 修改历史: 谁在何时把哪个人哪一天的班次从什么改成什么 (来自审计轨迹); 按部门过滤
+  async history(tenantId: string, organizationId: string | undefined, department: StaffDepartment, staffId?: string, from?: string, to?: string) {
     const orgId = this.requireOrganizationId(organizationId);
     const logs = await this.prisma.auditLog.findMany({
-      where: { tenantId, entityType: 'RosterEntry', entityId: { startsWith: personnelId ? `${orgId}:${personnelId}:` : `${orgId}:` } },
+      where: { tenantId, entityType: 'RosterEntry', entityId: { startsWith: staffId ? `${orgId}:${staffId}:` : `${orgId}:` } },
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
     const rows = logs
       .map((l) => {
-        const [, pid, date] = l.entityId.split(':');
+        const [, sid, date] = l.entityId.split(':');
         const before = l.beforeJson as { shift?: string | null } | null;
         const after = l.afterJson as { shift?: string | null; by?: string } | null;
-        return { at: l.createdAt, personnelId: pid, date, before: before?.shift ?? null, after: after?.shift ?? null, by: after?.by ?? null };
+        return { at: l.createdAt, staffId: sid, date, before: before?.shift ?? null, after: after?.shift ?? null, by: after?.by ?? null };
       })
       .filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
-    const names = await this.personnelNames(tenantId, rows.map((r) => r.personnelId));
-    return rows.map((r) => ({ ...r, name: names.get(r.personnelId) ?? r.personnelId }));
+    const people = await this.prisma.staffMember.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.staffId))] }, organizationId: orgId }, select: { id: true, name: true, department: true } });
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return rows.filter((r) => byId.get(r.staffId)?.department === department).map((r) => ({ ...r, name: byId.get(r.staffId)?.name ?? r.staffId }));
   }
 
-  private async personnelNames(tenantId: string, ids: string[]) {
-    const unique = [...new Set(ids)];
-    if (unique.length === 0) return new Map<string, string>();
-    const people = await this.prisma.personnel.findMany({ where: { tenantId, id: { in: unique } } });
-    return new Map(people.map((p) => [p.id, `${p.lastName}${p.firstName}`.trim()]));
-  }
-
-  /// 我的排班: 当前登录账号关联的人员, 未来 days 天(含今天)在本租户各机构的班次
+  /// 我的排班: 当前登录账号关联的排班人员, 未来 days 天(含今天)的班次
   async myRoster(tenantId: string, userId: string, days: number) {
     const count = Math.min(Math.max(Math.trunc(days) || 15, 1), 62);
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user?.personnelId) return { linked: false, days: [] };
+    const staff = await this.prisma.staffMember.findFirst({ where: { userId, isActive: true, organization: { tenantId } } });
+    if (!staff) return { linked: false, days: [] };
     const start = parseDay(cnToday(), 'today');
     const end = new Date(start.getTime() + (count - 1) * DAY_MS);
     const entries = await this.prisma.rosterEntry.findMany({
-      where: { personnelId: user.personnelId, date: { gte: start, lte: end }, organization: { tenantId } },
+      where: { staffId: staff.id, date: { gte: start, lte: end } },
       include: { shiftType: true, organization: { select: { id: true, name: true } } },
       orderBy: { date: 'asc' },
     });
@@ -365,7 +420,7 @@ export class RosterService {
   /// 统计周期 [from, to] (北京时间含首含尾) 内逐人汇总: 各班次天数/小时、总工时、休假天数。
   /// 工时 = 班次起止时长 − 休息时长; 跨日班次(E/D)按午夜拆分, 只计落入统计周期内的部分
   /// (休息时长按该班次总时长比例摊到各段)。
-  async hours(organizationId: string | undefined, from: string | undefined, to: string | undefined, groupId?: string) {
+  async hours(organizationId: string | undefined, department: StaffDepartment, from: string | undefined, to: string | undefined, groupId?: string) {
     const orgId = this.requireOrganizationId(organizationId);
     const fromDay = parseDay(from, 'from');
     const toDay = parseDay(to, 'to');
@@ -374,29 +429,22 @@ export class RosterService {
     const periodStart = fromDay.getTime() - CN_OFFSET_MS;
     const periodEnd = toDay.getTime() + DAY_MS - CN_OFFSET_MS;
 
-    const shifts = await this.listShiftTypes(orgId);
-    const members = await this.listMembers(orgId);
+    const shifts = await this.listShiftTypes(orgId, department);
+    // 含已停用的人员: 他们在周期内的历史班次也要计入
+    const staff = await this.listStaff(orgId, department, true);
     const entries = await this.prisma.rosterEntry.findMany({
       // 前一天开始的跨日班次会落进周期内, 多取一天
-      where: { organizationId: orgId, date: { gte: new Date(fromDay.getTime() - DAY_MS), lte: toDay } },
+      where: { organizationId: orgId, staff: { department }, date: { gte: new Date(fromDay.getTime() - DAY_MS), lte: toDay } },
       include: { shiftType: true },
     });
 
     const byPerson = new Map<string, typeof entries>();
-    for (const e of entries) byPerson.set(e.personnelId, [...(byPerson.get(e.personnelId) ?? []), e]);
+    for (const e of entries) byPerson.set(e.staffId, [...(byPerson.get(e.staffId) ?? []), e]);
 
-    const memberIds = new Set(members.map((m) => m.personnelId));
-    const extraIds = [...byPerson.keys()].filter((id) => !memberIds.has(id));
-    const tenantOrg = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { tenantId: true } });
-    const extraNames = await this.personnelNames(tenantOrg?.tenantId ?? '', extraIds);
-
-    const rows = [
-      ...members.map((m) => ({ personnelId: m.personnelId, name: m.name, groupId: m.groupId, groupName: m.groupName })),
-      ...extraIds.map((id) => ({ personnelId: id, name: extraNames.get(id) ?? id, groupId: null as string | null, groupName: null as string | null })),
-    ]
-      .filter((r) => !groupId || r.groupId === groupId)
+    const rows = staff
+      .filter((r) => (!groupId || r.groupId === groupId) && (r.isActive || (byPerson.get(r.id) ?? []).length > 0))
       .map((r) => {
-        const mine = byPerson.get(r.personnelId) ?? [];
+        const mine = byPerson.get(r.id) ?? [];
         const byShift: Record<string, { days: number; hours: number }> = {};
         let totalHours = 0;
         let workDays = 0;
@@ -420,29 +468,30 @@ export class RosterService {
           }
         }
         for (const v of Object.values(byShift)) v.hours = Math.round(v.hours * 100) / 100;
-        return { ...r, workDays, totalHours: Math.round(totalHours * 100) / 100, byShift };
+        return { staffId: r.id, name: r.name, position: r.position, groupId: r.groupId, groupName: r.groupName, isActive: r.isActive, workDays, totalHours: Math.round(totalHours * 100) / 100, byShift };
       });
     return { from: from as string, to: to as string, shiftTypes: shifts.map((s) => ({ id: s.id, code: s.code, name: s.name, category: s.category })), rows };
   }
 
   // ---- 导出 ----
 
-  async exportMonth(organizationId: string | undefined, month: string | undefined): Promise<Buffer> {
+  async exportMonth(organizationId: string | undefined, department: StaffDepartment, month: string | undefined): Promise<Buffer> {
     const orgId = this.requireOrganizationId(organizationId);
     const { days } = monthBounds(month);
-    const [members, entries, shifts] = await Promise.all([this.listMembers(orgId), this.listEntries(orgId, month), this.listShiftTypes(orgId)]);
+    const [staff, entries, shifts] = await Promise.all([this.listStaff(orgId, department), this.listEntries(orgId, department, month), this.listShiftTypes(orgId, department)]);
     const codeById = new Map(shifts.map((s) => [s.id, s.code]));
-    const cell = new Map(entries.map((e) => [`${e.personnelId}|${e.date}`, codeById.get(e.shiftTypeId) ?? '']));
+    const cell = new Map(entries.map((e) => [`${e.staffId}|${e.date}`, codeById.get(e.shiftTypeId) ?? '']));
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('班表');
-    sheet.addRow([`人员班表 ${month}`]);
-    sheet.addRow(['班组', '姓名', ...days.map((d) => d.slice(8))]).font = { bold: true };
-    for (const m of members) sheet.addRow([m.groupName ?? '', m.name, ...days.map((d) => cell.get(`${m.personnelId}|${d}`) ?? '')]);
+    sheet.addRow([`${DEPARTMENT_TEXT[department]}人员班表 ${month}`]);
+    sheet.addRow(['班组', '姓名', '岗位', ...days.map((d) => d.slice(8))]).font = { bold: true };
+    for (const m of staff) sheet.addRow([m.groupName ?? '', m.name, m.position ?? '', ...days.map((d) => cell.get(`${m.id}|${d}`) ?? '')]);
     sheet.getColumn(1).width = 14;
     sheet.getColumn(2).width = 14;
+    sheet.getColumn(3).width = 14;
     days.forEach((_, i) => {
-      sheet.getColumn(i + 3).width = 4;
+      sheet.getColumn(i + 4).width = 4;
     });
 
     const legend = workbook.addWorksheet('班次说明');
@@ -451,21 +500,27 @@ export class RosterService {
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
-  async exportHours(organizationId: string | undefined, from: string | undefined, to: string | undefined, groupId?: string): Promise<Buffer> {
-    const r = await this.hours(organizationId, from, to, groupId);
+  async exportHours(organizationId: string | undefined, department: StaffDepartment, from: string | undefined, to: string | undefined, groupId?: string): Promise<Buffer> {
+    const r = await this.hours(organizationId, department, from, to, groupId);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('工时统计');
-    sheet.addRow([`工时统计 ${r.from} ~ ${r.to}`]);
-    sheet.addRow(['班组', '姓名', '出勤天数', '总工时(h)', ...r.shiftTypes.flatMap((s) => (s.category === 'WORK' ? [`${s.code} 天数`, `${s.code} 工时(h)`] : [`${s.code} 天数`]))]).font = { bold: true };
+    sheet.addRow([`${DEPARTMENT_TEXT[department]}工时统计 ${r.from} ~ ${r.to}`]);
+    sheet.addRow(['班组', '姓名', '岗位', '出勤天数', '总工时(h)', ...r.shiftTypes.flatMap((s) => (s.category === 'WORK' ? [`${s.code} 天数`, `${s.code} 工时(h)`] : [`${s.code} 天数`]))]).font = { bold: true };
     for (const row of r.rows) {
       sheet.addRow([
         row.groupName ?? '',
         row.name,
+        row.position ?? '',
         row.workDays,
         row.totalHours,
         ...r.shiftTypes.flatMap((s) => (s.category === 'WORK' ? [row.byShift[s.code]?.days ?? 0, row.byShift[s.code]?.hours ?? 0] : [row.byShift[s.code]?.days ?? 0])),
       ]);
     }
     return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  /// 供其他模块(值班日志、检查单)按 ID 取姓名
+  names(tenantId: string, ids: string[]) {
+    return resolveStaffNames(this.prisma, tenantId, ids);
   }
 }

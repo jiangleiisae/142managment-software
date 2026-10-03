@@ -3,6 +3,7 @@ import { ChecklistType, Prisma } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CN_OFFSET_MS, DAY_MS, shiftWindow } from '../roster/shift-time.js';
+import { resolveStaffNames } from '../roster/staff-names.js';
 import type { ChecklistItemDto, CreateChecklistRecordDto } from './dto/checklist.dto.js';
 
 const MAX_LIST = 500;
@@ -59,11 +60,9 @@ export class ChecklistService {
     return fstd;
   }
 
-  private async personnelNames(tenantId: string, ids: string[]) {
-    const unique = [...new Set(ids)];
-    if (unique.length === 0) return new Map<string, string>();
-    const people = await this.prisma.personnel.findMany({ where: { tenantId, id: { in: unique } } });
-    return new Map(people.map((p) => [p.id, `${p.lastName}${p.firstName}`.trim()]));
+  /// 当班人员/执行人现在是排班人员(维护部门); 老数据里存的是人员档案ID, 按人员档案兜底
+  private personnelNames(tenantId: string, ids: string[]) {
+    return resolveStaffNames(this.prisma, tenantId, ids);
   }
 
   // ---- 模板 ----
@@ -133,13 +132,13 @@ export class ChecklistService {
     const types = type ? [type] : TYPES;
 
     const flaggedShifts = await this.prisma.shiftType.findMany({
-      where: { organizationId: orgId, isActive: true, category: 'WORK', generatesMaintenanceTasks: true },
+      where: { organizationId: orgId, department: 'MAINTENANCE', isActive: true, category: 'WORK', generatesMaintenanceTasks: true },
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
     });
     const entries = flaggedShifts.length
-      ? await this.prisma.rosterEntry.findMany({ where: { organizationId: orgId, date: day, shiftTypeId: { in: flaggedShifts.map((s) => s.id) } }, select: { personnelId: true, shiftTypeId: true } })
+      ? await this.prisma.rosterEntry.findMany({ where: { organizationId: orgId, date: day, shiftTypeId: { in: flaggedShifts.map((s) => s.id) } }, select: { staffId: true, shiftTypeId: true } })
       : [];
-    const names = await this.personnelNames(tenantId, entries.map((e) => e.personnelId));
+    const names = await this.personnelNames(tenantId, entries.map((e) => e.staffId));
 
     const fstds = await this.prisma.fstd.findMany({ where: { organizationId: orgId, status: 'active' }, orderBy: { deviceCode: 'asc' } });
     const groundings = await this.prisma.fstdGrounding.findMany({ where: { fstdId: { in: fstds.map((f) => f.id) }, date: day }, select: { fstdId: true } });
@@ -190,7 +189,7 @@ export class ChecklistService {
             shiftTypeId: s.id,
             shiftCode: s.code,
             shiftName: s.name,
-            rostered: entries.filter((e) => e.shiftTypeId === s.id).map((e) => names.get(e.personnelId) ?? e.personnelId),
+            rostered: entries.filter((e) => e.shiftTypeId === s.id).map((e) => names.get(e.staffId) ?? e.staffId),
             status,
             recordId: record?.id ?? null,
             performedBy: record?.performedByPersonnelId ? (recordNames.get(record.performedByPersonnelId) ?? null) : (record?.performedByEmail ?? null),
@@ -236,7 +235,8 @@ export class ChecklistService {
     if (missing.length) throw new BadRequestException(`还有检查项未填写: ${missing.map((m) => m.no).join(', ')}`);
 
     if (dto.performedByPersonnelId) {
-      const p = await this.prisma.personnel.findFirst({ where: { id: dto.performedByPersonnelId, tenantId } });
+      // 执行人: 该机构的排班人员, 或(老数据/兼容)本租户的人员档案
+      const p = (await this.prisma.staffMember.findFirst({ where: { id: dto.performedByPersonnelId, organizationId: dto.organizationId }, select: { id: true } })) ?? (await this.prisma.personnel.findFirst({ where: { id: dto.performedByPersonnelId, tenantId }, select: { id: true } }));
       if (!p) throw new BadRequestException('执行人不属于当前租户');
     }
     const duplicate = await this.prisma.checklistRecord.findUnique({ where: { fstdId_type_date_shiftTypeId: { fstdId: fstd.id, type: dto.type, date: day, shiftTypeId: shift.id } } });

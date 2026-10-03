@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import type { DutyDetail, DutyEntryKind, DutyFilters, DutyLogSummary, HandoverRow } from '../api/duty'
 import { dutyApi } from '../api/duty'
 import { fstdsApi } from '../api/fstds'
-import type { RosterGroup, RosterMember, ShiftType } from '../api/roster'
+import type { RosterGroup, ShiftType, Staff } from '../api/roster'
 import { rosterApi } from '../api/roster'
 import type { Fstd } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
@@ -28,12 +28,12 @@ export function DutyPage() {
 
   const [shifts, setShifts] = useState<ShiftType[]>([])
   const [groups, setGroups] = useState<RosterGroup[]>([])
-  const [members, setMembers] = useState<RosterMember[]>([])
+  const [members, setMembers] = useState<Staff[]>([])
   const [fstds, setFstds] = useState<Fstd[]>([])
 
   useEffect(() => {
     if (!selectedId) return
-    Promise.all([rosterApi.listShiftTypes(selectedId), rosterApi.listGroups(selectedId), rosterApi.listMembers(selectedId), fstdsApi.list(selectedId)]).then(([s, g, m, f]) => {
+    Promise.all([rosterApi.listShiftTypes(selectedId, 'MAINTENANCE'), rosterApi.listGroups(selectedId, 'MAINTENANCE'), rosterApi.listStaff(selectedId, 'MAINTENANCE'), fstdsApi.list(selectedId)]).then(([s, g, m, f]) => {
       setShifts(s)
       setGroups(g)
       setMembers(m)
@@ -109,7 +109,7 @@ export function DutyPage() {
         <RangePicker allowClear={false} value={[dayjs(range[0]), dayjs(range[1])]} onChange={(v) => v?.[0] && v[1] && setRange([v[0].format('YYYY-MM-DD'), v[1].format('YYYY-MM-DD')])} />
         <Select allowClear style={{ width: 110 }} placeholder={t('duty.status')} value={filters.status} onChange={(v) => setFilters((f) => ({ ...f, status: v }))} options={[{ value: 'DRAFT', label: t('duty.draft') }, { value: 'SUBMITTED', label: t('duty.submitted') }]} />
         <Select allowClear style={{ width: 130 }} placeholder={t('duty.group')} value={filters.groupId} onChange={(v) => setFilters((f) => ({ ...f, groupId: v }))} options={groups.map((g) => ({ value: g.id, label: g.name }))} />
-        <Select allowClear showSearch optionFilterProp="label" style={{ width: 130 }} placeholder={t('duty.engineer')} value={filters.engineerId} onChange={(v) => setFilters((f) => ({ ...f, engineerId: v }))} options={members.map((m) => ({ value: m.personnelId, label: m.name }))} />
+        <Select allowClear showSearch optionFilterProp="label" style={{ width: 130 }} placeholder={t('duty.engineer')} value={filters.engineerId} onChange={(v) => setFilters((f) => ({ ...f, engineerId: v }))} options={members.map((m) => ({ value: m.id, label: m.name }))} />
         <Select allowClear style={{ width: 150 }} placeholder={t('duty.device')} value={filters.fstdId} onChange={(v) => setFilters((f) => ({ ...f, fstdId: v }))} options={fstds.map((f) => ({ value: f.id, label: `${f.deviceCode} ${f.representedAircraft}` }))} />
         <Input.Search allowClear style={{ width: 180 }} placeholder={t('duty.keyword')} onSearch={(v) => setFilters((f) => ({ ...f, keyword: v || undefined }))} />
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { createForm.resetFields(); createForm.setFieldsValue({ date: dayjs(today) }); setCreateOpen(true) }}>
@@ -219,7 +219,7 @@ function DutyDrawer({
   onClose,
 }: {
   id?: string
-  members: RosterMember[]
+  members: Staff[]
   fstds: Fstd[]
   workShifts: ShiftType[]
   run: (fn: () => Promise<unknown>, ok?: string) => Promise<boolean>
@@ -287,8 +287,8 @@ function DutyDrawer({
                 optionFilterProp="label"
                 style={{ width: '100%' }}
                 disabled={!draft}
-                value={d.engineers.map((e) => e.personnelId)}
-                options={members.map((m) => ({ value: m.personnelId, label: m.name }))}
+                value={d.engineers.map((e) => e.staffId)}
+                options={members.map((m) => ({ value: m.id, label: m.name }))}
                 onChange={(ids) => act(() => dutyApi.setEngineers(d.id, ids))}
               />
             </Descriptions.Item>

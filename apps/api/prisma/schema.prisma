@@ -61,6 +61,7 @@ model User {
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   personnel     Personnel?     @relation(fields: [personnelId], references: [id])
+  staffMember   StaffMember?
   notifications Notification[]
 
   @@map("users")
@@ -215,7 +216,7 @@ model Organization {
   bookingCustomers            BookingCustomer[]
   shiftTypes                  ShiftType[]
   rosterGroups                RosterGroup[]
-  rosterMembers               RosterMember[]
+  staffMembers                StaffMember[]
   rosterEntries               RosterEntry[]
   partDemandRequests          PartDemandRequest[]
   stocktakeSessions           StocktakeSession[]
@@ -1509,8 +1510,6 @@ model Personnel {
   instructorProfile InstructorProfile?
   qualifications    QualificationRecord[]
   user              User?
-  rosterMemberships RosterMember[]
-  rosterEntries     RosterEntry[]
 
   @@map("personnel")
 }
@@ -1735,6 +1734,12 @@ model Booking {
 
 // ---- 人员班表 (R2): 班次配置、班组、班表 ----
 
+/// 排班的部门: 维护 / 行政综合(前台、行政、司机、保洁等); 两个部门各有自己的人员、班组、班次和班表
+enum StaffDepartment {
+  MAINTENANCE
+  ADMIN
+}
+
 enum ShiftCategory {
   WORK // 工作班次, 计入工时
   BUSINESS_TRIP // 出差
@@ -1746,21 +1751,22 @@ enum ShiftCategory {
 
 /// 机构级班次: 工作班次有起止时间 (北京时间, endsNextDay 表示次日结束, 如 E晚班 17:00→次日08:30), 非工作班次没有
 model ShiftType {
-  id                        String        @id @default(cuid())
+  id                        String          @id @default(cuid())
   organizationId            String
-  code                      String // 班次代码, 如 M/E/D, 机构内唯一
+  department                StaffDepartment @default(MAINTENANCE)
+  code                      String // 班次代码, 如 M/E/D, 同一机构同一部门内唯一
   name                      String
   category                  ShiftCategory
   startTime                 String? // "HH:mm", 仅工作班次
   endTime                   String? // "HH:mm", 仅工作班次
-  endsNextDay               Boolean       @default(false)
-  restMinutes               Int           @default(0) // 休息时长, 计工时时扣除
+  endsNextDay               Boolean         @default(false)
+  restMinutes               Int             @default(0) // 休息时长, 计工时时扣除
   color                     String // #RRGGBB
-  generatesMaintenanceTasks Boolean       @default(false) // 是否生成维护任务 (出单联动属于 R4b, 这里只记录配置)
+  generatesMaintenanceTasks Boolean         @default(false) // 是否生成维护任务 (出单联动属于 R4b, 这里只记录配置)
   description               String?
-  sortOrder                 Int           @default(0)
-  isActive                  Boolean       @default(true)
-  createdAt                 DateTime      @default(now())
+  sortOrder                 Int             @default(0)
+  isActive                  Boolean         @default(true)
+  createdAt                 DateTime        @default(now())
 
   organization     Organization      @relation(fields: [organizationId], references: [id])
   entries          RosterEntry[]
@@ -1768,58 +1774,70 @@ model ShiftType {
   checklistRecords ChecklistRecord[]
   handoverTargets  DutyHandover[]
 
-  @@unique([organizationId, code])
+  @@unique([organizationId, department, code])
   @@map("shift_types")
 }
 
 /// 项目组/班组: 机构内给班表人员分组展示与统计
 model RosterGroup {
-  id             String   @id @default(cuid())
+  id             String          @id @default(cuid())
   organizationId String
+  department     StaffDepartment @default(MAINTENANCE)
   name           String
-  sortOrder      Int      @default(0)
-  createdAt      DateTime @default(now())
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
 
-  organization Organization   @relation(fields: [organizationId], references: [id])
-  members      RosterMember[]
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  staff        StaffMember[]
   dutyLogs     DutyLog[]
 
-  @@unique([organizationId, name])
+  @@unique([organizationId, department, name])
   @@map("roster_groups")
 }
 
-/// 进入某机构班表的人员 (Personnel 是租户级档案, 不一定都排班)
-model RosterMember {
-  id             String   @id @default(cuid())
+/// 排班人员 (维护人员 / 行政综合人员): 班表里的"人", 独立于「人员资质」的人员档案 (司机、保洁、前台等不应进入受监管人员的档案)。
+/// 一个人只属于一个部门; 班组、排序直接放在人员上; 离职/不再排班用 isActive=false (历史班次保留, 不删除)。
+/// userId 可选地关联一个登录账号, 用于"我的排班"。
+model StaffMember {
+  id             String          @id @default(cuid())
   organizationId String
-  personnelId    String
+  department     StaffDepartment
+  name           String
+  employeeNo     String? // 工号
+  position       String? // 岗位, 如 维护工程师 / 前台 / 司机 / 保洁
+  phone          String?
+  notes          String?
   groupId        String?
-  sortOrder      Int      @default(0)
-  createdAt      DateTime @default(now())
+  userId         String?         @unique
+  sortOrder      Int             @default(0)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  personnel    Personnel    @relation(fields: [personnelId], references: [id])
-  group        RosterGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  group        RosterGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entries      RosterEntry[]
 
-  @@unique([organizationId, personnelId])
-  @@map("roster_members")
+  @@index([organizationId, department])
+  @@map("staff_members")
 }
 
 /// 某人某日(北京时间日历日)的班次; 一人一天最多一条
 model RosterEntry {
   id             String   @id @default(cuid())
   organizationId String
-  personnelId    String
+  staffId        String
   date           DateTime @db.Date
   shiftTypeId    String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
-  personnel    Personnel    @relation(fields: [personnelId], references: [id])
+  staff        StaffMember  @relation(fields: [staffId], references: [id])
   shiftType    ShiftType    @relation(fields: [shiftTypeId], references: [id])
 
-  @@unique([organizationId, personnelId, date])
+  @@unique([organizationId, staffId, date])
   @@index([organizationId, date])
   @@map("roster_entries")
 }

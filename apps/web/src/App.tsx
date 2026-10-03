@@ -13,6 +13,7 @@ import { RosterPage } from './pages/RosterPage'
 import { DutyPage } from './pages/DutyPage'
 import { ChecklistConfigPage } from './pages/ChecklistConfigPage'
 import { QtgPlanPage } from './pages/QtgPlanPage'
+import { StaffPage } from './pages/StaffPage'
 import { UpgradePage } from './pages/UpgradePage'
 import { QualityInspectionsPage } from './pages/QualityInspectionsPage'
 import { QualityMeetingsPage } from './pages/QualityMeetingsPage'
@@ -83,7 +84,10 @@ function App() {
           <Route element={<PermissionRoute permission="SCHEDULING" />}>
             <Route path="/bookings" element={<BookingsPage />} />
             <Route path="/training-plan" element={<TrainingPlanPage />} />
-            <Route path="/roster" element={<RosterPage />} />
+            <Route path="/roster" element={<RosterPage department="MAINTENANCE" />} />
+            <Route path="/maintenance-staff" element={<StaffPage department="MAINTENANCE" />} />
+            <Route path="/admin/roster" element={<RosterPage department="ADMIN" />} />
+            <Route path="/admin/staff" element={<StaffPage department="ADMIN" />} />
             <Route path="/duty" element={<DutyPage />} />
           </Route>
           {/* Kiosk故障报告面向任何在场人员开放, 不受模块权限限制, 与后端 @SkipPermissionCheck() 一致 */}

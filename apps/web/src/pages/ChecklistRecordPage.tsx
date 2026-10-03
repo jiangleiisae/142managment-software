@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom'
 import type { ChecklistRecordRow, ChecklistTemplate, ChecklistType, ExpectedItem, ExpectedResult } from '../api/checklists'
 import { checklistsApi } from '../api/checklists'
 import { fstdsApi } from '../api/fstds'
-import type { RosterMember } from '../api/roster'
+import type { Staff } from '../api/roster'
 import { rosterApi } from '../api/roster'
 import type { Fstd } from '../api/types'
 import { OrganizationSelector } from '../components/OrganizationSelector'
@@ -31,10 +31,10 @@ export function ChecklistRecordPage({ type }: { type: ChecklistType }) {
   const label = t(type === 'PRE_FLIGHT' ? 'checklist.preFlight' : 'checklist.postFlight')
 
   const [fstds, setFstds] = useState<Fstd[]>([])
-  const [members, setMembers] = useState<RosterMember[]>([])
+  const [members, setMembers] = useState<Staff[]>([])
   useEffect(() => {
     if (!selectedId) return
-    Promise.all([fstdsApi.list(selectedId), rosterApi.listMembers(selectedId)]).then(([f, m]) => {
+    Promise.all([fstdsApi.list(selectedId), rosterApi.listStaff(selectedId, 'MAINTENANCE')]).then(([f, m]) => {
       setFstds(f)
       setMembers(m)
     })
@@ -274,7 +274,7 @@ export function ChecklistRecordPage({ type }: { type: ChecklistType }) {
               ]}
             />
             <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
-              <Select allowClear showSearch optionFilterProp="label" style={{ width: '100%' }} placeholder={t('checklist.performer')} value={performer} onChange={setPerformer} options={members.map((m) => ({ value: m.personnelId, label: m.name }))} />
+              <Select allowClear showSearch optionFilterProp="label" style={{ width: '100%' }} placeholder={t('checklist.performer')} value={performer} onChange={setPerformer} options={members.map((m) => ({ value: m.id, label: m.name }))} />
               <Input.TextArea rows={2} maxLength={500} placeholder={t('checklist.note')} value={note} onChange={(e) => setNote(e.target.value)} />
             </Space>
           </>

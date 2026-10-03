@@ -36,7 +36,7 @@ export interface DutyDetail {
   createdByEmail: string | null
   shift: { id: string; code: string; name: string; startTime: string | null; endTime: string | null; endsNextDay: boolean }
   group: { id: string; name: string } | null
-  engineers: { personnelId: string; name: string }[]
+  engineers: { staffId: string; name: string }[]
   entries: { id: string; kind: DutyEntryKind; content: string; fstdId: string | null; deviceCode: string | null }[]
   outgoing: { id: string; content: string; fstdId: string | null; deviceCode: string | null; toDate: string; toShiftTypeId: string; toShiftCode: string; completedAt: string | null }[]
   incoming: { id: string; content: string; deviceCode: string | null; fromDate: string; fromShiftCode: string; fromGroupName: string | null; toDate: string; completedAt: string | null; completedInThisLog: boolean }[]

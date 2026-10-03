@@ -1,44 +1,47 @@
-import { DownloadOutlined, PlusOutlined, QrcodeOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Checkbox, ColorPicker, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, TimePicker, Typography, Divider } from 'antd'
+import { DownloadOutlined, PlusOutlined, QrcodeOutlined, UserOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Card, Checkbox, ColorPicker, DatePicker, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, TimePicker, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { HoursRow, MyRoster, RosterEntry, RosterGroup, RosterHistoryRow, RosterMember, ShiftCategory, ShiftType } from '../api/roster'
+import { Link } from 'react-router-dom'
+import type { HoursRow, MyRoster, RosterEntry, RosterGroup, RosterHistoryRow, ShiftCategory, ShiftType, Staff, StaffDepartment } from '../api/roster'
 import { rosterApi } from '../api/roster'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { ShareQrModal } from '../components/ShareQrModal'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
-import { cnDateTimeLabel, cnMonthRange, cnTodayString, weekdayLabel } from '../utils/trainingPlanTime'
-import { readableTextColor } from '../utils/trainingPlanTime'
+import { cnDateTimeLabel, cnMonthRange, cnTodayString, readableTextColor, weekdayLabel } from '../utils/trainingPlanTime'
 
 const { RangePicker } = DatePicker
 const CATEGORIES: ShiftCategory[] = ['WORK', 'BUSINESS_TRIP', 'SICK_LEAVE', 'COMPENSATORY_LEAVE', 'ANNUAL_LEAVE', 'OTHER']
-const key = (personnelId: string, date: string) => `${personnelId}|${date}`
+const key = (staffId: string, date: string) => `${staffId}|${date}`
 const apiError = (e: unknown, fallback: string) => {
   const msg = (e as { response?: { data?: { message?: string | string[] } } }).response?.data?.message
   return (Array.isArray(msg) ? msg.join('; ') : msg) ?? fallback
 }
 
-export function RosterPage() {
+/// 人员班表: 维护部门 (/roster) 和行政综合部门 (/admin/roster) 共用, 各有自己的人员、班组、班次、班表。
+export function RosterPage({ department }: { department: StaffDepartment }) {
   const { t, i18n } = useTranslation()
   const { message } = App.useApp()
   const { organizations, selectedId, select } = useSelectedOrganization()
   const today = cnTodayString()
+  const isAdmin = department === 'ADMIN'
+  const staffPath = isAdmin ? '/admin/staff' : '/maintenance-staff'
 
   const [shifts, setShifts] = useState<ShiftType[]>([])
   const [groups, setGroups] = useState<RosterGroup[]>([])
-  const [members, setMembers] = useState<RosterMember[]>([])
+  const [staff, setStaff] = useState<Staff[]>([])
   const [my, setMy] = useState<MyRoster>()
   const [qrOpen, setQrOpen] = useState(false)
 
   const reloadBase = useCallback(async () => {
     if (!selectedId) return
-    const [s, g, m] = await Promise.all([rosterApi.listShiftTypes(selectedId), rosterApi.listGroups(selectedId), rosterApi.listMembers(selectedId)])
+    const [s, g, m] = await Promise.all([rosterApi.listShiftTypes(selectedId, department), rosterApi.listGroups(selectedId, department), rosterApi.listStaff(selectedId, department)])
     setShifts(s)
     setGroups(g)
-    setMembers(m)
-  }, [selectedId])
+    setStaff(m)
+  }, [selectedId, department])
 
   useEffect(() => {
     reloadBase()
@@ -57,12 +60,12 @@ export function RosterPage() {
   const [entries, setEntries] = useState<RosterEntry[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const days = useMemo(() => cnMonthRange(month).days, [month])
-  const entryMap = useMemo(() => new Map(entries.map((e) => [key(e.personnelId, e.date), e.shiftTypeId])), [entries])
+  const entryMap = useMemo(() => new Map(entries.map((e) => [key(e.staffId, e.date), e.shiftTypeId])), [entries])
 
   const loadEntries = useCallback(async () => {
     if (!selectedId) return
-    setEntries(await rosterApi.listEntries(selectedId, month))
-  }, [selectedId, month])
+    setEntries(await rosterApi.listEntries(selectedId, department, month))
+  }, [selectedId, department, month])
 
   useEffect(() => {
     setSelected(new Set())
@@ -80,7 +83,7 @@ export function RosterPage() {
   const applyShift = async (shiftTypeId: string | null) => {
     if (!selectedId || selected.size === 0) return
     try {
-      const cells = [...selected].map((k) => ({ personnelId: k.split('|')[0], date: k.split('|')[1] }))
+      const cells = [...selected].map((k) => ({ staffId: k.split('|')[0], date: k.split('|')[1] }))
       const res = await rosterApi.setEntries(selectedId, cells, shiftTypeId)
       message.success(t('roster.applied', { count: res.changed }))
       setSelected(new Set())
@@ -99,12 +102,17 @@ export function RosterPage() {
         <Button disabled={selected.size === 0} onClick={() => setSelected(new Set())}>
           {t('roster.clearSelection')}
         </Button>
-        <Button icon={<DownloadOutlined />} disabled={!selectedId} onClick={() => selectedId && rosterApi.exportMonth(selectedId, month)}>
+        <Button icon={<DownloadOutlined />} disabled={!selectedId} onClick={() => selectedId && rosterApi.exportMonth(selectedId, department, month)}>
           {t('roster.export')}
         </Button>
-        <Button icon={<QrcodeOutlined />} disabled={!selectedId} onClick={() => setQrOpen(true)}>
-          {t('share.qrButton')}
-        </Button>
+        {!isAdmin && (
+          <Button icon={<QrcodeOutlined />} disabled={!selectedId} onClick={() => setQrOpen(true)}>
+            {t('share.qrButton')}
+          </Button>
+        )}
+        <Link to={staffPath}>
+          <Button icon={<UserOutlined />}>{t(isAdmin ? 'roster.manageAdminStaff' : 'roster.manageMaintenanceStaff')}</Button>
+        </Link>
       </Space>
       <Space wrap style={{ marginBottom: 12 }}>
         {shifts
@@ -119,8 +127,12 @@ export function RosterPage() {
         </Button>
       </Space>
       <Typography.Paragraph type="secondary">{t('roster.gridHint')}</Typography.Paragraph>
-      {members.length === 0 ? (
-        <Empty description={t('roster.noMembers')} />
+      {staff.length === 0 ? (
+        <Empty description={t(isAdmin ? 'roster.noAdminStaff' : 'roster.noMaintenanceStaff')}>
+          <Link to={staffPath}>
+            <Button type="primary">{t('roster.goAddStaff')}</Button>
+          </Link>
+        </Empty>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse' }}>
@@ -131,7 +143,7 @@ export function RosterPage() {
                 {days.map((d) => (
                   <th
                     key={d}
-                    onClick={() => toggleCells(members.map((m) => key(m.personnelId, d)))}
+                    onClick={() => toggleCells(staff.map((m) => key(m.id, d)))}
                     style={{ width: 32, minWidth: 32, fontSize: 12, cursor: 'pointer', fontWeight: d === today ? 700 : 400, background: d === today ? '#e6f4ff' : undefined }}
                   >
                     <div>{d.slice(8)}</div>
@@ -141,20 +153,20 @@ export function RosterPage() {
               </tr>
             </thead>
             <tbody>
-              {members.map((m) => (
+              {staff.map((m) => (
                 <tr key={m.id}>
                   <td style={{ fontSize: 12, color: '#888', padding: '0 6px', whiteSpace: 'nowrap' }}>{m.groupName ?? ''}</td>
-                  <td onClick={() => toggleCells(days.map((d) => key(m.personnelId, d)))} style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '0 8px', fontWeight: 600 }}>
+                  <td onClick={() => toggleCells(days.map((d) => key(m.id, d)))} style={{ cursor: 'pointer', whiteSpace: 'nowrap', padding: '0 8px', fontWeight: 600 }} title={m.position ?? undefined}>
                     {m.name}
                   </td>
                   {days.map((d) => {
-                    const shift = shiftById.get(entryMap.get(key(m.personnelId, d)) ?? '')
-                    const isSelected = selected.has(key(m.personnelId, d))
+                    const shift = shiftById.get(entryMap.get(key(m.id, d)) ?? '')
+                    const isSelected = selected.has(key(m.id, d))
                     return (
                       <td
                         key={d}
                         title={shift ? `${shiftLabel(shift)} ${timeText(shift)}` : undefined}
-                        onClick={() => toggleCells([key(m.personnelId, d)])}
+                        onClick={() => toggleCells([key(m.id, d)])}
                         style={{
                           width: 32,
                           height: 30,
@@ -181,148 +193,6 @@ export function RosterPage() {
     </>
   )
 
-  // ---------------- 人员与班组 ----------------
-  const [addOpen, setAddOpen] = useState(false)
-  const [personnel, setPersonnel] = useState<{ id: string; name: string }[]>([])
-  const [newLast, setNewLast] = useState('')
-  const [newFirst, setNewFirst] = useState('')
-  const [addIds, setAddIds] = useState<string[]>([])
-  const [addGroup, setAddGroup] = useState<string>()
-  const [newGroup, setNewGroup] = useState('')
-
-  const openAdd = async () => {
-    if (!selectedId) return
-    try {
-      setPersonnel(await rosterApi.personnelOptions(selectedId))
-    } catch (e) {
-      message.error(apiError(e, t('roster.failed')))
-      return
-    }
-    setAddIds([])
-    setAddGroup(undefined)
-    setNewLast('')
-    setNewFirst('')
-    setAddOpen(true)
-  }
-
-  const createAndAdd = async () => {
-    if (!selectedId) return
-    try {
-      await rosterApi.createMember(selectedId, { lastName: newLast.trim(), firstName: newFirst.trim(), groupId: addGroup })
-      message.success(t('roster.membersAdded'))
-      setAddOpen(false)
-      await reloadBase()
-    } catch (e) {
-      message.error(apiError(e, t('roster.failed')))
-    }
-  }
-
-  const run = async (fn: () => Promise<unknown>, ok?: string) => {
-    try {
-      await fn()
-      if (ok) message.success(ok)
-      await reloadBase()
-    } catch (e) {
-      message.error(apiError(e, t('roster.failed')))
-    }
-  }
-
-  const memberColumns: ColumnsType<RosterMember> = [
-    { title: t('roster.person'), dataIndex: 'name' },
-    {
-      title: t('roster.group'),
-      render: (_, m) => (
-        <Select
-          allowClear
-          style={{ width: 160 }}
-          value={m.groupId ?? undefined}
-          placeholder={t('roster.noGroup')}
-          options={groups.map((g) => ({ value: g.id, label: g.name }))}
-          onChange={(v) => run(() => rosterApi.updateMember(m.id, { groupId: v ?? null }))}
-        />
-      ),
-    },
-    {
-      title: t('roster.sortOrder'),
-      render: (_, m) => <InputNumber min={0} max={100000} value={m.sortOrder} onBlur={(e) => Number(e.target.value) !== m.sortOrder && run(() => rosterApi.updateMember(m.id, { sortOrder: Number(e.target.value) }))} />,
-    },
-    {
-      title: '',
-      render: (_, m) => (
-        <Popconfirm title={t('roster.removeConfirm')} onConfirm={() => run(() => rosterApi.removeMember(m.id))}>
-          <Button size="small" danger>
-            {t('roster.remove')}
-          </Button>
-        </Popconfirm>
-      ),
-    },
-  ]
-
-  const membersTab = (
-    <>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-          {t('roster.addMembers')}
-        </Button>
-        <Input style={{ width: 180 }} placeholder={t('roster.newGroupPlaceholder')} value={newGroup} maxLength={50} onChange={(e) => setNewGroup(e.target.value)} />
-        <Button
-          disabled={!newGroup.trim() || !selectedId}
-          onClick={() => selectedId && run(() => rosterApi.createGroup(selectedId, newGroup).then(() => setNewGroup('')), t('roster.groupCreated'))}
-        >
-          {t('roster.addGroup')}
-        </Button>
-      </Space>
-      <Space wrap style={{ marginBottom: 12 }}>
-        {groups.map((g) => (
-          <Tag
-            key={g.id}
-            closable
-            onClose={(e) => {
-              e.preventDefault()
-              Modal.confirm({ title: t('roster.deleteGroupConfirm', { name: g.name }), onOk: () => run(() => rosterApi.deleteGroup(g.id)) })
-            }}
-          >
-            {g.name}
-          </Tag>
-        ))}
-      </Space>
-      <Table rowKey="id" size="small" dataSource={members} columns={memberColumns} pagination={false} locale={{ emptyText: t('roster.noMembers') }} />
-      <Modal
-        title={t('roster.addMembers')}
-        open={addOpen}
-        onCancel={() => setAddOpen(false)}
-        okButtonProps={{ disabled: addIds.length === 0 }}
-        onOk={() => selectedId && run(() => rosterApi.addMembers(selectedId, addIds, addGroup).then(() => setAddOpen(false)), t('roster.membersAdded'))}
-      >
-        <Form layout="vertical">
-          <Form.Item label={t('roster.person')}>
-            <Select
-              mode="multiple"
-              showSearch
-              optionFilterProp="label"
-              value={addIds}
-              onChange={setAddIds}
-              notFoundContent={t('roster.noPersonnelOptions')}
-              options={personnel.map((p) => ({ value: p.id, label: p.name }))}
-            />
-          </Form.Item>
-          <Form.Item label={t('roster.group')}>
-            <Select allowClear value={addGroup} onChange={setAddGroup} placeholder={t('roster.noGroup')} options={groups.map((g) => ({ value: g.id, label: g.name }))} />
-          </Form.Item>
-          <Divider style={{ margin: '8px 0' }}>{t('roster.orCreate')}</Divider>
-          <Typography.Paragraph type="secondary">{t('roster.createHint')}</Typography.Paragraph>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input style={{ width: 90 }} maxLength={50} placeholder={t('roster.lastName')} value={newLast} onChange={(e) => setNewLast(e.target.value)} />
-            <Input style={{ width: 140 }} maxLength={50} placeholder={t('roster.firstName')} value={newFirst} onChange={(e) => setNewFirst(e.target.value)} />
-            <Button type="primary" disabled={!newLast.trim() || !newFirst.trim()} onClick={createAndAdd}>
-              {t('roster.createAndAdd')}
-            </Button>
-          </Space.Compact>
-        </Form>
-      </Modal>
-    </>
-  )
-
   // ---------------- 班次配置 ----------------
   const [shiftModal, setShiftModal] = useState<{ open: boolean; editing?: ShiftType }>({ open: false })
   const [form] = Form.useForm()
@@ -338,6 +208,16 @@ export function RosterPage() {
     setShiftModal({ open: true, editing })
   }
 
+  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+    try {
+      await fn()
+      if (ok) message.success(ok)
+      await reloadBase()
+    } catch (e) {
+      message.error(apiError(e, t('roster.failed')))
+    }
+  }
+
   const saveShift = async () => {
     const v = await form.validateFields()
     const color = typeof v.color === 'string' ? v.color : v.color.toHexString()
@@ -350,13 +230,14 @@ export function RosterPage() {
       endsNextDay: isWork ? !!v.endsNextDay : false,
       restMinutes: isWork ? (v.restMinutes ?? 0) : 0,
       color,
-      generatesMaintenanceTasks: !!v.generatesMaintenanceTasks,
+      // "是否生成维护任务"只对维护部门有意义 (航前/航后应做清单), 行政综合不使用
+      generatesMaintenanceTasks: isAdmin ? false : !!v.generatesMaintenanceTasks,
       description: v.description || undefined,
       sortOrder: v.sortOrder ?? undefined,
     }
     if (!selectedId) return
     await run(
-      () => (shiftModal.editing ? rosterApi.updateShiftType(shiftModal.editing.id, { ...data, isActive: !!v.isActive }) : rosterApi.createShiftType(selectedId, { ...data, code: v.code })).then(() => setShiftModal({ open: false })),
+      () => (shiftModal.editing ? rosterApi.updateShiftType(shiftModal.editing.id, { ...data, isActive: !!v.isActive }) : rosterApi.createShiftType(selectedId, department, { ...data, code: v.code })).then(() => setShiftModal({ open: false })),
       t('roster.saved'),
     )
   }
@@ -367,7 +248,7 @@ export function RosterPage() {
     { title: t('roster.category'), render: (_, s) => t(`roster.cat.${s.category}`) },
     { title: t('roster.time'), render: (_, s) => timeText(s) || '-' },
     { title: t('roster.rest'), render: (_, s) => (s.category === 'WORK' ? `${s.restMinutes} min` : '-') },
-    { title: t('roster.genTasks'), render: (_, s) => (s.generatesMaintenanceTasks ? t('roster.yes') : '-') },
+    ...(isAdmin ? [] : [{ title: t('roster.genTasks'), render: (_: unknown, s: ShiftType) => (s.generatesMaintenanceTasks ? t('roster.yes') : '-') }]),
     { title: t('roster.active'), render: (_, s) => (s.isActive ? t('roster.yes') : <Tag>{t('roster.disabled')}</Tag>) },
     { title: '', render: (_, s) => <Button size="small" onClick={() => openShift(s)}>{t('roster.edit')}</Button> },
   ]
@@ -405,9 +286,11 @@ export function RosterPage() {
           <Form.Item name="color" label={t('roster.color')} rules={[{ required: true }]}>
             <ColorPicker format="hex" />
           </Form.Item>
-          <Form.Item name="generatesMaintenanceTasks" label={t('roster.genTasks')} valuePropName="checked" extra={t('roster.genTasksHint')}>
-            <Switch />
-          </Form.Item>
+          {!isAdmin && (
+            <Form.Item name="generatesMaintenanceTasks" label={t('roster.genTasks')} valuePropName="checked" extra={t('roster.genTasksHint')}>
+              <Switch />
+            </Form.Item>
+          )}
           <Form.Item name="description" label={t('roster.description')}>
             <Input maxLength={200} />
           </Form.Item>
@@ -431,12 +314,13 @@ export function RosterPage() {
 
   useEffect(() => {
     if (!selectedId) return
-    rosterApi.hours(selectedId, hoursRange[0], hoursRange[1], hoursGroup).then(setHours).catch((e) => message.error(apiError(e, t('roster.failed'))))
-  }, [selectedId, hoursRange, hoursGroup, entries, message, t])
+    rosterApi.hours(selectedId, department, hoursRange[0], hoursRange[1], hoursGroup).then(setHours).catch((e) => message.error(apiError(e, t('roster.failed'))))
+  }, [selectedId, department, hoursRange, hoursGroup, entries, message, t])
 
   const hoursColumns: ColumnsType<HoursRow> = [
     { title: t('roster.group'), render: (_, r) => r.groupName ?? '-' },
-    { title: t('roster.person'), dataIndex: 'name' },
+    { title: t('roster.person'), render: (_, r) => (r.isActive ? r.name : <span style={{ color: '#999' }}>{r.name}（{t('roster.inactive')}）</span>) },
+    { title: t('roster.position'), render: (_, r) => r.position ?? '-' },
     { title: t('roster.workDays'), dataIndex: 'workDays' },
     { title: t('roster.totalHours'), render: (_, r) => <b>{r.totalHours}</b> },
     ...(hours?.shiftTypes ?? []).map((s) => ({
@@ -454,12 +338,12 @@ export function RosterPage() {
       <Space wrap style={{ marginBottom: 8 }}>
         <RangePicker allowClear={false} value={[dayjs(hoursRange[0]), dayjs(hoursRange[1])]} onChange={(v) => v?.[0] && v[1] && setHoursRange([v[0].format('YYYY-MM-DD'), v[1].format('YYYY-MM-DD')])} />
         <Select allowClear style={{ width: 160 }} placeholder={t('roster.allGroups')} value={hoursGroup} onChange={setHoursGroup} options={groups.map((g) => ({ value: g.id, label: g.name }))} />
-        <Button icon={<DownloadOutlined />} disabled={!selectedId} onClick={() => selectedId && rosterApi.exportHours(selectedId, hoursRange[0], hoursRange[1], hoursGroup)}>
+        <Button icon={<DownloadOutlined />} disabled={!selectedId} onClick={() => selectedId && rosterApi.exportHours(selectedId, department, hoursRange[0], hoursRange[1], hoursGroup)}>
           {t('roster.export')}
         </Button>
       </Space>
       <Alert type="info" showIcon style={{ marginBottom: 8 }} message={t('roster.hoursNote')} />
-      <Table rowKey="personnelId" size="small" dataSource={hours?.rows ?? []} columns={hoursColumns} pagination={false} scroll={{ x: 'max-content' }} locale={{ emptyText: t('roster.noData') }} />
+      <Table rowKey="staffId" size="small" dataSource={hours?.rows ?? []} columns={hoursColumns} pagination={false} scroll={{ x: 'max-content' }} locale={{ emptyText: t('roster.noData') }} />
     </>
   )
 
@@ -471,18 +355,18 @@ export function RosterPage() {
   const codeText = (v: string | null) => v ?? t('roster.none')
   useEffect(() => {
     if (!selectedId) return
-    rosterApi.history(selectedId, historyRange[0], historyRange[1], historyPerson).then(setHistory).catch(() => setHistory([]))
-  }, [selectedId, historyRange, historyPerson, entries])
+    rosterApi.history(selectedId, department, historyRange[0], historyRange[1], historyPerson).then(setHistory).catch(() => setHistory([]))
+  }, [selectedId, department, historyRange, historyPerson, entries])
 
   const historyTab = (
     <>
       <Space wrap style={{ marginBottom: 8 }}>
         <RangePicker allowClear={false} value={[dayjs(historyRange[0]), dayjs(historyRange[1])]} onChange={(v) => v?.[0] && v[1] && setHistoryRange([v[0].format('YYYY-MM-DD'), v[1].format('YYYY-MM-DD')])} />
-        <Select allowClear showSearch optionFilterProp="label" style={{ width: 180 }} placeholder={t('roster.person')} value={historyPerson} onChange={setHistoryPerson} options={members.map((m) => ({ value: m.personnelId, label: m.name }))} />
+        <Select allowClear showSearch optionFilterProp="label" style={{ width: 180 }} placeholder={t('roster.person')} value={historyPerson} onChange={setHistoryPerson} options={staff.map((m) => ({ value: m.id, label: m.name }))} />
       </Space>
       <Typography.Paragraph type="secondary">{t('roster.historyNote')}</Typography.Paragraph>
       <Table
-        rowKey={(r) => `${r.at}-${r.personnelId}-${r.date}`}
+        rowKey={(r) => `${r.at}-${r.staffId}-${r.date}`}
         size="small"
         dataSource={history}
         locale={{ emptyText: t('roster.noData') }}
@@ -515,7 +399,10 @@ export function RosterPage() {
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
       <ShareQrModal open={qrOpen} onClose={() => setQrOpen(false)} organizationId={selectedId} type="ROSTER" />
-      <Typography.Paragraph type="secondary">{t('roster.intro')}</Typography.Paragraph>
+      <Typography.Title level={4} style={{ marginTop: 0 }}>
+        {t(isAdmin ? 'roster.adminTitle' : 'roster.maintenanceTitle')}
+      </Typography.Title>
+      <Typography.Paragraph type="secondary">{t(isAdmin ? 'roster.adminIntro' : 'roster.intro')}</Typography.Paragraph>
       {myCard}
       {!selectedId ? (
         <Empty description={t('common.selectOrganizationPlaceholder')} />
@@ -523,7 +410,6 @@ export function RosterPage() {
         <Tabs
           items={[
             { key: 'roster', label: t('roster.tabRoster'), children: rosterTab },
-            { key: 'members', label: t('roster.tabMembers'), children: membersTab },
             { key: 'shifts', label: t('roster.tabShifts'), children: shiftsTab },
             { key: 'hours', label: t('roster.tabHours'), children: hoursTab },
             { key: 'history', label: t('roster.tabHistory'), children: historyTab },
