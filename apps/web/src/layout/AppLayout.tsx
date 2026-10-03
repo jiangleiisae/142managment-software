@@ -3,6 +3,8 @@ import {
   CalendarOutlined,
   DesktopOutlined,
   FormOutlined,
+  ProfileOutlined,
+  AuditOutlined,
   InboxOutlined,
   LogoutOutlined,
   QuestionCircleOutlined,
@@ -90,6 +92,20 @@ const menuEntries: MenuEntry[] = [
       { key: '/upgrades', labelKey: 'menu.upgrade', permission: 'FSTD' },
     ],
   },
+  {
+    type: 'group',
+    key: 'group:quality',
+    icon: <AuditOutlined />,
+    labelKey: 'menu.group.quality',
+    children: [
+      { key: '/quality/surveys', labelKey: 'menu.qualitySurveys', permission: 'MANAGEMENT_SYSTEM' },
+      { key: '/quality/trainings', labelKey: 'menu.qualityTrainings', permission: 'MANAGEMENT_SYSTEM' },
+      { key: '/quality/meetings', labelKey: 'menu.qualityMeetings', permission: 'MANAGEMENT_SYSTEM' },
+      { key: '/quality/inspections', labelKey: 'menu.qualityInspections', permission: 'MANAGEMENT_SYSTEM' },
+    ],
+  },
+  // 我的问卷: 任何登录用户都能填写, 不受模块权限限制
+  { type: 'item', icon: <ProfileOutlined />, leaf: { key: '/my-surveys', labelKey: 'menu.mySurveys' } },
   { type: 'item', icon: <BarChartOutlined />, leaf: { key: '/reports', labelKey: 'menu.reports', permission: ['FSTD', 'INVENTORY'] } },
   // Kiosk 任何在场人员均可使用, 不受模块权限限制
   { type: 'item', icon: <DesktopOutlined />, leaf: { key: '/kiosk', labelKey: 'menu.kiosk' } },

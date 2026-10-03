@@ -225,6 +225,11 @@ model Organization {
   dutyLogs                    DutyLog[]
   checklistTemplates          ChecklistTemplate[]
   checklistRecords            ChecklistRecord[]
+  qualityMeetings             QualityMeeting[]
+  qualityTrainings            QualityTraining[]
+  inspectionItems             InspectionItem[]
+  otherInspections            OtherInspection[]
+  surveys                     Survey[]
 
   @@map("organizations")
 }
@@ -2001,4 +2006,131 @@ model FstdQtgPlan {
 
   @@unique([fstdId, quarter])
   @@map("fstd_qtg_plans")
+}
+
+// ---- 质量管理 (R6): 会议记录、培训管理、其他检查、问卷 ----
+
+/// 日常部门会议 (区别于 SMS 的安全评审委员会会议 SRB)。固定栏目: 上周工作汇报、本周工作任务、故障分析与讨论、部门工作建议与反馈
+model QualityMeeting {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  subject             String
+  startAt             DateTime
+  endAt               DateTime
+  method              String   @default("ONSITE") // ONSITE / ONLINE / HYBRID
+  department          String?
+  location            String?
+  hostPersonnelId     String?
+  recorderPersonnelId String?
+  attendeeIds         String[] // Personnel.id
+  topics              String? // 主要议题
+  lastWeekReport      String?
+  thisWeekTasksJson   Json     @default("[]") // [{ category: "DAILY|MAJOR|QTG|OTHER", content }]
+  faultAnalysis       String?
+  suggestions         String?
+  createdByEmail      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, startAt])
+  @@map("quality_meetings")
+}
+
+/// 面向维护/运行人员的内部培训 (不是学员训练记录)
+model QualityTraining {
+  id             String   @id @default(cuid())
+  organizationId String
+  subject        String
+  startAt        DateTime
+  endAt          DateTime
+  location       String?
+  trainerName    String?
+  content        String?
+  attendeeIds    String[] // Personnel.id
+  createdByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, startAt])
+  @@map("quality_trainings")
+}
+
+/// 其他检查的检查项配置 (机构级, 名称可自行配置)
+model InspectionItem {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int     @default(0)
+  isActive       Boolean @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, name])
+  @@map("inspection_items")
+}
+
+/// 临时性/专项检查记录; 逐项结果是提交时检查项名称的快照
+model OtherInspection {
+  id                     String   @id @default(cuid())
+  organizationId         String
+  inspectedOn            DateTime @db.Date
+  title                  String
+  performedByPersonnelId String?
+  itemsJson              Json // [{ name, passed, notes? }]
+  overallResult          String // pass / issues_found
+  notes                  String?
+  createdByEmail         String?
+  createdAt              DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, inspectedOn])
+  @@map("other_inspections")
+}
+
+enum SurveyStatus {
+  DRAFT // 编辑中
+  PUBLISHED // 已发布, 本租户登录用户可填写(每人一次)
+  CLOSED // 已关闭, 不再接收回答
+}
+
+/// 内部问卷: 题目存为 JSON [{ id, type: SINGLE|MULTI|RATING|TEXT, text, required, options? }]。
+/// 发布后同租户的登录用户在"我的问卷"里填写, 每人每份一次; anonymous=true 时统计和填写记录不显示姓名(库里仍存 userId 用来防重复提交)。
+model Survey {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  anonymous      Boolean      @default(false)
+  status         SurveyStatus @default(DRAFT)
+  questionsJson  Json         @default("[]")
+  publishedAt    DateTime?
+  closedAt       DateTime?
+  createdByEmail String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id])
+  responses    SurveyResponse[]
+
+  @@index([organizationId, status])
+  @@map("surveys")
+}
+
+model SurveyResponse {
+  id          String   @id @default(cuid())
+  surveyId    String
+  userId      String
+  userEmail   String?
+  answersJson Json
+  submittedAt DateTime @default(now())
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@unique([surveyId, userId])
+  @@map("survey_responses")
 }

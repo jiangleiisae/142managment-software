@@ -14,6 +14,9 @@ import { DutyPage } from './pages/DutyPage'
 import { ChecklistConfigPage } from './pages/ChecklistConfigPage'
 import { QtgPlanPage } from './pages/QtgPlanPage'
 import { UpgradePage } from './pages/UpgradePage'
+import { QualityInspectionsPage } from './pages/QualityInspectionsPage'
+import { QualityMeetingsPage } from './pages/QualityMeetingsPage'
+import { MySurveysPage, QualitySurveysPage } from './pages/QualitySurveysPage'
 import { ChecklistRecordPage } from './pages/ChecklistRecordPage'
 import { HelpPage } from './pages/HelpPage'
 import { InventoryPage } from './pages/InventoryPage'
@@ -41,7 +44,13 @@ function App() {
             <Route path="/organizations" element={<OrganizationsPage />} />
             <Route path="/organizations/:id" element={<OrganizationDetailPage />} />
           </Route>
+          {/* 我的问卷: 任何登录用户都能填写本租户已发布的问卷, 与后端 @SkipPermissionCheck() 一致 */}
+          <Route path="/my-surveys" element={<MySurveysPage />} />
           <Route element={<PermissionRoute permission="MANAGEMENT_SYSTEM" />}>
+            <Route path="/quality/surveys" element={<QualitySurveysPage />} />
+            <Route path="/quality/trainings" element={<QualityMeetingsPage kind="training" />} />
+            <Route path="/quality/meetings" element={<QualityMeetingsPage kind="meeting" />} />
+            <Route path="/quality/inspections" element={<QualityInspectionsPage />} />
             <Route path="/management-system" element={<ManagementSystemPage />} />
           </Route>
           <Route element={<PermissionRoute permission="FSTD" />}>
