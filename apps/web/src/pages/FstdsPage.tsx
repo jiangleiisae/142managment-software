@@ -1,4 +1,4 @@
-import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownloadOutlined, PlusOutlined, UploadOutlined, QrcodeOutlined } from '@ant-design/icons'
 import { Alert, App, Button, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Select, Space, Switch, Table, Tag, Upload } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -36,6 +36,7 @@ import { inventoryApi } from '../api/inventory'
 import { personnelApi } from '../api/personnel'
 import type { Fstd, FstdDeviceType, FstdQualificationBasisType, LegacyLevel, Personnel } from '../api/types'
 import { ChangeRequestPanel } from '../components/ChangeRequestPanel'
+import { DeviceQrManager } from '../components/DeviceQrManager'
 import { OrganizationSelector } from '../components/OrganizationSelector'
 import { resolveStandard, useStandardText } from '../hooks/useRegulatoryStandard'
 import { useSelectedOrganization } from '../hooks/useSelectedOrganization'
@@ -105,6 +106,7 @@ export function FstdsPage() {
   const [safetyCheckDueSoon, setSafetyCheckDueSoon] = useState<SafetyCheckDueSoonItem[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [deviceQrOpen, setDeviceQrOpen] = useState(false)
   const [evalModalFstdId, setEvalModalFstdId] = useState<string>()
   const [extensionEligibility, setExtensionEligibility] = useState<ExtensionEligibility>()
   const [discrepancyModalFstdId, setDiscrepancyModalFstdId] = useState<string>()
@@ -702,6 +704,9 @@ export function FstdsPage() {
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               {t('fstdsPage.addFstd')}
             </Button>
+            <Button icon={<QrcodeOutlined />} onClick={() => setDeviceQrOpen(true)}>
+              {t('share.deviceManagerButton')}
+            </Button>
           </Space>
 
           <Table<FstdDetail>
@@ -1207,6 +1212,8 @@ export function FstdsPage() {
           />
         </>
       )}
+
+      <DeviceQrManager open={deviceQrOpen} onClose={() => setDeviceQrOpen(false)} organizationId={selectedId} organizationName={organizations.find((o) => o.id === selectedId)?.name} />
 
       <Modal title={t('fstdsPage.createModalTitle')} open={modalOpen} onOk={handleCreate} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ qualificationBasisType: isCaac ? 'CCAR_60' : 'EASA_LEGACY_LEVEL' }}>

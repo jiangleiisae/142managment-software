@@ -767,6 +767,7 @@ model Fstd {
   checklistTemplates          ChecklistTemplate[]
   checklistRecords            ChecklistRecord[]
   upgradeRecords              FstdUpgradeRecord[]
+  publicShares                PublicShare[]
   qtgPlans                    FstdQtgPlan[]
   discrepancies               DiscrepancyLog[]
   qtgDocuments                FstdQtgDocument[]
@@ -2150,6 +2151,8 @@ model PublicShare {
   id             String    @id @default(cuid())
   organizationId String
   type           ShareType
+  fstdId         String? // 设备级分享(只显示这台模拟机的训练计划); 为空表示机构级
+  scopeKey       String    @default("") // fstdId ?? "", 让机构级和每台设备各有一份且互不重复 (唯一索引不把 NULL 视为相同)
   token          String    @unique
   enabled        Boolean   @default(true)
   createdByEmail String?
@@ -2157,7 +2160,8 @@ model PublicShare {
   rotatedAt      DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  fstd         Fstd?        @relation(fields: [fstdId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, type])
+  @@unique([organizationId, type, scopeKey])
   @@map("public_shares")
 }

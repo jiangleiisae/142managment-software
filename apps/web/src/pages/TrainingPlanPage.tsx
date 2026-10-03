@@ -35,6 +35,7 @@ export function TrainingPlanPage() {
   const [customers, setCustomers] = useState<BookingCustomer[]>([])
   const [detail, setDetail] = useState<Booking>()
   const [qrOpen, setQrOpen] = useState(false)
+  const [deviceQrOpen, setDeviceQrOpen] = useState(false)
 
   const [day, setDay] = useState(cnTodayString())
   const [instructorInput, setInstructorInput] = useState('')
@@ -256,6 +257,7 @@ export function TrainingPlanPage() {
     <div>
       <OrganizationSelector organizations={organizations} selectedId={selectedId} onChange={select} />
       <ShareQrModal open={qrOpen} onClose={() => setQrOpen(false)} organizationId={selectedId} type="TRAINING_PLAN" />
+      <ShareQrModal open={deviceQrOpen} onClose={() => setDeviceQrOpen(false)} organizationId={selectedId} type="TRAINING_PLAN" fstd={fstds.find((f) => f.id === deviceId)} />
       <Typography.Paragraph type="secondary">{t('trainingPlan.timezoneNote')}</Typography.Paragraph>
 
       {!selectedId ? (
@@ -287,6 +289,9 @@ export function TrainingPlanPage() {
                       options={fstds.map((f) => ({ value: f.id, label: deviceLabel(f) }))}
                     />
                     <DatePicker picker="month" allowClear={false} value={dayjs(`${month}-01`)} onChange={(v) => v && setMonth(v.format('YYYY-MM'))} />
+                    <Button icon={<QrcodeOutlined />} disabled={!deviceId} onClick={() => setDeviceQrOpen(true)}>
+                      {t('share.deviceQrButton')}
+                    </Button>
                     <Button icon={<DownloadOutlined />} disabled={!deviceId} onClick={() => handleExport('month')}>
                       {t('trainingPlan.exportMonth')}
                     </Button>

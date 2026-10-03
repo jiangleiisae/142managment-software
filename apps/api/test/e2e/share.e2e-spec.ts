@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ApiCall, apiFor, createFstd, createOrg, createPersonnel, createTestApp, registerTenant } from './helpers.js';
 
 /// 公开分享(二维码): 训练计划 / 人员班表。公开接口不带任何认证信息。
+const cnDate = (offsetDays: number) => new Date(Date.now() + 8 * 60 * 60 * 1000 + offsetDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 describe('public share links', () => {
   let app: INestApplication;
   let call: ApiCall;
@@ -29,8 +31,8 @@ describe('public share links', () => {
   it('默认没有分享链接; 启用后生成不可猜测的 token, 重复启用保持不变', async () => {
     const before = await call('GET', `/shares?organizationId=${org.id}`, undefined, token);
     expect(before.body).toEqual([
-      { type: 'TRAINING_PLAN', enabled: false, token: null, createdAt: null, rotatedAt: null },
-      { type: 'ROSTER', enabled: false, token: null, createdAt: null, rotatedAt: null },
+      { type: 'TRAINING_PLAN', fstdId: null, enabled: false, token: null, createdAt: null, rotatedAt: null },
+      { type: 'ROSTER', fstdId: null, enabled: false, token: null, createdAt: null, rotatedAt: null },
     ]);
 
     const first = await manage('enable', 'TRAINING_PLAN');
@@ -120,6 +122,77 @@ describe('public share links', () => {
     const audit = await call('GET', `/audit-logs?entityType=PublicShare`, undefined, token);
     expect(audit.body.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(audit.body)).not.toContain(rotated.body.token); // 审计里不记录 token
+  });
+
+  it('设备级二维码: 每台模拟机独立的 token, 只显示该设备的计划和停飞日, 与机构级和其他设备互不影响', async () => {
+    const devB = await createFstd(call, token, org.id);
+    const manageDev = (action: string, fstdId: string, type = 'TRAINING_PLAN', t = token) => call('POST', `/shares/${action}`, { organizationId: org.id, type, fstdId }, t);
+
+    // 启用前: 一览里所有设备都没有二维码
+    const before = await call('GET', `/shares/devices?organizationId=${org.id}`, undefined, token);
+    expect(before.body.every((d: { enabled: boolean }) => d.enabled === false)).toBe(true);
+    expect(before.body.map((d: { fstdId: string }) => d.fstdId)).toContain(devB.id);
+
+    const a = await manageDev('enable', dev.id);
+    const b = await manageDev('enable', devB.id);
+    expect(a.status).toBe(201);
+    expect(a.body).toMatchObject({ type: 'TRAINING_PLAN', fstdId: dev.id, enabled: true });
+    expect(a.body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(a.body.token).not.toBe(b.body.token);
+    expect((await manageDev('enable', dev.id)).body.token).toBe(a.body.token); // 重复启用不变: 贴在设备上的标签继续有效
+    const orgLevel = (await call('GET', `/shares?organizationId=${org.id}`, undefined, token)).body.find((s2: { type: string }) => s2.type === 'TRAINING_PLAN');
+    expect(orgLevel.token).not.toBe(a.body.token); // 机构级是另一个 token
+
+    // 两台设备各有一个未来的预订; 在 devA 上标一个停飞日 (停飞只能标 366 天内, 所以用相对今天的日期)
+    const day10 = cnDate(20);
+    const day12 = cnDate(22);
+    const book = (fstdId: string, startAt: string, endAt: string, customerName: string) =>
+      call('POST', '/bookings', { organizationId: org.id, resourceType: 'FSTD', resourceId: fstdId, startAt, endAt, customerName }, token);
+    expect((await book(dev.id, `${day10}T01:00:00.000Z`, `${day10}T03:00:00.000Z`, 'A设备客户')).status).toBe(201);
+    expect((await book(devB.id, `${day10}T01:00:00.000Z`, `${day10}T03:00:00.000Z`, 'B设备客户')).status).toBe(201);
+    expect((await call('POST', '/fstds/groundings', { organizationId: org.id, entries: [{ fstdId: dev.id, date: day12 }] }, token)).status).toBe(201);
+
+    const viewA = await publicGet(`/public/share/${a.body.token}?date=${day10}&days=7`);
+    expect(viewA.status).toBe(200);
+    expect(viewA.body.device).toEqual({ code: dev.deviceCode, aircraft: 'A320' });
+    expect(viewA.body.items.map((i: { customerName: string }) => i.customerName)).toEqual(['A设备客户']); // 看不到 B 的
+    expect(viewA.body.devices).toHaveLength(1);
+    expect(viewA.body.groundedDates).toEqual([day12]);
+    const viewB = await publicGet(`/public/share/${b.body.token}?date=${day10}&days=7`);
+    expect(viewB.body.items.map((i: { customerName: string }) => i.customerName)).toEqual(['B设备客户']);
+    expect(viewB.body.groundedDates).toEqual([]);
+    // 机构级页面看得到两台设备的
+    const viewOrg = await publicGet(`/public/share/${orgLevel.token}?date=${day10}&days=7`);
+    expect(viewOrg.body.device).toBeNull();
+    expect(viewOrg.body.items).toHaveLength(2);
+
+    // 一览
+    const list = await call('GET', `/shares/devices?organizationId=${org.id}`, undefined, token);
+    expect(list.body.find((d: { fstdId: string }) => d.fstdId === dev.id)).toMatchObject({ enabled: true, token: a.body.token, deviceCode: dev.deviceCode });
+    expect((await call('GET', `/shares?organizationId=${org.id}&fstdId=${dev.id}`, undefined, token)).body).toEqual([expect.objectContaining({ type: 'TRAINING_PLAN', fstdId: dev.id, enabled: true, token: a.body.token })]);
+
+    // 重新生成/停用只影响这一台
+    const rotated = await manageDev('rotate', dev.id);
+    expect(rotated.body.token).not.toBe(a.body.token);
+    expect((await publicGet(`/public/share/${a.body.token}`)).status).toBe(404);
+    expect((await publicGet(`/public/share/${rotated.body.token}`)).status).toBe(200);
+    expect((await publicGet(`/public/share/${b.body.token}`)).status).toBe(200);
+    expect((await publicGet(`/public/share/${orgLevel.token}`)).status).toBe(200);
+    expect((await manageDev('disable', dev.id)).body).toMatchObject({ enabled: false, token: null });
+    expect((await publicGet(`/public/share/${rotated.body.token}`)).status).toBe(404);
+    expect((await publicGet(`/public/share/${b.body.token}`)).status).toBe(200);
+
+    // 校验: 班表不支持设备级; 设备必须属于该机构
+    expect((await manageDev('enable', dev.id, 'ROSTER')).status).toBe(400);
+    const otherOrg = await createOrg(call, token, 'Other Org');
+    const foreign = await createFstd(call, token, otherOrg.id);
+    expect((await manageDev('enable', foreign.id)).status).toBe(400);
+    expect((await call('GET', `/shares?organizationId=${org.id}&fstdId=${foreign.id}`, undefined, token)).status).toBe(400);
+
+    // 权限与租户
+    const stranger = await registerTenant(call);
+    expect((await call('GET', `/shares/devices?organizationId=${org.id}`, undefined, stranger.token)).status).toBe(403);
+    expect((await manageDev('enable', dev.id, 'TRAINING_PLAN', stranger.token)).status).toBe(403);
   });
 
   it('管理接口需要登录与 SCHEDULING 权限, 且不能跨租户', async () => {

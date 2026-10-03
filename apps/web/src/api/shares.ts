@@ -5,6 +5,7 @@ export type ShareType = 'TRAINING_PLAN' | 'ROSTER'
 
 export interface ShareInfo {
   type: ShareType
+  fstdId: string | null
   enabled: boolean
   token: string | null
   createdAt: string | null
@@ -12,10 +13,19 @@ export interface ShareInfo {
 }
 
 export const sharesApi = {
-  list: (organizationId: string) => apiClient.get<ShareInfo[]>('/shares', { params: { organizationId } }).then((r) => r.data),
-  enable: (organizationId: string, type: ShareType) => apiClient.post<ShareInfo>('/shares/enable', { organizationId, type }).then((r) => r.data),
-  rotate: (organizationId: string, type: ShareType) => apiClient.post<ShareInfo>('/shares/rotate', { organizationId, type }).then((r) => r.data),
-  disable: (organizationId: string, type: ShareType) => apiClient.post<ShareInfo>('/shares/disable', { organizationId, type }).then((r) => r.data),
+  list: (organizationId: string, fstdId?: string) => apiClient.get<ShareInfo[]>('/shares', { params: { organizationId, fstdId } }).then((r) => r.data),
+  listDevices: (organizationId: string) => apiClient.get<DeviceShare[]>('/shares/devices', { params: { organizationId } }).then((r) => r.data),
+  enable: (organizationId: string, type: ShareType, fstdId?: string) => apiClient.post<ShareInfo>('/shares/enable', { organizationId, type, fstdId }).then((r) => r.data),
+  rotate: (organizationId: string, type: ShareType, fstdId?: string) => apiClient.post<ShareInfo>('/shares/rotate', { organizationId, type, fstdId }).then((r) => r.data),
+  disable: (organizationId: string, type: ShareType, fstdId?: string) => apiClient.post<ShareInfo>('/shares/disable', { organizationId, type, fstdId }).then((r) => r.data),
+}
+
+export interface DeviceShare {
+  fstdId: string
+  deviceCode: string
+  representedAircraft: string
+  enabled: boolean
+  token: string | null
 }
 
 export interface PublicPlanItem {
@@ -37,7 +47,7 @@ export interface PublicShareBase {
 }
 
 export type PublicShareData =
-  | (PublicShareBase & { type: 'TRAINING_PLAN'; from: string; days: number; devices: { code: string; aircraft: string }[]; items: PublicPlanItem[] })
+  | (PublicShareBase & { type: 'TRAINING_PLAN'; from: string; days: number; device: { code: string; aircraft: string } | null; groundedDates: string[]; devices: { code: string; aircraft: string }[]; items: PublicPlanItem[] })
   | (PublicShareBase & {
       type: 'ROSTER'
       month: string

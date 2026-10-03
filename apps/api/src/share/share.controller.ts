@@ -16,23 +16,29 @@ export class ShareController {
   constructor(private readonly shareService: ShareService) {}
 
   @Get()
-  list(@Query('organizationId') organizationId: string) {
-    return this.shareService.list(organizationId);
+  list(@Query('organizationId') organizationId: string, @Query('fstdId') fstdId?: string) {
+    return this.shareService.list(organizationId, fstdId);
+  }
+
+  /// 机构内每台模拟机的二维码状态一览 (单段字面量路由, 在带参数的路由之前注册)
+  @Get('devices')
+  listDevices(@Query('organizationId') organizationId: string) {
+    return this.shareService.listDevices(organizationId);
   }
 
   @Post('enable')
   enable(@CurrentUser() user: AuthContext, @Body() dto: ShareActionDto) {
-    return this.shareService.enable(user.tenantId, user.email, dto.organizationId, dto.type);
+    return this.shareService.enable(user.tenantId, user.email, dto.organizationId, dto.type, dto.fstdId);
   }
 
   @Post('rotate')
   rotate(@CurrentUser() user: AuthContext, @Body() dto: ShareActionDto) {
-    return this.shareService.rotate(user.tenantId, user.email, dto.organizationId, dto.type);
+    return this.shareService.rotate(user.tenantId, user.email, dto.organizationId, dto.type, dto.fstdId);
   }
 
   @Post('disable')
   disable(@CurrentUser() user: AuthContext, @Body() dto: ShareActionDto) {
-    return this.shareService.disable(user.tenantId, user.email, dto.organizationId, dto.type);
+    return this.shareService.disable(user.tenantId, user.email, dto.organizationId, dto.type, dto.fstdId);
   }
 }
 

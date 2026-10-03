@@ -71,7 +71,7 @@ export function PublicSharePage() {
         {data.organizationName}
       </Typography.Title>
       <Typography.Text type="secondary">
-        {t(data.type === 'TRAINING_PLAN' ? 'share.pageTrainingTitle' : 'share.pageRosterTitle')} · {t('share.updatedAt', { time: updated })}
+        {data.type === 'TRAINING_PLAN' && data.device ? `${data.device.code} ${data.device.aircraft} · ${t('share.pageDeviceTitle')}` : t(data.type === 'TRAINING_PLAN' ? 'share.pageTrainingTitle' : 'share.pageRosterTitle')} · {t('share.updatedAt', { time: updated })}
       </Typography.Text>
     </div>
   )
@@ -104,7 +104,7 @@ export function PublicSharePage() {
           // 跨午夜的场次在开始和结束两天都显示
           const items = data.items.filter((i) => dayOf(i.startAt) === d || dayOf(new Date(Date.parse(i.endAt) - 1).toISOString()) === d)
           return (
-            <Card key={d} size="small" style={{ marginBottom: 8 }} title={<span style={{ color: d === data.today ? '#1677ff' : undefined, fontWeight: d === data.today ? 700 : 600 }}>{`${d} ${weekdayLabel(d, i18n.language)}${d === data.today ? ` · ${t('share.today')}` : ''}`}</span>}>
+            <Card key={d} size="small" style={{ marginBottom: 8 }} title={<span style={{ color: d === data.today ? '#1677ff' : undefined, fontWeight: d === data.today ? 700 : 600 }}>{`${d} ${weekdayLabel(d, i18n.language)}${d === data.today ? ` · ${t('share.today')}` : ''}`}</span>} extra={data.groundedDates.includes(d) ? <Tag color="red">{t('share.grounded')}</Tag> : undefined}>
               {items.length === 0 ? (
                 <Typography.Text type="secondary">{t('share.noSessions')}</Typography.Text>
               ) : (
@@ -117,7 +117,7 @@ export function PublicSharePage() {
                         <Typography.Text strong>
                           {startsToday ? cnHourMinute(Date.parse(i.startAt)) : '00:00'}-{endsToday ? cnHourMinute(Date.parse(i.endAt)) : '24:00'}
                         </Typography.Text>
-                        <Tag color="blue">{i.deviceCode}</Tag>
+                        {!data.device && <Tag color="blue">{i.deviceCode}</Tag>}
                         {i.trainingType && <Tag>{i.trainingType}</Tag>}
                         {!startsToday && <Tag color="orange">{t('share.fromPrevDay')}</Tag>}
                         {!endsToday && <Tag color="orange">{t('share.toNextDay')}</Tag>}
